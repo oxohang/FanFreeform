@@ -37,7 +37,8 @@ final class GestureConfig {
         this.triggerPercent = clamp(triggerPercent, 6, 24);
         this.selectionRadiusPercent = clamp(selectionRadiusPercent, 35, 75);
         this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
-        this.hotHeightPercent = clamp(hotHeightPercent, 3, 12);
+        this.hotHeightPercent = clamp(hotHeightPercent, 3,
+                ConfigContract.MAX_HOT_HEIGHT_PERCENT);
         this.iconSizeDp = clamp(iconSizeDp, 34, 64);
         this.widthPercent = clamp(widthPercent, 40, 90);
         this.heightPercent = clamp(heightPercent, 35, 85);

@@ -19,6 +19,17 @@ public class GestureGeometryTest {
     }
 
     @Test
+    public void twentyPercentHeightIncludesBottomHandleAndStopsAtConfiguredTop() {
+        float hotHeight = 2608 * 0.20f;
+        assertEquals(GestureGeometry.Corner.LEFT,
+                GestureGeometry.cornerAt(20, 2607, 1200, 2608, 144, hotHeight));
+        assertEquals(GestureGeometry.Corner.LEFT,
+                GestureGeometry.cornerAt(20, 2608 - hotHeight, 1200, 2608, 144, hotHeight));
+        assertNull(GestureGeometry.cornerAt(
+                20, 2608 - hotHeight - 1, 1200, 2608, 144, hotHeight));
+    }
+
+    @Test
     public void measuresDistanceFromOriginalDownPoint() {
         assertEquals(5f, GestureGeometry.distance(10, 10, 13, 14), 0.001f);
     }

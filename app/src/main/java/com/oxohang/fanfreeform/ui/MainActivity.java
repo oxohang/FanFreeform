@@ -161,7 +161,8 @@ public final class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 150)));
         gestureCard.addView(slider("触发区宽度", ConfigContract.KEY_HOT_WIDTH_PERCENT, 5, 20,
                 hotWidthPercent, value -> value + "%"));
-        gestureCard.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT, 3, 12,
+        gestureCard.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT, 3,
+                ConfigContract.MAX_HOT_HEIGHT_PERCENT,
                 hotHeightPercent, value -> value + "%"));
         gestureCard.addView(slider("触发距离", ConfigContract.KEY_TRIGGER_PERCENT, 6, 24,
                 prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));

@@ -41,6 +41,7 @@ public final class ConfigContract {
     public static final int DEFAULT_SELECTION_RADIUS_PERCENT = 58;
     public static final int DEFAULT_HOT_WIDTH_PERCENT = 12;
     public static final int DEFAULT_HOT_HEIGHT_PERCENT = 7;
+    public static final int MAX_HOT_HEIGHT_PERCENT = 20;
     public static final int DEFAULT_ICON_SIZE_DP = 46;
     public static final int DEFAULT_WIDTH_PERCENT = 62;
     public static final int DEFAULT_HEIGHT_PERCENT = 58;
