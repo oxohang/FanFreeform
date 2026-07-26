@@ -1,0 +1,394 @@
+package com.oxohang.fanfreeform.ui;
+
+import android.app.Activity;
+import android.annotation.SuppressLint;
+import android.content.ClipData;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.os.Bundle;
+import android.text.format.DateUtils;
+import android.view.DragEvent;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.Switch;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.oxohang.fanfreeform.config.AppTarget;
+import com.oxohang.fanfreeform.config.ConfigContract;
+import com.oxohang.fanfreeform.config.ConfigStore;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@SuppressLint("SetTextI18n")
+public final class MainActivity extends Activity {
+    private static final int REQUEST_PICK_APP = 41;
+
+    private ConfigStore store;
+    private SharedPreferences prefs;
+    private final ArrayList<AppTarget> targets = new ArrayList<>();
+    private LinearLayout appsContainer;
+    private TextView appsHint;
+    private TextView statusText;
+    private WindowPreviewView preview;
+    private int widthPercent;
+    private int heightPercent;
+    private int positionX;
+    private int positionY;
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        store = new ConfigStore(this);
+        prefs = store.preferences();
+        targets.addAll(store.getTargets());
+        widthPercent = prefs.getInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT);
+        heightPercent = prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT);
+        positionX = prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X);
+        positionY = prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y);
+
+        getWindow().setStatusBarColor(0xfff4f5fa);
+        getWindow().setNavigationBarColor(0xfff4f5fa);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        setContentView(buildContent());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateStatus();
+    }
+
+    private View buildContent() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xfff4f5fa);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 36));
+        scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView title = text("随用随走", 30, Ui.TEXT, Typeface.BOLD);
+        root.addView(title);
+        TextView subtitle = text("HyperOS 3 原生扇形快捷小窗", 15, Ui.MUTED, Typeface.NORMAL);
+        subtitle.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 18));
+        root.addView(subtitle);
+
+        LinearLayout statusCard = card();
+        TextView statusTitle = text("接口状态", 13, Ui.MUTED, Typeface.BOLD);
+        statusCard.addView(statusTitle);
+        statusText = text("等待 SystemUI 连接", 16, Ui.TEXT, Typeface.BOLD);
+        statusText.setPadding(0, Ui.dp(this, 6), 0, 0);
+        statusCard.addView(statusText);
+        root.addView(statusCard, cardParams(0));
+
+        LinearLayout switchCard = card();
+        LinearLayout enabledRow = row();
+        LinearLayout enabledText = new LinearLayout(this);
+        enabledText.setOrientation(LinearLayout.VERTICAL);
+        enabledText.addView(text("启用扇形手势", 17, Ui.TEXT, Typeface.BOLD));
+        enabledText.addView(text("左右底角共用一套快捷应用", 13, Ui.MUTED, Typeface.NORMAL));
+        enabledRow.addView(enabledText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch enabled = new Switch(this);
+        enabled.setChecked(prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
+        enabled.setOnCheckedChangeListener((button, checked) -> store.putBoolean(ConfigContract.KEY_ENABLED, checked));
+        enabledRow.addView(enabled);
+        switchCard.addView(enabledRow);
+        switchCard.addView(Ui.divider(this));
+        LinearLayout hapticRow = row();
+        LinearLayout hapticText = new LinearLayout(this);
+        hapticText.setOrientation(LinearLayout.VERTICAL);
+        hapticText.addView(text("震动反馈", 17, Ui.TEXT, Typeface.BOLD));
+        hapticText.addView(text("手势达到触发距离时反馈", 13, Ui.MUTED, Typeface.NORMAL));
+        hapticRow.addView(hapticText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch haptic = new Switch(this);
+        haptic.setChecked(prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
+        haptic.setOnCheckedChangeListener((button, checked) -> store.putBoolean(ConfigContract.KEY_HAPTIC, checked));
+        hapticRow.addView(haptic);
+        switchCard.addView(hapticRow);
+        root.addView(switchCard, cardParams(14));
+
+        LinearLayout appsCard = card();
+        LinearLayout appsHeader = row();
+        LinearLayout appsTitleGroup = new LinearLayout(this);
+        appsTitleGroup.setOrientation(LinearLayout.VERTICAL);
+        appsTitleGroup.addView(text("快捷应用", 18, Ui.TEXT, Typeface.BOLD));
+        appsHint = text("", 13, Ui.MUTED, Typeface.NORMAL);
+        appsTitleGroup.addView(appsHint);
+        appsHeader.addView(appsTitleGroup, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Button add = compactButton("添加");
+        add.setOnClickListener(view -> {
+            if (targets.size() >= 8) {
+                Toast.makeText(this, "最多添加 8 个应用", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            startActivityForResult(new Intent(this, AppPickerActivity.class), REQUEST_PICK_APP);
+        });
+        appsHeader.addView(add);
+        appsCard.addView(appsHeader);
+        appsContainer = new LinearLayout(this);
+        appsContainer.setOrientation(LinearLayout.VERTICAL);
+        appsCard.addView(appsContainer);
+        renderApps();
+        root.addView(appsCard, cardParams(14));
+
+        LinearLayout gestureCard = card();
+        gestureCard.addView(text("手势手感", 18, Ui.TEXT, Typeface.BOLD));
+        gestureCard.addView(slider("触发距离", ConfigContract.KEY_TRIGGER_PERCENT, 6, 24,
+                prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));
+        TextView gestureNote = text("从底角向屏幕中心滑动；达到距离后立即接管并显示扇形。", 13, Ui.MUTED, Typeface.NORMAL);
+        gestureNote.setPadding(0, Ui.dp(this, 2), 0, 0);
+        gestureCard.addView(gestureNote);
+        root.addView(gestureCard, cardParams(14));
+
+        LinearLayout windowCard = card();
+        windowCard.addView(text("小窗初始大小与位置", 18, Ui.TEXT, Typeface.BOLD));
+        preview = new WindowPreviewView(this);
+        preview.update(widthPercent, heightPercent, positionX, positionY);
+        windowCard.addView(preview, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 250)));
+        windowCard.addView(slider("宽度", ConfigContract.KEY_WIDTH_PERCENT, 40, 90, widthPercent, value -> value + "%"));
+        windowCard.addView(slider("高度", ConfigContract.KEY_HEIGHT_PERCENT, 35, 85, heightPercent, value -> value + "%"));
+        windowCard.addView(slider("水平位置", ConfigContract.KEY_POSITION_X, 0, 100, positionX, MainActivity::positionLabel));
+        windowCard.addView(slider("垂直位置", ConfigContract.KEY_POSITION_Y, 0, 100, positionY, MainActivity::positionLabel));
+        TextView boundsNote = text("实际启动时会自动避开状态栏、导航区域和屏幕边缘。", 13, Ui.MUTED, Typeface.NORMAL);
+        boundsNote.setPadding(0, Ui.dp(this, 8), 0, 0);
+        windowCard.addView(boundsNote);
+        root.addView(windowCard, cardParams(14));
+
+        LinearLayout behaviorCard = card();
+        behaviorCard.addView(text("随用随走", 18, Ui.TEXT, Typeface.BOLD));
+        TextView behavior = text("仅扇形手势打开的小窗：第一次点击窗外只关闭小窗，不触发底层应用。转为全屏、迷你窗或贴边后自动停止追踪。", 14, Ui.MUTED, Typeface.NORMAL);
+        behavior.setLineSpacing(0, 1.18f);
+        behavior.setPadding(0, Ui.dp(this, 8), 0, 0);
+        behaviorCard.addView(behavior);
+        root.addView(behaviorCard, cardParams(14));
+
+        Button reset = compactButton("恢复默认参数");
+        reset.setTextColor(Ui.MUTED);
+        reset.setOnClickListener(view -> {
+            store.resetTuning();
+            recreate();
+        });
+        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
+        resetParams.topMargin = Ui.dp(this, 18);
+        root.addView(reset, resetParams);
+        return scroll;
+    }
+
+    private void renderApps() {
+        appsContainer.removeAllViews();
+        appsHint.setText(targets.size() + " / 8" + (targets.size() < 3 ? " · 至少选择 3 个" : " · 长按拖动排序"));
+        if (targets.isEmpty()) {
+            TextView empty = text("尚未选择应用，点击右上角“添加”。", 14, Ui.MUTED, Typeface.NORMAL);
+            empty.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 6));
+            appsContainer.addView(empty);
+            return;
+        }
+        PackageManager pm = getPackageManager();
+        for (AppTarget target : new ArrayList<>(targets)) {
+            appsContainer.addView(Ui.divider(this));
+            LinearLayout row = row();
+            row.setTag(target);
+            row.setOnDragListener((view, event) -> onAppDrag(target, event));
+
+            ImageView icon = new ImageView(this);
+            TextView label = text(target.packageName(), 16, Ui.TEXT, Typeface.BOLD);
+            TextView packageName = text(target.packageName(), 12, Ui.MUTED, Typeface.NORMAL);
+            try {
+                ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
+                Drawable drawable = info.loadIcon(pm);
+                icon.setImageDrawable(drawable);
+                CharSequence loaded = info.loadLabel(pm);
+                if (loaded != null) label.setText(loaded);
+            } catch (Exception ignored) {
+                label.setText(target.packageName() + "（已卸载）");
+            }
+            row.addView(icon, new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40)));
+            LinearLayout labels = new LinearLayout(this);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            labels.setPadding(Ui.dp(this, 12), 0, 0, 0);
+            labels.addView(label);
+            labels.addView(packageName);
+            row.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+            TextView drag = text("≡", 26, Ui.MUTED, Typeface.NORMAL);
+            drag.setGravity(Gravity.CENTER);
+            drag.setContentDescription("长按拖动排序");
+            drag.setOnLongClickListener(view -> view.startDragAndDrop(
+                    ClipData.newPlainText("component", target.component),
+                    new View.DragShadowBuilder(row), target, 0));
+            row.addView(drag, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)));
+
+            Button remove = compactButton("移除");
+            remove.setEnabled(targets.size() > 3 || targets.size() < 3);
+            remove.setOnClickListener(view -> {
+                if (targets.size() == 3) {
+                    Toast.makeText(this, "至少保留 3 个应用", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                targets.remove(target);
+                saveTargets();
+            });
+            row.addView(remove);
+            appsContainer.addView(row);
+        }
+    }
+
+    private boolean onAppDrag(AppTarget dropTarget, DragEvent event) {
+        if (!(event.getLocalState() instanceof AppTarget)) return false;
+        if (event.getAction() == DragEvent.ACTION_DROP) {
+            AppTarget dragged = (AppTarget) event.getLocalState();
+            int from = targets.indexOf(dragged);
+            int to = targets.indexOf(dropTarget);
+            if (from >= 0 && to >= 0 && from != to) {
+                targets.remove(from);
+                targets.add(Math.min(to, targets.size()), dragged);
+                saveTargets();
+            }
+        }
+        return true;
+    }
+
+    private void saveTargets() {
+        store.setTargets(targets);
+        renderApps();
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_PICK_APP || resultCode != RESULT_OK || data == null) return;
+        String flattened = data.getStringExtra(AppPickerActivity.EXTRA_COMPONENT);
+        ComponentName component = ComponentName.unflattenFromString(flattened == null ? "" : flattened);
+        if (component == null) return;
+        AppTarget target = new AppTarget(component.flattenToString());
+        if (targets.contains(target)) {
+            Toast.makeText(this, "该应用已经在列表中", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (targets.size() >= 8) return;
+        targets.add(target);
+        saveTargets();
+    }
+
+    private View slider(String title, String key, int min, int max, int current, ValueLabel valueLabel) {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setPadding(0, Ui.dp(this, 14), 0, 0);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        TextView label = text(title, 15, Ui.TEXT, Typeface.BOLD);
+        TextView value = text(valueLabel.label(current), 14, Ui.ACCENT, Typeface.BOLD);
+        value.setGravity(Gravity.END);
+        header.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(value);
+        group.addView(header);
+
+        SeekBar seek = new SeekBar(this);
+        seek.setMax(max - min);
+        seek.setProgress(Math.max(0, Math.min(max - min, current - min)));
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int resolved = min + progress;
+                value.setText(valueLabel.label(resolved));
+                if (!fromUser) return;
+                store.putInt(key, resolved);
+                if (ConfigContract.KEY_WIDTH_PERCENT.equals(key)) widthPercent = resolved;
+                if (ConfigContract.KEY_HEIGHT_PERCENT.equals(key)) heightPercent = resolved;
+                if (ConfigContract.KEY_POSITION_X.equals(key)) positionX = resolved;
+                if (ConfigContract.KEY_POSITION_Y.equals(key)) positionY = resolved;
+                if (preview != null) preview.update(widthPercent, heightPercent, positionX, positionY);
+            }
+        });
+        group.addView(seek);
+        return group;
+    }
+
+    private void updateStatus() {
+        if (statusText == null) return;
+        String status = prefs.getString(ConfigContract.KEY_INTERFACE_STATUS, "");
+        long time = prefs.getLong(ConfigContract.KEY_INTERFACE_TIME, 0L);
+        if (status == null || status.isEmpty()) {
+            statusText.setText("等待启用模块并重启 SystemUI");
+            statusText.setTextColor(0xffa16c20);
+        } else {
+            String relative = time == 0 ? "" : " · " + DateUtils.getRelativeTimeSpanString(time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS);
+            statusText.setText(status + relative);
+            statusText.setTextColor(0xff287d4d);
+        }
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(Ui.dp(this, 18), Ui.dp(this, 17), Ui.dp(this, 18), Ui.dp(this, 17));
+        card.setBackground(Ui.rounded(this, Ui.SURFACE, 20));
+        card.setElevation(Ui.dp(this, 1));
+        return card;
+    }
+
+    private LinearLayout.LayoutParams cardParams(int topMarginDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Ui.dp(this, topMarginDp);
+        return params;
+    }
+
+    private LinearLayout row() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 12));
+        return row;
+    }
+
+    private TextView text(String value, float size, int color, int style) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(size);
+        text.setTextColor(color);
+        text.setTypeface(null, style);
+        return text;
+    }
+
+    private Button compactButton(String value) {
+        Button button = new Button(this);
+        button.setText(value);
+        button.setTextSize(13);
+        button.setTextColor(Ui.ACCENT);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), 0);
+        button.setBackground(Ui.rounded(this, 0xffeef0ff, 12));
+        return button;
+    }
+
+    private static String positionLabel(int value) {
+        if (value == 0) return "起点";
+        if (value == 50) return "居中";
+        if (value == 100) return "终点";
+        return value + "%";
+    }
+
+    private interface ValueLabel {
+        String label(int value);
+    }
+}
