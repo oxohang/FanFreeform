@@ -40,9 +40,11 @@ final class FanRuntime {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Handler configHandler;
     private final FanOverlayController overlay;
+    private final FanTriggerCapture triggerCapture;
     private final HyperOsFreeformBridge freeform;
     private final OutsideGestureRecognizer outsideGestures;
     private final GestureArbitrator gestureArbitrator = new GestureArbitrator();
+    private final GestureReplayGuard gestureReplayGuard = new GestureReplayGuard();
     private final float density;
     private final float directionDecisionDistance;
     private volatile GestureConfig config = GestureConfig.defaults();
@@ -66,6 +68,7 @@ final class FanRuntime {
         ViewConfiguration viewConfiguration = ViewConfiguration.get(context);
         directionDecisionDistance = Math.max(viewConfiguration.getScaledTouchSlop(), 10 * density);
         overlay = new FanOverlayController(context, mainHandler);
+        triggerCapture = new FanTriggerCapture(context, mainHandler);
         freeform = new HyperOsFreeformBridge(context, classLoader, mainHandler);
         outsideGestures = new OutsideGestureRecognizer(mainHandler,
                 viewConfiguration, this::performOutsideAction);
@@ -75,8 +78,20 @@ final class FanRuntime {
                     @Override public void onChange(boolean selfChange) { requestConfigReload(); }
                 });
         try {
+            IntentFilter lifecycleFilter = new IntentFilter(Intent.ACTION_USER_UNLOCKED);
+            lifecycleFilter.addAction(Intent.ACTION_USER_PRESENT);
+            lifecycleFilter.addAction(Intent.ACTION_SCREEN_ON);
+            lifecycleFilter.addAction(Intent.ACTION_SCREEN_OFF);
             context.registerReceiver(new BroadcastReceiver() {
                 @Override public void onReceive(Context receiverContext, Intent intent) {
+                    mainHandler.post(FanRuntime.this::refreshTriggerCapture);
+                    String action = intent.getAction();
+                    if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                        mainHandler.postDelayed(FanRuntime.this::refreshTriggerCapture, 750L);
+                        mainHandler.postDelayed(FanRuntime.this::refreshTriggerCapture, 1500L);
+                    }
+                    if (!Intent.ACTION_USER_UNLOCKED.equals(action)
+                            && !Intent.ACTION_USER_PRESENT.equals(action)) return;
                     configHandler.post(() -> {
                         configRetryCount = 0;
                         configRetryScheduled = false;
@@ -86,7 +101,7 @@ final class FanRuntime {
                         }
                     });
                 }
-            }, new IntentFilter(Intent.ACTION_USER_UNLOCKED), Context.RECEIVER_NOT_EXPORTED);
+            }, lifecycleFilter, Context.RECEIVER_NOT_EXPORTED);
         } catch (Throwable error) {
             Log.e("Cannot register user-unlocked configuration reload", error);
         }
@@ -137,6 +152,22 @@ final class FanRuntime {
         float x = event.getX();
         float y = event.getY();
 
+        if (state != State.IDLE) {
+            boolean replayedDown = action == MotionEvent.ACTION_DOWN
+                    && gestureReplayGuard.isRepeatedDown(event.getDownTime());
+            boolean staleTerminal = (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL)
+                    && gestureReplayGuard.isStaleTerminal(
+                    event.getDownTime(), event.getEventTime());
+            if (replayedDown || staleTerminal) {
+                Log.i("Ignored HyperOS replayed gesture boundary action=" + action
+                        + " downTime=" + event.getDownTime()
+                        + " eventTime=" + event.getEventTime());
+                return;
+            }
+            gestureReplayGuard.record(event.getDownTime(), event.getEventTime());
+        }
+
         if (action == MotionEvent.ACTION_DOWN) {
             requestOnDemandConfigReload();
             resetFan();
@@ -144,14 +175,20 @@ final class FanRuntime {
             float hotHeight = height * config.hotHeightPercent / 100f;
             GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(
                     x, y, width, height, hotWidth, hotHeight);
+            if (downCorner != null && !triggerCapture.isCapturing() && canStart()) {
+                triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent);
+            }
             Rect tracked = freeform.trackedBounds();
             if (tracked != null) {
                 if (tracked.contains((int) x, (int) y)) return;
                 if (downCorner != null && canStart()) {
                     outsideGestures.onCancel();
-                    pilfer(inputMonitor);
-                    arm(downCorner, x, y);
-                    Log.i("Fan hot zone claimed on down corner=" + downCorner);
+                    if (triggerCapture.isCapturing()) {
+                        pilfer(inputMonitor);
+                        Log.i("Fan input claimed on down through corner capture window");
+                    }
+                    arm(downCorner, x, y, event.getDownTime(), event.getEventTime());
+                    Log.i("Fan hot zone armed on down corner=" + downCorner);
                     return;
                 }
                 Insets reserves = sideGestureReserves();
@@ -162,9 +199,12 @@ final class FanRuntime {
                 return;
             }
             if (downCorner != null && canStart()) {
-                pilfer(inputMonitor);
-                arm(downCorner, x, y);
-                Log.i("Fan hot zone claimed on down corner=" + downCorner);
+                if (triggerCapture.isCapturing()) {
+                    pilfer(inputMonitor);
+                    Log.i("Fan input claimed on down through corner capture window");
+                }
+                arm(downCorner, x, y, event.getDownTime(), event.getEventTime());
+                Log.i("Fan hot zone armed on down corner=" + downCorner);
             }
             return;
         }
@@ -185,9 +225,11 @@ final class FanRuntime {
                 Log.i("Fan input cancelled outside inward-upward fan direction");
                 return;
             }
+            if (!triggerCapture.isCapturing()) pilfer(inputMonitor);
             state = State.CLAIMED;
-            Log.i("Fan inward-upward direction accepted distance="
-                    + Math.round(distance));
+            Log.i("Fan input claimed after inward-upward direction distance="
+                    + Math.round(distance) + " capture="
+                    + (triggerCapture.isCapturing() ? "window" : "pilfer"));
             activateFanIfReady(distance, x, y, width, height);
             return;
         }
@@ -244,8 +286,10 @@ final class FanRuntime {
         }
     }
 
-    private void arm(GestureGeometry.Corner corner, float x, float y) {
+    private void arm(GestureGeometry.Corner corner, float x, float y,
+                     long downTime, long eventTime) {
         gestureArbitrator.reset();
+        gestureReplayGuard.begin(downTime, eventTime);
         state = State.ARMED;
         this.corner = corner;
         downX = x;
@@ -273,6 +317,7 @@ final class FanRuntime {
     private void resetFan() {
         if (state == State.ACTIVE) overlay.hide();
         gestureArbitrator.reset();
+        gestureReplayGuard.reset();
         state = State.IDLE;
         corner = null;
         selected = -1;
@@ -284,6 +329,10 @@ final class FanRuntime {
         PowerManager power = context.getSystemService(PowerManager.class);
         KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
         return (power == null || power.isInteractive()) && (keyguard == null || !keyguard.isKeyguardLocked());
+    }
+
+    private void refreshTriggerCapture() {
+        triggerCapture.update(canStart(), config.hotWidthPercent, config.hotHeightPercent);
     }
 
     private Rect displayBounds() {
@@ -374,6 +423,7 @@ final class FanRuntime {
                 config = next;
                 targets = nextTargets;
                 if (!next.enabled || nextTargets.size() < 3) resetFan();
+                refreshTriggerCapture();
                 Log.i("Configuration loaded apps=" + nextTargets.size() + " trigger="
                         + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
                         + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
