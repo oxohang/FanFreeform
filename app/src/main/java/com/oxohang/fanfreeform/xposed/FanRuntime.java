@@ -149,7 +149,9 @@ final class FanRuntime {
                 if (tracked.contains((int) x, (int) y)) return;
                 if (downCorner != null && canStart()) {
                     outsideGestures.onCancel();
+                    pilfer(inputMonitor);
                     arm(downCorner, x, y);
+                    Log.i("Fan hot zone claimed on down corner=" + downCorner);
                     return;
                 }
                 Insets reserves = sideGestureReserves();
@@ -159,7 +161,11 @@ final class FanRuntime {
                 }
                 return;
             }
-            if (downCorner != null && canStart()) arm(downCorner, x, y);
+            if (downCorner != null && canStart()) {
+                pilfer(inputMonitor);
+                arm(downCorner, x, y);
+                Log.i("Fan hot zone claimed on down corner=" + downCorner);
+            }
             return;
         }
 
@@ -176,12 +182,11 @@ final class FanRuntime {
             if (decision == GestureArbitrator.Decision.PENDING) return;
             if (decision == GestureArbitrator.Decision.SYSTEM) {
                 state = State.YIELDED;
-                Log.i("Fan candidate yielded to system gesture");
+                Log.i("Fan input cancelled by direction gate after hot-zone claim");
                 return;
             }
-            pilfer(inputMonitor);
             state = State.CLAIMED;
-            Log.i("Fan candidate claimed after upward arbitration distance="
+            Log.i("Fan direction accepted after upward arbitration distance="
                     + Math.round(distance));
             activateFanIfReady(distance, x, y, width, height);
             return;

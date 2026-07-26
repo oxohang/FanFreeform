@@ -16,7 +16,6 @@ import java.util.List;
 
 final class FanOverlayView extends View {
     private final Paint backdrop = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint innerArcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint selectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -34,9 +33,6 @@ final class FanOverlayView extends View {
     FanOverlayView(Context context) {
         super(context);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        innerArcPaint.setColor(0x55ffffff);
-        innerArcPaint.setStyle(Paint.Style.STROKE);
-        innerArcPaint.setStrokeWidth(dp(1.25f));
         iconShadowPaint.setColor(0x01000000);
         iconShadowPaint.setShadowLayer(dp(9), 0, dp(3), 0x5c000000);
         iconStrokePaint.setStyle(Paint.Style.STROKE);
@@ -79,8 +75,6 @@ final class FanOverlayView extends View {
         float originY = getHeight();
         float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
         canvas.drawCircle(originX, originY, radius + dp(100), backdrop);
-
-        canvas.drawCircle(originX, originY, Math.max(0, radius - dp(64)), innerArcPaint);
 
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),

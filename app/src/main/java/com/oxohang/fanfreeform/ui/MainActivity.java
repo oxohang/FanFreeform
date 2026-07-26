@@ -169,7 +169,7 @@ public final class MainActivity extends Activity {
                 prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
         gestureCard.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP, 34, 64,
                 prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
-        TextView gestureNote = text("横向滑动优先交给底部小横条；只有明显向上内滑才呼出。图标过多时会自动缩小防止重叠。", 13, Ui.MUTED, Typeface.NORMAL);
+        TextView gestureNote = text("底角触发区优先接管触摸，不会同时触发系统导航；只有明显向上内滑才呼出。图标过多时会自动缩小防止重叠。", 13, Ui.MUTED, Typeface.NORMAL);
         gestureNote.setPadding(0, Ui.dp(this, 2), 0, 0);
         gestureCard.addView(gestureNote);
         root.addView(gestureCard, cardParams(14));
