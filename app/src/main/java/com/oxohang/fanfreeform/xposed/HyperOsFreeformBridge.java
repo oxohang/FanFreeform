@@ -14,6 +14,7 @@ import android.view.WindowManager;
 import android.view.WindowMetrics;
 
 import java.util.List;
+import java.util.concurrent.Executor;
 
 import de.robv.android.xposed.XposedHelpers;
 
@@ -46,8 +47,6 @@ final class HyperOsFreeformBridge {
 
     boolean launch(RuntimeTarget target, GestureConfig config) {
         String packageName = target.component.getPackageName();
-        if (reuseFullscreenTask(packageName)) return true;
-
         try {
             Class<?> manager = XposedHelpers.findClass("miui.app.MiuiFreeFormManager", classLoader);
             Object result = XposedHelpers.callStaticMethod(manager, "getActivityOptions",
@@ -67,10 +66,12 @@ final class HyperOsFreeformBridge {
             Intent intent = new Intent(Intent.ACTION_MAIN)
                     .addCategory(Intent.CATEGORY_LAUNCHER)
                     .setComponent(target.component)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             beginPendingMatch(packageName);
             context.startActivity(intent, options.toBundle());
-            Log.i("Launching " + target.component.flattenToShortString() + " bounds=" + launchBounds + " scale=" + scale);
+            Log.i("Launching or reusing " + target.component.flattenToShortString()
+                    + " in freeform without home reorder bounds=" + launchBounds
+                    + " scale=" + scale);
             scheduleScans();
             return true;
         } catch (Throwable error) {
@@ -140,21 +141,43 @@ final class HyperOsFreeformBridge {
     boolean dismissTracked() {
         int taskId = trackedTaskId;
         if (taskId < 0 || controller == null) return false;
+        try {
+            Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
+            if (!(executor instanceof Executor)) {
+                throw new IllegalStateException("HyperOS Shell main executor is unavailable");
+            }
+            trackedTaskId = -1;
+            ((Executor) executor).execute(() -> dismissOnShellThread(taskId));
+            Log.i("Native caption-close scheduled on Shell thread task=" + taskId);
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot schedule native caption-close task=" + taskId, error);
+            return dismissImmediately(taskId);
+        }
+    }
+
+    private void dismissOnShellThread(int taskId) {
         Object info = taskInfo(taskId);
         if (info != null) {
             try {
-                Object animation = XposedHelpers.getObjectField(controller,
-                        "mMiuiFreeformModeAnimation");
-                XposedHelpers.callMethod(animation, "startExitFreeformShellTransition",
-                        info, false);
-                trackedTaskId = -1;
-                Log.i("Animated dismiss started task=" + taskId);
-                return true;
+                Object running = XposedHelpers.callMethod(info, "getTaskInfo");
+                if (!(running instanceof ActivityManager.RunningTaskInfo)) {
+                    throw new IllegalStateException("Tracked RunningTaskInfo is unavailable");
+                }
+                Object starter = XposedHelpers.getObjectField(controller,
+                        "mMulWinSwitchAnimStarter");
+                XposedHelpers.callMethod(starter, "closeFullOrFreeform", running);
+                Log.i("Native caption-close transition started on Shell thread task=" + taskId);
+                return;
             } catch (Throwable error) {
-                Log.e("Animated dismiss unavailable; falling back to immediate exit task="
+                Log.e("Native caption-close unavailable; falling back to immediate exit task="
                         + taskId, error);
             }
         }
+        dismissImmediately(taskId);
+    }
+
+    private boolean dismissImmediately(int taskId) {
         try {
             XposedHelpers.callMethod(controller, "exitFreeformTask", taskId, true);
             trackedTaskId = -1;
@@ -180,83 +203,50 @@ final class HyperOsFreeformBridge {
         }
     }
 
-    boolean pinTracked() {
+    boolean miniTracked() {
         int taskId = trackedTaskId;
         Object info = taskInfo(taskId);
         if (taskId < 0 || controller == null || info == null) return false;
         try {
-            Rect bounds = trackedBounds();
-            if (bounds == null) return false;
-            int displayWidth = context.getSystemService(WindowManager.class)
-                    .getCurrentWindowMetrics().getBounds().width();
-            boolean pinLeft = bounds.centerX() < displayWidth / 2;
-            float x = pinLeft ? 1f : displayWidth - 1f;
-            float velocityX = pinLeft ? -6000f : 6000f;
-            XposedHelpers.callMethod(controller, "startPinAnimation", info,
-                    x, (float) bounds.centerY(), velocityX, 0f);
+            Object running = XposedHelpers.callMethod(info, "getTaskInfo");
+            if (!(running instanceof ActivityManager.RunningTaskInfo)) {
+                throw new IllegalStateException("Tracked RunningTaskInfo is unavailable");
+            }
+            Object result = XposedHelpers.callMethod(controller,
+                    "lunchSmallFreeformFromRecent", running, 2);
+            if (result == null) {
+                throw new IllegalStateException("Right-top mini-freeform request was rejected");
+            }
             trackedTaskId = -1;
-            Log.i("Pinned fan-launched task=" + taskId + " side=" + (pinLeft ? "left" : "right"));
+            Log.i("Mini-freeform requested at right-top task=" + taskId);
             return true;
         } catch (Throwable error) {
-            Log.e("Cannot pin tracked task=" + taskId, error);
-            return false;
+            Log.e("Right-top mini-freeform unavailable; trying native mini fallback task="
+                    + taskId, error);
+            try {
+                Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
+                if (!(executor instanceof Executor)) {
+                    throw new IllegalStateException("HyperOS Shell main executor is unavailable");
+                }
+                trackedTaskId = -1;
+                ((Executor) executor).execute(() -> {
+                    try {
+                        XposedHelpers.callMethod(controller, "fromFreeformToMini", taskId);
+                        Log.i("Native mini-freeform fallback started task=" + taskId);
+                    } catch (Throwable fallbackError) {
+                        Log.e("Cannot minimize tracked task=" + taskId, fallbackError);
+                    }
+                });
+                return true;
+            } catch (Throwable fallbackError) {
+                Log.e("Cannot schedule mini-freeform fallback task=" + taskId, fallbackError);
+                return false;
+            }
         }
     }
 
     int trackedTaskId() {
         return trackedTaskId;
-    }
-
-    @SuppressWarnings("unchecked")
-    private boolean reuseFullscreenTask(String packageName) {
-        Object owner = controller;
-        if (owner == null) return false;
-        try {
-            Object organizer = XposedHelpers.getObjectField(owner, "mShellTaskOrganizer");
-            Object value = XposedHelpers.callMethod(organizer, "getRunningTasks",
-                    context.getDisplay() == null ? 0 : context.getDisplay().getDisplayId());
-            if (!(value instanceof List)) return false;
-
-            ActivityManager.RunningTaskInfo candidate = null;
-            for (Object item : (List<Object>) value) {
-                if (!(item instanceof ActivityManager.RunningTaskInfo)) continue;
-                ActivityManager.RunningTaskInfo running = (ActivityManager.RunningTaskInfo) item;
-                if (intCall(running, "getWindowingMode", -1) != 1
-                        || !packageName.equals(packageName(running))) {
-                    continue;
-                }
-                boolean visible = booleanField(running, "isVisible", false);
-                if (candidate == null || visible || running.taskId > candidate.taskId) {
-                    candidate = running;
-                    if (visible) break;
-                }
-            }
-            if (candidate == null) return false;
-
-            Object repository = XposedHelpers.getObjectField(owner,
-                    "mMultiTaskingTaskRepository");
-            Object multiTaskInfo = XposedHelpers.callMethod(repository,
-                    "getMultiTaskingTaskInfo", candidate.taskId);
-            if (multiTaskInfo == null) {
-                Log.i("Fullscreen task=" + candidate.taskId
-                        + " is not ready for native reuse; falling back to new launch");
-                return false;
-            }
-
-            beginPendingMatch(packageName);
-            Object starter = XposedHelpers.getObjectField(owner, "mMulWinSwitchAnimStarter");
-            XposedHelpers.callMethod(starter, "switchFullscreenToFreeform",
-                    organizer, candidate);
-            Log.i("Reusing fullscreen task=" + candidate.taskId
-                    + " package=" + packageName + " as freeform");
-            scheduleScans();
-            return true;
-        } catch (Throwable error) {
-            pendingPackage = null;
-            Log.e("Fullscreen task reuse failed; falling back to new launch for "
-                    + packageName, error);
-            return false;
-        }
     }
 
     private void beginPendingMatch(String packageName) {
@@ -377,14 +367,6 @@ final class HyperOsFreeformBridge {
         try {
             Object value = XposedHelpers.callMethod(target, method);
             return value instanceof Boolean ? (Boolean) value : fallback;
-        } catch (Throwable ignored) {
-            return fallback;
-        }
-    }
-
-    private static boolean booleanField(Object target, String field, boolean fallback) {
-        try {
-            return XposedHelpers.getBooleanField(target, field);
         } catch (Throwable ignored) {
             return fallback;
         }

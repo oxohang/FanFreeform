@@ -11,8 +11,9 @@
 - 独立震动开关，可调触发距离、底角触发区宽高、选择半径和图标大小。
 - 全局小窗宽度、高度、水平位置和垂直位置，含可视化预览。
 - 圆形满铺应用图标，松手必须命中图标才启动，空白处松手直接取消。
-- 窗外单击和双击可分别配置为关闭、挂起、全屏或无操作；左右系统返回手势优先。
-- 关闭使用 HyperOS 原生 Shell Transition，旧全屏任务可直接转换回小窗。
+- 窗外单击和双击可分别配置为关闭、挂起到右上角迷你小窗、全屏或无操作；左右系统返回手势优先。
+- 统一启动并复用已有应用任务，保留触发手势前的应用作为小窗背景，不再先回桌面。
+- 窗外关闭接入 HyperOS 小窗标题栏同款 Shell Transition，并在 Shell 线程按实际位置连续播放，关闭后直接回到原应用。
 - 底部手势采用早期方向仲裁：明确上滑提前接管，横滑永久交还系统。
 - 切换全屏、迷你窗或贴边后自动停止追踪，不影响其他小窗。
 
@@ -28,5 +29,5 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 安装 APK 后，在 LSPosed 中启用模块并勾选“系统界面（com.android.systemui）”，随后重启 SystemUI 或手机。打开“随用随走”配置应用，选择 3–8 个应用并调整参数。
 
-详细行为与验收标准见 [基础设计](docs/specs/2026-07-26-hyperos-fan-freeform-design.md)、[交互优化](docs/specs/2026-07-26-interaction-optimization-design.md)、[扇形与窗外交互](docs/specs/2026-07-26-gesture-area-icon-unified-outside-design.md) 和 [任务复用与手势仲裁](docs/specs/2026-07-26-task-reuse-exit-animation-gesture-arbitration-design.md)。
+详细行为与验收标准见 [基础设计](docs/specs/2026-07-26-hyperos-fan-freeform-design.md)、[交互优化](docs/specs/2026-07-26-interaction-optimization-design.md)、[扇形与窗外交互](docs/specs/2026-07-26-gesture-area-icon-unified-outside-design.md)、[任务复用与手势仲裁](docs/specs/2026-07-26-task-reuse-exit-animation-gesture-arbitration-design.md)、[后台保留与原生关闭](docs/specs/2026-07-27-background-preserving-launch-native-close-design.md) 和 [右上角迷你小窗挂起](docs/specs/2026-07-27-right-top-mini-freeform-design.md)。
 已验证的设备、接口和操作链路见 [真机验收记录](docs/device-verification.md)。

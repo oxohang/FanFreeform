@@ -275,7 +275,7 @@ final class FanRuntime {
                 handled = freeform.dismissTracked();
                 break;
             case ConfigContract.ACTION_PIN:
-                handled = freeform.pinTracked();
+                handled = freeform.miniTracked();
                 break;
             case ConfigContract.ACTION_FULLSCREEN:
                 handled = freeform.fullscreenTracked();

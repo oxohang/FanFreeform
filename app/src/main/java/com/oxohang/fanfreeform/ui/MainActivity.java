@@ -38,7 +38,7 @@ import java.util.List;
 @SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_APP = 41;
-    private static final String[] ACTION_LABELS = {"无操作", "关闭", "挂起", "全屏"};
+    private static final String[] ACTION_LABELS = {"无操作", "关闭", "挂起到右上角", "全屏"};
 
     private ConfigStore store;
     private SharedPreferences prefs;
