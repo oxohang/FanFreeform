@@ -17,11 +17,13 @@ import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -36,6 +38,7 @@ import java.util.List;
 @SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_APP = 41;
+    private static final String[] ACTION_LABELS = {"无操作", "关闭", "挂起", "全屏"};
 
     private ConfigStore store;
     private SharedPreferences prefs;
@@ -44,10 +47,13 @@ public final class MainActivity extends Activity {
     private TextView appsHint;
     private TextView statusText;
     private WindowPreviewView preview;
+    private GesturePreviewView gesturePreview;
     private int widthPercent;
     private int heightPercent;
     private int positionX;
     private int positionY;
+    private int hotWidthPercent;
+    private int hotHeightPercent;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -59,6 +65,8 @@ public final class MainActivity extends Activity {
         heightPercent = prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT);
         positionX = prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X);
         positionY = prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y);
+        hotWidthPercent = prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT);
+        hotHeightPercent = prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT);
 
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().setNavigationBarColor(0xfff4f5fa);
@@ -147,9 +155,21 @@ public final class MainActivity extends Activity {
 
         LinearLayout gestureCard = card();
         gestureCard.addView(text("手势手感", 18, Ui.TEXT, Typeface.BOLD));
+        gesturePreview = new GesturePreviewView(this);
+        gesturePreview.update(hotWidthPercent, hotHeightPercent);
+        gestureCard.addView(gesturePreview,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 150)));
+        gestureCard.addView(slider("触发区宽度", ConfigContract.KEY_HOT_WIDTH_PERCENT, 5, 20,
+                hotWidthPercent, value -> value + "%"));
+        gestureCard.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT, 3, 12,
+                hotHeightPercent, value -> value + "%"));
         gestureCard.addView(slider("触发距离", ConfigContract.KEY_TRIGGER_PERCENT, 6, 24,
                 prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));
-        TextView gestureNote = text("从底角向屏幕中心滑动；达到距离后立即接管并显示扇形。", 13, Ui.MUTED, Typeface.NORMAL);
+        gestureCard.addView(slider("选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT, 35, 75,
+                prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
+        gestureCard.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP, 34, 64,
+                prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
+        TextView gestureNote = text("横向滑动优先交给底部小横条；只有明显向上内滑才呼出。图标过多时会自动缩小防止重叠。", 13, Ui.MUTED, Typeface.NORMAL);
         gestureNote.setPadding(0, Ui.dp(this, 2), 0, 0);
         gestureCard.addView(gestureNote);
         root.addView(gestureCard, cardParams(14));
@@ -169,8 +189,13 @@ public final class MainActivity extends Activity {
         root.addView(windowCard, cardParams(14));
 
         LinearLayout behaviorCard = card();
-        behaviorCard.addView(text("随用随走", 18, Ui.TEXT, Typeface.BOLD));
-        TextView behavior = text("仅扇形手势打开的小窗：第一次点击窗外只关闭小窗，不触发底层应用。转为全屏、迷你窗或贴边后自动停止追踪。", 14, Ui.MUTED, Typeface.NORMAL);
+        behaviorCard.addView(text("窗外快捷操作", 18, Ui.TEXT, Typeface.BOLD));
+        behaviorCard.addView(actionRow("窗外·单击", ConfigContract.KEY_OUTSIDE_SINGLE_ACTION,
+                ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
+        behaviorCard.addView(Ui.divider(this));
+        behaviorCard.addView(actionRow("窗外·双击", ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
+                ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
+        TextView behavior = text("小窗实际边界外全部使用同一组动作。左右边缘优先保留给系统侧滑；窗外滑动不执行动作。", 14, Ui.MUTED, Typeface.NORMAL);
         behavior.setLineSpacing(0, 1.18f);
         behavior.setPadding(0, Ui.dp(this, 8), 0, 0);
         behaviorCard.addView(behavior);
@@ -186,6 +211,30 @@ public final class MainActivity extends Activity {
         resetParams.topMargin = Ui.dp(this, 18);
         root.addView(reset, resetParams);
         return scroll;
+    }
+
+    private View actionRow(String title, String key, int defaultAction) {
+        LinearLayout actionRow = row();
+        TextView label = text(title, 15, Ui.TEXT, Typeface.BOLD);
+        actionRow.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, ACTION_LABELS);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(Math.max(0, Math.min(ACTION_LABELS.length - 1,
+                prefs.getInt(key, defaultAction))), false);
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                if (prefs.getInt(key, defaultAction) != position) store.putInt(key, position);
+            }
+
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        actionRow.addView(spinner, new LinearLayout.LayoutParams(Ui.dp(this, 116), Ui.dp(this, 52)));
+        return actionRow;
     }
 
     private void renderApps() {
@@ -313,7 +362,10 @@ public final class MainActivity extends Activity {
                 if (ConfigContract.KEY_HEIGHT_PERCENT.equals(key)) heightPercent = resolved;
                 if (ConfigContract.KEY_POSITION_X.equals(key)) positionX = resolved;
                 if (ConfigContract.KEY_POSITION_Y.equals(key)) positionY = resolved;
+                if (ConfigContract.KEY_HOT_WIDTH_PERCENT.equals(key)) hotWidthPercent = resolved;
+                if (ConfigContract.KEY_HOT_HEIGHT_PERCENT.equals(key)) hotHeightPercent = resolved;
                 if (preview != null) preview.update(widthPercent, heightPercent, positionX, positionY);
+                if (gesturePreview != null) gesturePreview.update(hotWidthPercent, hotHeightPercent);
             }
         });
         group.addView(seek);

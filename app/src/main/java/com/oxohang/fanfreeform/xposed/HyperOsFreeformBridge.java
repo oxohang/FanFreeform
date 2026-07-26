@@ -45,10 +45,13 @@ final class HyperOsFreeformBridge {
     }
 
     boolean launch(RuntimeTarget target, GestureConfig config) {
+        String packageName = target.component.getPackageName();
+        if (reuseFullscreenTask(packageName)) return true;
+
         try {
             Class<?> manager = XposedHelpers.findClass("miui.app.MiuiFreeFormManager", classLoader);
             Object result = XposedHelpers.callStaticMethod(manager, "getActivityOptions",
-                    context, target.component.getPackageName(), true, false);
+                    context, packageName, true, false);
             ActivityOptions options;
             if (result instanceof ActivityOptions) {
                 options = (ActivityOptions) result;
@@ -65,8 +68,7 @@ final class HyperOsFreeformBridge {
                     .addCategory(Intent.CATEGORY_LAUNCHER)
                     .setComponent(target.component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            pendingPackage = target.component.getPackageName();
-            pendingSince = SystemClock.elapsedRealtime();
+            beginPendingMatch(packageName);
             context.startActivity(intent, options.toBundle());
             Log.i("Launching " + target.component.flattenToShortString() + " bounds=" + launchBounds + " scale=" + scale);
             scheduleScans();
@@ -137,11 +139,26 @@ final class HyperOsFreeformBridge {
 
     boolean dismissTracked() {
         int taskId = trackedTaskId;
-        trackedTaskId = -1;
         if (taskId < 0 || controller == null) return false;
+        Object info = taskInfo(taskId);
+        if (info != null) {
+            try {
+                Object animation = XposedHelpers.getObjectField(controller,
+                        "mMiuiFreeformModeAnimation");
+                XposedHelpers.callMethod(animation, "startExitFreeformShellTransition",
+                        info, false);
+                trackedTaskId = -1;
+                Log.i("Animated dismiss started task=" + taskId);
+                return true;
+            } catch (Throwable error) {
+                Log.e("Animated dismiss unavailable; falling back to immediate exit task="
+                        + taskId, error);
+            }
+        }
         try {
             XposedHelpers.callMethod(controller, "exitFreeformTask", taskId, true);
-            Log.i("Dismissed fan-launched task=" + taskId);
+            trackedTaskId = -1;
+            Log.i("Immediately dismissed fan-launched task=" + taskId);
             return true;
         } catch (Throwable error) {
             Log.e("Cannot dismiss tracked task=" + taskId, error);
@@ -149,8 +166,102 @@ final class HyperOsFreeformBridge {
         }
     }
 
+    boolean fullscreenTracked() {
+        int taskId = trackedTaskId;
+        trackedTaskId = -1;
+        if (taskId < 0 || controller == null) return false;
+        try {
+            XposedHelpers.callMethod(controller, "fullscreenFreeformWithoutAnim", taskId, true);
+            Log.i("Fullscreen fan-launched task=" + taskId);
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot fullscreen tracked task=" + taskId, error);
+            return false;
+        }
+    }
+
+    boolean pinTracked() {
+        int taskId = trackedTaskId;
+        Object info = taskInfo(taskId);
+        if (taskId < 0 || controller == null || info == null) return false;
+        try {
+            Rect bounds = trackedBounds();
+            if (bounds == null) return false;
+            int displayWidth = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics().getBounds().width();
+            boolean pinLeft = bounds.centerX() < displayWidth / 2;
+            float x = pinLeft ? 1f : displayWidth - 1f;
+            float velocityX = pinLeft ? -6000f : 6000f;
+            XposedHelpers.callMethod(controller, "startPinAnimation", info,
+                    x, (float) bounds.centerY(), velocityX, 0f);
+            trackedTaskId = -1;
+            Log.i("Pinned fan-launched task=" + taskId + " side=" + (pinLeft ? "left" : "right"));
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot pin tracked task=" + taskId, error);
+            return false;
+        }
+    }
+
     int trackedTaskId() {
         return trackedTaskId;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean reuseFullscreenTask(String packageName) {
+        Object owner = controller;
+        if (owner == null) return false;
+        try {
+            Object organizer = XposedHelpers.getObjectField(owner, "mShellTaskOrganizer");
+            Object value = XposedHelpers.callMethod(organizer, "getRunningTasks",
+                    context.getDisplay() == null ? 0 : context.getDisplay().getDisplayId());
+            if (!(value instanceof List)) return false;
+
+            ActivityManager.RunningTaskInfo candidate = null;
+            for (Object item : (List<Object>) value) {
+                if (!(item instanceof ActivityManager.RunningTaskInfo)) continue;
+                ActivityManager.RunningTaskInfo running = (ActivityManager.RunningTaskInfo) item;
+                if (intCall(running, "getWindowingMode", -1) != 1
+                        || !packageName.equals(packageName(running))) {
+                    continue;
+                }
+                boolean visible = booleanField(running, "isVisible", false);
+                if (candidate == null || visible || running.taskId > candidate.taskId) {
+                    candidate = running;
+                    if (visible) break;
+                }
+            }
+            if (candidate == null) return false;
+
+            Object repository = XposedHelpers.getObjectField(owner,
+                    "mMultiTaskingTaskRepository");
+            Object multiTaskInfo = XposedHelpers.callMethod(repository,
+                    "getMultiTaskingTaskInfo", candidate.taskId);
+            if (multiTaskInfo == null) {
+                Log.i("Fullscreen task=" + candidate.taskId
+                        + " is not ready for native reuse; falling back to new launch");
+                return false;
+            }
+
+            beginPendingMatch(packageName);
+            Object starter = XposedHelpers.getObjectField(owner, "mMulWinSwitchAnimStarter");
+            XposedHelpers.callMethod(starter, "switchFullscreenToFreeform",
+                    organizer, candidate);
+            Log.i("Reusing fullscreen task=" + candidate.taskId
+                    + " package=" + packageName + " as freeform");
+            scheduleScans();
+            return true;
+        } catch (Throwable error) {
+            pendingPackage = null;
+            Log.e("Fullscreen task reuse failed; falling back to new launch for "
+                    + packageName, error);
+            return false;
+        }
+    }
+
+    private void beginPendingMatch(String packageName) {
+        pendingPackage = packageName;
+        pendingSince = SystemClock.elapsedRealtime();
     }
 
     private void scheduleScans() {
@@ -199,9 +310,7 @@ final class HyperOsFreeformBridge {
         try {
             Object task = XposedHelpers.callMethod(info, "getTaskInfo");
             if (task instanceof ActivityManager.RunningTaskInfo) {
-                ActivityManager.RunningTaskInfo running = (ActivityManager.RunningTaskInfo) task;
-                ComponentName component = running.topActivity != null ? running.topActivity : running.baseActivity;
-                return component == null ? "" : component.getPackageName();
+                return packageName((ActivityManager.RunningTaskInfo) task);
             }
             for (String field : new String[]{"topActivity", "realActivity", "baseActivity"}) {
                 try {
@@ -211,6 +320,22 @@ final class HyperOsFreeformBridge {
             }
         } catch (Throwable ignored) {}
         return "";
+    }
+
+    private static String packageName(ActivityManager.RunningTaskInfo running) {
+        ComponentName component = running.topActivity != null ? running.topActivity
+                : componentField(running, "realActivity");
+        if (component == null) component = running.baseActivity;
+        return component == null ? "" : component.getPackageName();
+    }
+
+    private static ComponentName componentField(Object target, String field) {
+        try {
+            Object value = XposedHelpers.getObjectField(target, field);
+            return value instanceof ComponentName ? (ComponentName) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private float readFreeformScale(ActivityOptions options) {
@@ -252,6 +377,14 @@ final class HyperOsFreeformBridge {
         try {
             Object value = XposedHelpers.callMethod(target, method);
             return value instanceof Boolean ? (Boolean) value : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private static boolean booleanField(Object target, String field, boolean fallback) {
+        try {
+            return XposedHelpers.getBooleanField(target, field);
         } catch (Throwable ignored) {
             return fallback;
         }

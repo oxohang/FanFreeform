@@ -22,6 +22,7 @@ public final class ConfigStore {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences(ConfigContract.PREFS, Context.MODE_PRIVATE);
         seedDefaultsIfNeeded(this.context, preferences);
+        migrateUnifiedActionsIfNeeded(preferences);
     }
 
     public SharedPreferences preferences() {
@@ -71,10 +72,20 @@ public final class ConfigStore {
                 .putBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED)
                 .putBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC)
                 .putInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT)
+                .putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT)
+                .putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT)
+                .putInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT)
+                .putInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP)
                 .putInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT)
                 .putInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT)
                 .putInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X)
                 .putInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y)
+                .putInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, ConfigContract.DEFAULT_UPPER_SINGLE_ACTION)
+                .putInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, ConfigContract.DEFAULT_UPPER_DOUBLE_ACTION)
+                .putInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, ConfigContract.DEFAULT_LOWER_SINGLE_ACTION)
+                .putInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, ConfigContract.DEFAULT_LOWER_DOUBLE_ACTION)
+                .putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION)
+                .putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION)
                 .apply();
         notifyChanged();
     }
@@ -113,5 +124,24 @@ public final class ConfigStore {
             }
         }
         preferences.edit().putString(ConfigContract.KEY_COMPONENTS, array.toString()).commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateUnifiedActionsIfNeeded(SharedPreferences preferences) {
+        boolean needsSingle = !preferences.contains(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION);
+        boolean needsDouble = !preferences.contains(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION);
+        if (!needsSingle && !needsDouble) return;
+        SharedPreferences.Editor editor = preferences.edit();
+        if (needsSingle) {
+            editor.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION,
+                    preferences.getInt(ConfigContract.KEY_LOWER_SINGLE_ACTION,
+                            ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
+        }
+        if (needsDouble) {
+            editor.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
+                    preferences.getInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION,
+                            ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
+        }
+        editor.commit();
     }
 }

@@ -23,14 +23,25 @@ public final class ConfigProvider extends ContentProvider {
         SharedPreferences prefs = context.getSharedPreferences(ConfigContract.PREFS, Context.MODE_PRIVATE);
         if ("get".equals(method)) {
             ConfigStore.seedDefaultsIfNeeded(context, prefs);
+            ConfigStore.migrateUnifiedActionsIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
             out.putInt(ConfigContract.KEY_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT));
+            out.putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT));
+            out.putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT));
+            out.putInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT));
+            out.putInt(ConfigContract.KEY_ICON_SIZE_DP, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP));
             out.putInt(ConfigContract.KEY_WIDTH_PERCENT, prefs.getInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT));
             out.putInt(ConfigContract.KEY_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT));
             out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
             out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
+            out.putInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, ConfigContract.DEFAULT_UPPER_SINGLE_ACTION));
+            out.putInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, ConfigContract.DEFAULT_UPPER_DOUBLE_ACTION));
+            out.putInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, ConfigContract.DEFAULT_LOWER_SINGLE_ACTION));
+            out.putInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, ConfigContract.DEFAULT_LOWER_DOUBLE_ACTION));
+            out.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
+            out.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
             out.putString(ConfigContract.KEY_COMPONENTS, prefs.getString(ConfigContract.KEY_COMPONENTS, "[]"));
             return out;
         }

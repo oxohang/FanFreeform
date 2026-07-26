@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
@@ -16,10 +17,14 @@ import java.util.List;
 final class FanOverlayView extends View {
     private final Paint backdrop = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint iconShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint iconStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint selectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path iconClipPath = new Path();
     private float fanRadius;
+    private float iconDiameter;
     private List<RuntimeTarget> targets = Collections.emptyList();
     private GestureGeometry.Corner corner = GestureGeometry.Corner.LEFT;
     private int selected = -1;
@@ -32,7 +37,14 @@ final class FanOverlayView extends View {
         ring.setColor(0x66ffffff);
         ring.setStyle(Paint.Style.STROKE);
         ring.setStrokeWidth(dp(1.5f));
+        iconShadowPaint.setColor(0x01000000);
+        iconShadowPaint.setShadowLayer(dp(9), 0, dp(3), 0x66000000);
+        iconStrokePaint.setStyle(Paint.Style.STROKE);
+        iconStrokePaint.setStrokeWidth(dp(1));
+        iconStrokePaint.setColor(0x99ffffff);
         selectedPaint.setColor(0xff6572f6);
+        selectedPaint.setStyle(Paint.Style.STROKE);
+        selectedPaint.setStrokeWidth(dp(4));
         selectedPaint.setShadowLayer(dp(12), 0, dp(4), 0x66000000);
         textPaint.setColor(Color.WHITE);
         textPaint.setTextSize(dp(14));
@@ -41,9 +53,12 @@ final class FanOverlayView extends View {
         pillPaint.setColor(0xdd20263f);
     }
 
-    void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner) {
+    void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                   float radius, float iconDiameter) {
         this.targets = targets;
         this.corner = corner;
+        this.fanRadius = radius;
+        this.iconDiameter = iconDiameter;
         selected = -1;
         updateBackdropShader();
         invalidate();
@@ -62,32 +77,24 @@ final class FanOverlayView extends View {
         if (targets.isEmpty()) return;
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
         float originY = getHeight();
-        float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth() * 0.72f, dp(292));
+        float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
         canvas.drawCircle(originX, originY, radius + dp(100), backdrop);
 
         canvas.drawCircle(originX, originY, radius, ring);
         canvas.drawCircle(originX, originY, radius - dp(64), ring);
 
         for (int i = 0; i < targets.size(); i++) {
-            double degrees = targets.size() == 1 ? 47 : 12 + (70.0 * i / (targets.size() - 1));
-            double radians = Math.toRadians(degrees);
-            float x = corner == GestureGeometry.Corner.LEFT
-                    ? (float) (radius * Math.cos(radians))
-                    : getWidth() - (float) (radius * Math.cos(radians));
-            float y = getHeight() - (float) (radius * Math.sin(radians));
+            GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
+                    getWidth(), getHeight(), radius);
+            float x = center.x;
+            float y = center.y;
             boolean active = i == selected;
-            float circleRadius = dp(active ? 35 : 29);
-            Paint circle = active ? selectedPaint : ring;
-            if (!active) {
-                ring.setStyle(Paint.Style.FILL);
-                ring.setColor(0xddffffff);
-            }
-            canvas.drawCircle(x, y, circleRadius, circle);
-            if (!active) {
-                ring.setStyle(Paint.Style.STROKE);
-                ring.setColor(0x66ffffff);
-            }
-            drawIcon(canvas, targets.get(i).icon, x, y, dp(active ? 52 : 44));
+            float diameter = iconDiameter * (active ? 1.08f : 1f);
+            float iconRadius = diameter / 2f;
+            canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
+            drawCircularIcon(canvas, targets.get(i).icon, x, y, diameter);
+            canvas.drawCircle(x, y, iconRadius - dp(0.5f), iconStrokePaint);
+            if (active) canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
         }
 
         if (selected >= 0 && selected < targets.size()) {
@@ -102,13 +109,25 @@ final class FanOverlayView extends View {
         }
     }
 
-    private void drawIcon(Canvas canvas, Drawable drawable, float centerX, float centerY, float size) {
+    private void drawCircularIcon(Canvas canvas, Drawable drawable, float centerX, float centerY,
+                                  float diameter) {
         if (drawable == null) return;
-        int half = Math.round(size / 2);
+        float radius = diameter / 2f;
+        int intrinsicWidth = Math.max(1, drawable.getIntrinsicWidth());
+        int intrinsicHeight = Math.max(1, drawable.getIntrinsicHeight());
+        float target = diameter * 1.16f;
+        float scale = Math.max(target / intrinsicWidth, target / intrinsicHeight);
+        int drawWidth = Math.round(intrinsicWidth * scale);
+        int drawHeight = Math.round(intrinsicHeight * scale);
         Rect old = drawable.copyBounds();
-        drawable.setBounds(Math.round(centerX) - half, Math.round(centerY) - half,
-                Math.round(centerX) + half, Math.round(centerY) + half);
+        int save = canvas.save();
+        iconClipPath.reset();
+        iconClipPath.addCircle(centerX, centerY, radius, Path.Direction.CW);
+        canvas.clipPath(iconClipPath);
+        drawable.setBounds(Math.round(centerX - drawWidth / 2f), Math.round(centerY - drawHeight / 2f),
+                Math.round(centerX + drawWidth / 2f), Math.round(centerY + drawHeight / 2f));
         drawable.draw(canvas);
+        canvas.restoreToCount(save);
         drawable.setBounds(old);
     }
 
@@ -124,7 +143,7 @@ final class FanOverlayView extends View {
 
     private void updateBackdropShader() {
         if (getWidth() <= 0 || getHeight() <= 0) return;
-        fanRadius = Math.min(getWidth() * 0.72f, dp(292));
+        if (fanRadius <= 0) fanRadius = Math.min(getWidth(), getHeight()) * 0.58f;
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
         backdrop.setShader(new RadialGradient(originX, getHeight(), fanRadius + dp(100),
                 new int[]{0x99202742, 0x77202742, 0x00202742},

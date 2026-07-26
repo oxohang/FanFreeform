@@ -23,11 +23,12 @@ final class FanOverlayController {
         this.windowManager = context.getSystemService(WindowManager.class);
     }
 
-    void show(List<RuntimeTarget> targets, GestureGeometry.Corner corner) {
+    void show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+              float radius, float iconDiameter) {
         runOnMain(() -> {
             removeNow();
             view = new FanOverlayView(context);
-            view.configure(targets, corner);
+            view.configure(targets, corner, radius, iconDiameter);
             view.setAlpha(0f);
             WindowManager.LayoutParams params = params(TYPE_NAVIGATION_BAR_PANEL);
             try {

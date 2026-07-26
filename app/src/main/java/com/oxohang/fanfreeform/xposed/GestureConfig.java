@@ -15,29 +15,47 @@ final class GestureConfig {
     final boolean enabled;
     final boolean haptic;
     final int triggerPercent;
+    final int selectionRadiusPercent;
+    final int hotWidthPercent;
+    final int hotHeightPercent;
+    final int iconSizeDp;
     final int widthPercent;
     final int heightPercent;
     final int positionX;
     final int positionY;
+    final int outsideSingleAction;
+    final int outsideDoubleAction;
     final List<ComponentName> components;
 
-    private GestureConfig(boolean enabled, boolean haptic, int triggerPercent,
+    private GestureConfig(boolean enabled, boolean haptic, int triggerPercent, int selectionRadiusPercent,
+                          int hotWidthPercent, int hotHeightPercent, int iconSizeDp,
                           int widthPercent, int heightPercent, int positionX,
-                          int positionY, List<ComponentName> components) {
+                          int positionY, int outsideSingleAction, int outsideDoubleAction,
+                          List<ComponentName> components) {
         this.enabled = enabled;
         this.haptic = haptic;
         this.triggerPercent = clamp(triggerPercent, 6, 24);
+        this.selectionRadiusPercent = clamp(selectionRadiusPercent, 35, 75);
+        this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
+        this.hotHeightPercent = clamp(hotHeightPercent, 3, 12);
+        this.iconSizeDp = clamp(iconSizeDp, 34, 64);
         this.widthPercent = clamp(widthPercent, 40, 90);
         this.heightPercent = clamp(heightPercent, 35, 85);
         this.positionX = clamp(positionX, 0, 100);
         this.positionY = clamp(positionY, 0, 100);
+        this.outsideSingleAction = clamp(outsideSingleAction, 0, 3);
+        this.outsideDoubleAction = clamp(outsideDoubleAction, 0, 3);
         this.components = Collections.unmodifiableList(components);
     }
 
     static GestureConfig defaults() {
         return new GestureConfig(true, true, ConfigContract.DEFAULT_TRIGGER_PERCENT,
+                ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT,
+                ConfigContract.DEFAULT_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT,
+                ConfigContract.DEFAULT_ICON_SIZE_DP,
                 ConfigContract.DEFAULT_WIDTH_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT,
                 ConfigContract.DEFAULT_POSITION_X, ConfigContract.DEFAULT_POSITION_Y,
+                ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION,
                 new ArrayList<>());
     }
 
@@ -55,10 +73,16 @@ final class GestureConfig {
                 bundle.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED),
                 bundle.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC),
                 bundle.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT),
+                bundle.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT),
+                bundle.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT),
+                bundle.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT),
+                bundle.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP),
                 bundle.getInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT),
                 bundle.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT),
                 bundle.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X),
                 bundle.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y),
+                bundle.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION),
+                bundle.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION),
                 components);
     }
 
@@ -70,4 +94,3 @@ final class GestureConfig {
         return Math.max(min, Math.min(max, value));
     }
 }
-

@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
+import android.graphics.Insets;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
@@ -15,7 +16,10 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
+import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.WindowMetrics;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 
@@ -26,13 +30,16 @@ import java.util.List;
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanRuntime {
-    private enum State { IDLE, ARMED, ACTIVE }
+    private enum State { IDLE, ARMED, CLAIMED, ACTIVE, YIELDED }
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final FanOverlayController overlay;
     private final HyperOsFreeformBridge freeform;
+    private final OutsideGestureRecognizer outsideGestures;
+    private final GestureArbitrator gestureArbitrator = new GestureArbitrator();
     private final float density;
+    private final float directionDecisionDistance;
     private volatile GestureConfig config = GestureConfig.defaults();
     private volatile List<RuntimeTarget> targets = Collections.emptyList();
     private State state = State.IDLE;
@@ -40,13 +47,16 @@ final class FanRuntime {
     private float downX;
     private float downY;
     private int selected = -1;
-    private boolean alreadyPilfered;
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
         density = context.getResources().getDisplayMetrics().density;
+        ViewConfiguration viewConfiguration = ViewConfiguration.get(context);
+        directionDecisionDistance = Math.max(viewConfiguration.getScaledTouchSlop(), 10 * density);
         overlay = new FanOverlayController(context, mainHandler);
         freeform = new HyperOsFreeformBridge(context, classLoader, mainHandler);
+        outsideGestures = new OutsideGestureRecognizer(mainHandler,
+                viewConfiguration, this::performOutsideAction);
         reloadConfig();
         context.getContentResolver().registerContentObserver(ConfigContract.URI, false,
                 new ContentObserver(mainHandler) {
@@ -69,17 +79,20 @@ final class FanRuntime {
 
     void onTaskInfo(Object info) {
         freeform.onTaskInfo(info);
+        if (freeform.trackedTaskId() < 0) outsideGestures.clearAll();
     }
 
     void onTaskVanished(int taskId) {
         freeform.onTaskVanished(taskId);
+        if (freeform.trackedTaskId() < 0) outsideGestures.clearAll();
     }
 
     void onMotion(MotionEvent event, Object inputMonitor) {
         try {
             handleMotion(event, inputMonitor);
         } catch (Throwable error) {
-            reset();
+            resetFan();
+            outsideGestures.onCancel();
             Log.e("Gesture event failed safely", error);
         }
     }
@@ -92,80 +105,138 @@ final class FanRuntime {
         float y = event.getY();
 
         if (action == MotionEvent.ACTION_DOWN) {
-            reset();
-            GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(x, y, width, height, 58 * density);
+            resetFan();
+            float hotWidth = width * config.hotWidthPercent / 100f;
+            float hotHeight = height * config.hotHeightPercent / 100f;
+            GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(
+                    x, y, width, height, hotWidth, hotHeight);
             Rect tracked = freeform.trackedBounds();
             if (tracked != null) {
                 if (tracked.contains((int) x, (int) y)) return;
-                pilfer(inputMonitor);
-                freeform.dismissTracked();
                 if (downCorner != null && canStart()) {
-                    arm(downCorner, x, y, true);
+                    outsideGestures.onCancel();
+                    arm(downCorner, x, y);
+                    return;
+                }
+                Insets reserves = sideGestureReserves();
+                if (outsideGestures.onDown(x, y, tracked, width,
+                        reserves.left, reserves.right, event.getEventTime())) {
+                    pilfer(inputMonitor);
                 }
                 return;
             }
-            if (downCorner != null && canStart()) arm(downCorner, x, y, false);
+            if (downCorner != null && canStart()) arm(downCorner, x, y);
             return;
         }
 
         if (action == MotionEvent.ACTION_POINTER_DOWN || event.getPointerCount() > 1) {
-            reset();
+            resetFan();
+            outsideGestures.onCancel();
             return;
         }
 
         if (state == State.ARMED && action == MotionEvent.ACTION_MOVE) {
             float distance = GestureGeometry.distance(downX, downY, x, y);
-            float threshold = Math.min(width, height) * config.triggerPercent / 100f;
-            if (!GestureGeometry.movesInward(corner, downX, downY, x, y)) {
-                if (distance > 32 * density) reset();
+            GestureArbitrator.Decision decision = gestureArbitrator.update(
+                    downX, downY, x, y, directionDecisionDistance);
+            if (decision == GestureArbitrator.Decision.PENDING) return;
+            if (decision == GestureArbitrator.Decision.SYSTEM) {
+                state = State.YIELDED;
+                Log.i("Fan candidate yielded to system gesture");
                 return;
             }
-            if (distance >= threshold) {
-                if (!alreadyPilfered) pilfer(inputMonitor);
-                state = State.ACTIVE;
-                overlay.show(targets, corner);
-                if (config.haptic) vibrateTick();
-                updateSelection(x, y, width, height, threshold * 0.8f);
-            }
+            pilfer(inputMonitor);
+            state = State.CLAIMED;
+            Log.i("Fan candidate claimed after upward arbitration distance="
+                    + Math.round(distance));
+            activateFanIfReady(distance, x, y, width, height);
             return;
         }
 
+        if (state == State.CLAIMED && action == MotionEvent.ACTION_MOVE) {
+            float distance = GestureGeometry.distance(downX, downY, x, y);
+            activateFanIfReady(distance, x, y, width, height);
+            return;
+        }
+
+        if (state == State.YIELDED && action == MotionEvent.ACTION_MOVE) return;
+
         if (state == State.ACTIVE && action == MotionEvent.ACTION_MOVE) {
-            float threshold = Math.min(width, height) * config.triggerPercent / 100f;
-            updateSelection(x, y, width, height, threshold * 0.8f);
+            float selectionRadius = selectionRadius(width, height);
+            updateSelection(x, y, width, height, selectionRadius, iconDiameter(selectionRadius));
+            return;
+        }
+
+        if (state == State.IDLE && action == MotionEvent.ACTION_MOVE) {
+            outsideGestures.onMove(x, y);
             return;
         }
 
         if (action == MotionEvent.ACTION_UP) {
-            if (state == State.ACTIVE && selected >= 0 && selected < targets.size()) {
-                RuntimeTarget target = targets.get(selected);
-                freeform.launch(target, config);
+            if (state == State.ACTIVE) {
+                float selectionRadius = selectionRadius(width, height);
+                updateSelection(x, y, width, height, selectionRadius, iconDiameter(selectionRadius));
+                if (selected >= 0 && selected < targets.size()) {
+                    RuntimeTarget target = targets.get(selected);
+                    freeform.launch(target, config);
+                    outsideGestures.clearAll();
+                } else {
+                    Log.i("Fan released without icon hit; launch cancelled");
+                }
+            } else if (state == State.IDLE) {
+                outsideGestures.onUp(x, y, event.getEventTime());
             }
-            reset();
+            resetFan();
         } else if (action == MotionEvent.ACTION_CANCEL) {
-            reset();
+            resetFan();
+            outsideGestures.onCancel();
         }
     }
 
-    private void arm(GestureGeometry.Corner corner, float x, float y, boolean alreadyPilfered) {
+    private void activateFanIfReady(float distance, float x, float y, int width, int height) {
+        float threshold = Math.min(width, height) * config.triggerPercent / 100f;
+        if (distance >= threshold) {
+            state = State.ACTIVE;
+            float selectionRadius = selectionRadius(width, height);
+            float iconDiameter = iconDiameter(selectionRadius);
+            overlay.show(targets, corner, selectionRadius, iconDiameter);
+            if (config.haptic) vibrateTick();
+            updateSelection(x, y, width, height, selectionRadius, iconDiameter);
+        }
+    }
+
+    private void arm(GestureGeometry.Corner corner, float x, float y) {
+        gestureArbitrator.reset();
         state = State.ARMED;
         this.corner = corner;
         downX = x;
         downY = y;
-        this.alreadyPilfered = alreadyPilfered;
     }
 
-    private void updateSelection(float x, float y, int width, int height, float minimumRadius) {
-        selected = GestureGeometry.selection(corner, x, y, width, height, targets.size(), minimumRadius);
+    private void updateSelection(float x, float y, int width, int height,
+                                 float radius, float iconDiameter) {
+        selected = GestureGeometry.selection(corner, x, y, width, height, targets.size(),
+                radius, iconDiameter, 6 * density);
         overlay.update(selected, x, y);
     }
 
-    private void reset() {
+    private float selectionRadius(int width, int height) {
+        float configured = Math.min(width, height) * config.selectionRadiusPercent / 100f;
+        return GestureGeometry.effectiveRadius(targets.size(), configured,
+                28 * density, 6 * density);
+    }
+
+    private float iconDiameter(float radius) {
+        return GestureGeometry.effectiveIconDiameter(targets.size(), radius,
+                config.iconSizeDp * density, 28 * density, 6 * density);
+    }
+
+    private void resetFan() {
         if (state == State.ACTIVE) overlay.hide();
+        gestureArbitrator.reset();
         state = State.IDLE;
         corner = null;
         selected = -1;
-        alreadyPilfered = false;
     }
 
     private boolean canStart() {
@@ -179,6 +250,41 @@ final class FanRuntime {
     private Rect displayBounds() {
         WindowManager windowManager = context.getSystemService(WindowManager.class);
         return new Rect(windowManager.getCurrentWindowMetrics().getBounds());
+    }
+
+    private Insets sideGestureReserves() {
+        int fallback = Math.round(32 * density);
+        int extra = Math.round(8 * density);
+        try {
+            WindowMetrics metrics = context.getSystemService(WindowManager.class).getCurrentWindowMetrics();
+            Insets gestures = metrics.getWindowInsets().getInsets(WindowInsets.Type.systemGestures());
+            int left = gestures.left > 0 ? gestures.left + extra : fallback;
+            int right = gestures.right > 0 ? gestures.right + extra : fallback;
+            return Insets.of(left, 0, right, 0);
+        } catch (Throwable error) {
+            return Insets.of(fallback, 0, fallback, 0);
+        }
+    }
+
+    private void performOutsideAction(boolean doubleTap) {
+        int action = doubleTap ? config.outsideDoubleAction : config.outsideSingleAction;
+        boolean handled;
+        Log.i("Outside tap=" + (doubleTap ? "double" : "single") + " action=" + action);
+        switch (action) {
+            case ConfigContract.ACTION_CLOSE:
+                handled = freeform.dismissTracked();
+                break;
+            case ConfigContract.ACTION_PIN:
+                handled = freeform.pinTracked();
+                break;
+            case ConfigContract.ACTION_FULLSCREEN:
+                handled = freeform.fullscreenTracked();
+                break;
+            default:
+                Log.i("Outside " + (doubleTap ? "double" : "single") + " tap: no action");
+                return;
+        }
+        if (handled) outsideGestures.clearAll();
     }
 
     private void pilfer(Object inputMonitor) {
@@ -224,12 +330,15 @@ final class FanRuntime {
             }
             config = next;
             targets = Collections.unmodifiableList(resolved);
-            if (!next.enabled || resolved.size() < 3) reset();
-            Log.i("Configuration loaded apps=" + resolved.size() + " trigger=" + next.triggerPercent + "%");
+            if (!next.enabled || resolved.size() < 3) resetFan();
+            Log.i("Configuration loaded apps=" + resolved.size() + " trigger="
+                    + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
+                    + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
+                    + "% icon=" + next.iconSizeDp + "dp");
         } catch (Throwable error) {
             config = GestureConfig.defaults();
             targets = Collections.emptyList();
-            reset();
+            resetFan();
             Log.e("Cannot read module configuration", error);
         }
     }
