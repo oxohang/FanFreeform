@@ -34,7 +34,7 @@ import java.util.List;
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanRuntime {
-    private enum State { IDLE, ARMED, CLAIMED, ACTIVE, YIELDED }
+    private enum State { IDLE, ARMED, CLAIMED, ACTIVE, CANCELLED }
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -178,15 +178,15 @@ final class FanRuntime {
         if (state == State.ARMED && action == MotionEvent.ACTION_MOVE) {
             float distance = GestureGeometry.distance(downX, downY, x, y);
             GestureArbitrator.Decision decision = gestureArbitrator.update(
-                    downX, downY, x, y, directionDecisionDistance);
+                    corner, downX, downY, x, y, directionDecisionDistance);
             if (decision == GestureArbitrator.Decision.PENDING) return;
-            if (decision == GestureArbitrator.Decision.SYSTEM) {
-                state = State.YIELDED;
-                Log.i("Fan input cancelled by direction gate after hot-zone claim");
+            if (decision == GestureArbitrator.Decision.CANCELLED) {
+                state = State.CANCELLED;
+                Log.i("Fan input cancelled outside inward-upward fan direction");
                 return;
             }
             state = State.CLAIMED;
-            Log.i("Fan direction accepted after upward arbitration distance="
+            Log.i("Fan inward-upward direction accepted distance="
                     + Math.round(distance));
             activateFanIfReady(distance, x, y, width, height);
             return;
@@ -198,7 +198,7 @@ final class FanRuntime {
             return;
         }
 
-        if (state == State.YIELDED && action == MotionEvent.ACTION_MOVE) return;
+        if (state == State.CANCELLED && action == MotionEvent.ACTION_MOVE) return;
 
         if (state == State.ACTIVE && action == MotionEvent.ACTION_MOVE) {
             float selectionRadius = selectionRadius(width, height);

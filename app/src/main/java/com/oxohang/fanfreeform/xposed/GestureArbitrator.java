@@ -1,18 +1,20 @@
 package com.oxohang.fanfreeform.xposed;
 
 final class GestureArbitrator {
-    enum Decision { PENDING, FAN, SYSTEM }
+    enum Decision { PENDING, FAN, CANCELLED }
 
-    private static final float UPWARD_DOMINANCE = 1.15f;
+    private static final float MIN_UPWARD_TO_INWARD = 0.08f;
     private Decision decision = Decision.PENDING;
 
-    Decision update(float downX, float downY, float x, float y, float decisionDistance) {
+    Decision update(GestureGeometry.Corner corner, float downX, float downY,
+                    float x, float y, float decisionDistance) {
         if (decision != Decision.PENDING) return decision;
-        float horizontal = Math.abs(x - downX);
+        float inward = corner == GestureGeometry.Corner.LEFT ? x - downX : downX - x;
         float upward = downY - y;
-        if (Math.hypot(horizontal, upward) < decisionDistance) return Decision.PENDING;
-        decision = upward > 0f && upward >= horizontal * UPWARD_DOMINANCE
-                ? Decision.FAN : Decision.SYSTEM;
+        if (Math.hypot(inward, upward) < decisionDistance) return Decision.PENDING;
+        decision = corner != null && upward > 0f && inward >= 0f
+                && upward >= inward * MIN_UPWARD_TO_INWARD
+                ? Decision.FAN : Decision.CANCELLED;
         return decision;
     }
 

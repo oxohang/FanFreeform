@@ -9,44 +9,63 @@ public class GestureArbitratorTest {
     public void waitsUntilDecisionDistance() {
         GestureArbitrator arbitrator = new GestureArbitrator();
         assertEquals(GestureArbitrator.Decision.PENDING,
-                arbitrator.update(0, 100, 2, 94, 10));
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 2, 94, 10));
     }
 
     @Test
-    public void claimsOnlyClearlyUpwardMotion() {
+    public void acceptsInwardDiagonalAcrossTheFanSweep() {
         GestureArbitrator arbitrator = new GestureArbitrator();
         assertEquals(GestureArbitrator.Decision.FAN,
-                arbitrator.update(0, 100, 6, 80, 10));
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 40, 96, 10));
 
         arbitrator.reset();
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 20, 94, 10));
+        assertEquals(GestureArbitrator.Decision.FAN,
+                arbitrator.update(GestureGeometry.Corner.RIGHT, 100, 100, 60, 96, 10));
 
         arbitrator.reset();
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 10, 90, 10));
+        assertEquals(GestureArbitrator.Decision.FAN,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 5, 80, 10));
 
         arbitrator.reset();
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 0, 112, 10));
+        assertEquals(GestureArbitrator.Decision.FAN,
+                arbitrator.update(GestureGeometry.Corner.RIGHT, 100, 100, 100, 80, 10));
     }
 
     @Test
-    public void systemDecisionCannotTurnIntoFanLater() {
+    public void rejectsHorizontalOutwardAndDownwardMotion() {
         GestureArbitrator arbitrator = new GestureArbitrator();
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 20, 96, 10));
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 22, 40, 10));
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 20, 100, 10));
+
+        arbitrator.reset();
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, -12, 92, 10));
+
+        arbitrator.reset();
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.RIGHT, 100, 100, 112, 92, 10));
+
+        arbitrator.reset();
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 8, 112, 10));
+    }
+
+    @Test
+    public void cancelledDecisionCannotTurnIntoFanLater() {
+        GestureArbitrator arbitrator = new GestureArbitrator();
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, -12, 92, 10));
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 22, 40, 10));
     }
 
     @Test
     public void resetAllowsNextGestureToBeClaimed() {
         GestureArbitrator arbitrator = new GestureArbitrator();
-        assertEquals(GestureArbitrator.Decision.SYSTEM,
-                arbitrator.update(0, 100, 20, 96, 10));
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, -12, 92, 10));
         arbitrator.reset();
         assertEquals(GestureArbitrator.Decision.FAN,
-                arbitrator.update(0, 100, 4, 80, 10));
+                arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 20, 94, 10));
     }
 }
