@@ -1,8 +1,11 @@
 package com.oxohang.fanfreeform.xposed;
 
 import android.app.KeyguardManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
@@ -10,6 +13,7 @@ import android.graphics.Insets;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.VibrationEffect;
@@ -34,6 +38,7 @@ final class FanRuntime {
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Handler configHandler;
     private final FanOverlayController overlay;
     private final HyperOsFreeformBridge freeform;
     private final OutsideGestureRecognizer outsideGestures;
@@ -43,6 +48,10 @@ final class FanRuntime {
     private volatile GestureConfig config = GestureConfig.defaults();
     private volatile List<RuntimeTarget> targets = Collections.emptyList();
     private State state = State.IDLE;
+    private volatile int configRetryCount;
+    private volatile boolean configRetryScheduled;
+    private volatile boolean configLoadQueued;
+    private long lastOnDemandConfigReload;
     private GestureGeometry.Corner corner;
     private float downX;
     private float downY;
@@ -50,6 +59,9 @@ final class FanRuntime {
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
+        HandlerThread configThread = new HandlerThread("FanFreeformConfig");
+        configThread.start();
+        configHandler = new Handler(configThread.getLooper());
         density = context.getResources().getDisplayMetrics().density;
         ViewConfiguration viewConfiguration = ViewConfiguration.get(context);
         directionDecisionDistance = Math.max(viewConfiguration.getScaledTouchSlop(), 10 * density);
@@ -57,20 +69,37 @@ final class FanRuntime {
         freeform = new HyperOsFreeformBridge(context, classLoader, mainHandler);
         outsideGestures = new OutsideGestureRecognizer(mainHandler,
                 viewConfiguration, this::performOutsideAction);
-        reloadConfig();
+        requestConfigReload();
         context.getContentResolver().registerContentObserver(ConfigContract.URI, false,
                 new ContentObserver(mainHandler) {
-                    @Override public void onChange(boolean selfChange) { reloadConfig(); }
+                    @Override public void onChange(boolean selfChange) { requestConfigReload(); }
                 });
+        try {
+            context.registerReceiver(new BroadcastReceiver() {
+                @Override public void onReceive(Context receiverContext, Intent intent) {
+                    configHandler.post(() -> {
+                        configRetryCount = 0;
+                        configRetryScheduled = false;
+                        requestConfigReload();
+                        if (freeform.hasController()) {
+                            reportStatus("HyperOS 3 原生接口已连接");
+                        }
+                    });
+                }
+            }, new IntentFilter(Intent.ACTION_USER_UNLOCKED), Context.RECEIVER_NOT_EXPORTED);
+        } catch (Throwable error) {
+            Log.e("Cannot register user-unlocked configuration reload", error);
+        }
     }
 
     void setFreeformController(Object controller) {
         freeform.setController(controller);
-        reportStatus("HyperOS 3 原生接口已连接");
+        reportStatusAsync("HyperOS 3 原生接口已连接");
     }
 
     void reportInputReady() {
-        reportStatus(freeform.hasController() ? "HyperOS 3 原生接口已连接" : "手势接口已连接，等待小窗控制器");
+        reportStatusAsync(freeform.hasController()
+                ? "HyperOS 3 原生接口已连接" : "手势接口已连接，等待小窗控制器");
     }
 
     void onTaskAppeared(int taskId) {
@@ -85,6 +114,10 @@ final class FanRuntime {
     void onTaskVanished(int taskId) {
         freeform.onTaskVanished(taskId);
         if (freeform.trackedTaskId() < 0) outsideGestures.clearAll();
+    }
+
+    void adjustMiniTargetIfNeeded(int animationType, Object info, Object target) {
+        freeform.adjustMiniTargetIfNeeded(animationType, info, target);
     }
 
     void onMotion(MotionEvent event, Object inputMonitor) {
@@ -105,6 +138,7 @@ final class FanRuntime {
         float y = event.getY();
 
         if (action == MotionEvent.ACTION_DOWN) {
+            requestOnDemandConfigReload();
             resetFan();
             float hotWidth = width * config.hotWidthPercent / 100f;
             float hotHeight = height * config.hotHeightPercent / 100f;
@@ -328,19 +362,55 @@ final class FanRuntime {
                     Log.e("Configured activity is unavailable: " + component.flattenToShortString(), error);
                 }
             }
-            config = next;
-            targets = Collections.unmodifiableList(resolved);
-            if (!next.enabled || resolved.size() < 3) resetFan();
-            Log.i("Configuration loaded apps=" + resolved.size() + " trigger="
-                    + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
-                    + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
-                    + "% icon=" + next.iconSizeDp + "dp");
+            List<RuntimeTarget> nextTargets = Collections.unmodifiableList(resolved);
+            configRetryCount = 0;
+            configRetryScheduled = false;
+            mainHandler.post(() -> {
+                config = next;
+                targets = nextTargets;
+                if (!next.enabled || nextTargets.size() < 3) resetFan();
+                Log.i("Configuration loaded apps=" + nextTargets.size() + " trigger="
+                        + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
+                        + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
+                        + "% icon=" + next.iconSizeDp + "dp");
+            });
         } catch (Throwable error) {
-            config = GestureConfig.defaults();
-            targets = Collections.emptyList();
-            resetFan();
             Log.e("Cannot read module configuration", error);
+            scheduleConfigRetry();
+        } finally {
+            configLoadQueued = false;
         }
+    }
+
+    private synchronized void requestConfigReload() {
+        if (configLoadQueued) return;
+        configLoadQueued = true;
+        configHandler.post(this::reloadConfig);
+    }
+
+    private void scheduleConfigRetry() {
+        if (configRetryScheduled || configRetryCount >= 5) return;
+        long delay = Math.min(8000, 1000L << configRetryCount);
+        configRetryCount++;
+        configRetryScheduled = true;
+        configHandler.postDelayed(() -> {
+            configRetryScheduled = false;
+            requestConfigReload();
+        }, delay);
+        Log.i("Configuration reload retry scheduled attempt=" + configRetryCount
+                + " delayMs=" + delay);
+    }
+
+    private void requestOnDemandConfigReload() {
+        if (!targets.isEmpty() || configRetryScheduled) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastOnDemandConfigReload < 2000) return;
+        lastOnDemandConfigReload = now;
+        requestConfigReload();
+    }
+
+    private void reportStatusAsync(String value) {
+        configHandler.post(() -> reportStatus(value));
     }
 
     private void reportStatus(String value) {

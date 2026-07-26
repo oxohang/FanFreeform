@@ -20,13 +20,17 @@ import de.robv.android.xposed.XposedHelpers;
 
 final class HyperOsFreeformBridge {
     private static final long MATCH_WINDOW_MS = 6000;
+    private static final ThreadLocal<Integer> FORCE_RIGHT_MINI_TASK = new ThreadLocal<>();
     private final Context context;
     private final ClassLoader classLoader;
     private final Handler mainHandler;
     private volatile Object controller;
+    private volatile int ownedTaskId = -1;
     private volatile int trackedTaskId = -1;
+    private volatile long ownershipGraceUntil;
     private volatile String pendingPackage;
     private volatile long pendingSince;
+    private volatile int pendingMiniRestoreTaskId = -1;
 
     HyperOsFreeformBridge(Context context, ClassLoader classLoader, Handler mainHandler) {
         this.context = context;
@@ -47,6 +51,7 @@ final class HyperOsFreeformBridge {
 
     boolean launch(RuntimeTarget target, GestureConfig config) {
         String packageName = target.component.getPackageName();
+        if (restoreOwnedMiniIfMatching(packageName)) return true;
         try {
             Class<?> manager = XposedHelpers.findClass("miui.app.MiuiFreeFormManager", classLoader);
             Object result = XposedHelpers.callStaticMethod(manager, "getActivityOptions",
@@ -96,25 +101,54 @@ final class HyperOsFreeformBridge {
                 || booleanCall(info, "isNormalPinedState", false)
                 || booleanCall(info, "isMiniPinedState", false);
 
-        if (taskId == trackedTaskId && (!normal || mini || pinned)) {
-            Log.i("Tracked task changed mode; auto-dismiss tracking stopped task=" + taskId);
-            trackedTaskId = -1;
+        if (taskId == ownedTaskId) {
+            if (pinned) {
+                clearOwnership(taskId, "entered pin mode");
+            } else if (mini) {
+                ownershipGraceUntil = 0;
+                if (trackedTaskId == taskId) {
+                    trackedTaskId = -1;
+                    Log.i("Owned task suspended as mini task=" + taskId
+                            + " owned=" + ownedTaskId + " tracked=" + trackedTaskId);
+                }
+            } else if (normal) {
+                ownershipGraceUntil = 0;
+                if (trackedTaskId != taskId) {
+                    trackedTaskId = taskId;
+                    Log.i("Owned task restored as interactive freeform task=" + taskId
+                            + " owned=" + ownedTaskId + " tracked=" + trackedTaskId);
+                }
+            } else {
+                retainOwnershipDuringModeTransition(taskId);
+            }
         }
 
         String expected = pendingPackage;
         if (expected == null || SystemClock.elapsedRealtime() - pendingSince > MATCH_WINDOW_MS) return;
         String actual = packageName(info);
+        if (mini && !pinned && expected.equals(actual)) {
+            ownedTaskId = taskId;
+            trackedTaskId = -1;
+            ownershipGraceUntil = 0;
+            if (pendingMiniRestoreTaskId != taskId) {
+                scheduleMiniRestore(taskId, actual);
+            }
+            return;
+        }
         if (normal && !mini && !pinned && expected.equals(actual)) {
+            ownedTaskId = taskId;
             trackedTaskId = taskId;
+            ownershipGraceUntil = 0;
             pendingPackage = null;
-            Log.i("Tracking fan-launched task=" + taskId + " package=" + actual);
+            pendingMiniRestoreTaskId = -1;
+            Log.i("Tracking fan-launched task=" + taskId + " package=" + actual
+                    + " owned=" + ownedTaskId + " tracked=" + trackedTaskId);
         }
     }
 
     void onTaskVanished(int taskId) {
-        if (taskId == trackedTaskId) {
-            trackedTaskId = -1;
-            Log.i("Tracked task vanished task=" + taskId);
+        if (taskId == ownedTaskId || taskId == trackedTaskId) {
+            clearOwnership(taskId, "task vanished");
         }
     }
 
@@ -122,11 +156,23 @@ final class HyperOsFreeformBridge {
         int taskId = trackedTaskId;
         if (taskId < 0) return null;
         Object info = taskInfo(taskId);
-        if (info == null || !booleanCall(info, "isNormalState", false)
-                || booleanCall(info, "isMiniState", false)
-                || booleanCall(info, "isInPinMode", false)
-                || booleanCall(info, "isNormalPinedState", false)) {
-            trackedTaskId = -1;
+        if (info == null) {
+            clearOwnership(taskId, "task info unavailable");
+            return null;
+        }
+        boolean normal = booleanCall(info, "isNormalState", false);
+        boolean mini = booleanCall(info, "isMiniState", false);
+        boolean pinned = booleanCall(info, "isInPinMode", false)
+                || booleanCall(info, "isNormalPinedState", false)
+                || booleanCall(info, "isMiniPinedState", false);
+        if (!normal || mini || pinned) {
+            if (mini && !pinned && taskId == ownedTaskId) {
+                trackedTaskId = -1;
+            } else if (!pinned && taskId == ownedTaskId) {
+                retainOwnershipDuringModeTransition(taskId);
+            } else {
+                clearOwnership(taskId, "tracked bounds no longer normal freeform");
+            }
             return null;
         }
         try {
@@ -146,7 +192,7 @@ final class HyperOsFreeformBridge {
             if (!(executor instanceof Executor)) {
                 throw new IllegalStateException("HyperOS Shell main executor is unavailable");
             }
-            trackedTaskId = -1;
+            clearOwnership(taskId, "native close requested");
             ((Executor) executor).execute(() -> dismissOnShellThread(taskId));
             Log.i("Native caption-close scheduled on Shell thread task=" + taskId);
             return true;
@@ -180,7 +226,7 @@ final class HyperOsFreeformBridge {
     private boolean dismissImmediately(int taskId) {
         try {
             XposedHelpers.callMethod(controller, "exitFreeformTask", taskId, true);
-            trackedTaskId = -1;
+            clearOwnership(taskId, "immediate close requested");
             Log.i("Immediately dismissed fan-launched task=" + taskId);
             return true;
         } catch (Throwable error) {
@@ -191,9 +237,9 @@ final class HyperOsFreeformBridge {
 
     boolean fullscreenTracked() {
         int taskId = trackedTaskId;
-        trackedTaskId = -1;
         if (taskId < 0 || controller == null) return false;
         try {
+            clearOwnership(taskId, "fullscreen requested");
             XposedHelpers.callMethod(controller, "fullscreenFreeformWithoutAnim", taskId, true);
             Log.i("Fullscreen fan-launched task=" + taskId);
             return true;
@@ -208,45 +254,145 @@ final class HyperOsFreeformBridge {
         Object info = taskInfo(taskId);
         if (taskId < 0 || controller == null || info == null) return false;
         try {
-            Object running = XposedHelpers.callMethod(info, "getTaskInfo");
-            if (!(running instanceof ActivityManager.RunningTaskInfo)) {
-                throw new IllegalStateException("Tracked RunningTaskInfo is unavailable");
-            }
-            Object result = XposedHelpers.callMethod(controller,
-                    "lunchSmallFreeformFromRecent", running, 2);
-            if (result == null) {
-                throw new IllegalStateException("Right-top mini-freeform request was rejected");
+            Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
+            if (!(executor instanceof Executor)) {
+                throw new IllegalStateException("HyperOS Shell main executor is unavailable");
             }
             trackedTaskId = -1;
-            Log.i("Mini-freeform requested at right-top task=" + taskId);
+            ((Executor) executor).execute(() -> minimizeOnShellThread(taskId));
+            Log.i("Native current-freeform-to-mini scheduled task=" + taskId
+                    + " owned=" + ownedTaskId + " tracked=" + trackedTaskId);
             return true;
         } catch (Throwable error) {
-            Log.e("Right-top mini-freeform unavailable; trying native mini fallback task="
-                    + taskId, error);
-            try {
-                Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
-                if (!(executor instanceof Executor)) {
-                    throw new IllegalStateException("HyperOS Shell main executor is unavailable");
-                }
-                trackedTaskId = -1;
-                ((Executor) executor).execute(() -> {
-                    try {
-                        XposedHelpers.callMethod(controller, "fromFreeformToMini", taskId);
-                        Log.i("Native mini-freeform fallback started task=" + taskId);
-                    } catch (Throwable fallbackError) {
-                        Log.e("Cannot minimize tracked task=" + taskId, fallbackError);
-                    }
-                });
-                return true;
-            } catch (Throwable fallbackError) {
-                Log.e("Cannot schedule mini-freeform fallback task=" + taskId, fallbackError);
-                return false;
-            }
+            trackedTaskId = taskId;
+            Log.e("Cannot schedule native current-freeform-to-mini task=" + taskId, error);
+            return false;
         }
     }
 
     int trackedTaskId() {
         return trackedTaskId;
+    }
+
+    int ownedTaskId() {
+        return ownedTaskId;
+    }
+
+    void adjustMiniTargetIfNeeded(int animationType, Object info, Object target) {
+        Integer forcedTaskId = FORCE_RIGHT_MINI_TASK.get();
+        if (animationType != 11 || forcedTaskId == null || info == null || target == null
+                || intCall(info, "getTaskId", -1) != forcedTaskId) return;
+        try {
+            float centerX = numberCall(target, "getCenterX", 0f);
+            int displayWidth = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics().getBounds().width();
+            if (displayWidth <= 0 || centerX <= 0 || centerX >= displayWidth / 2f) return;
+            float rightCenterX = displayWidth - centerX;
+            XposedHelpers.callMethod(target, "setCenterX", rightCenterX);
+            XposedHelpers.callMethod(info, "setPreRightMini", true);
+            Log.i("Mirrored native mini animation target to right task=" + forcedTaskId
+                    + " centerX=" + centerX + "->" + rightCenterX);
+        } catch (Throwable error) {
+            Log.e("Cannot force native mini animation target to right task=" + forcedTaskId,
+                    error);
+        }
+    }
+
+    private void minimizeOnShellThread(int taskId) {
+        try {
+            FORCE_RIGHT_MINI_TASK.set(taskId);
+            XposedHelpers.callMethod(controller, "fromFreeformToMini", taskId);
+            Log.i("Native current-freeform-to-mini started task=" + taskId);
+        } catch (Throwable error) {
+            Object info = taskInfo(taskId);
+            if (taskId == ownedTaskId && info != null
+                    && booleanCall(info, "isNormalState", false)
+                    && !booleanCall(info, "isMiniState", false)) {
+                trackedTaskId = taskId;
+            }
+            Log.e("Cannot minimize owned task=" + taskId, error);
+        } finally {
+            FORCE_RIGHT_MINI_TASK.remove();
+        }
+    }
+
+    private boolean restoreOwnedMiniIfMatching(String packageName) {
+        int taskId = ownedTaskId;
+        Object info = taskInfo(taskId);
+        if (taskId < 0 || controller == null || info == null
+                || !booleanCall(info, "isMiniState", false)
+                || !packageName.equals(packageName(info))) return false;
+        beginPendingMatch(packageName);
+        if (scheduleMiniRestore(taskId, packageName)) {
+            scheduleScans();
+            return true;
+        }
+        pendingPackage = null;
+        return false;
+    }
+
+    private boolean scheduleMiniRestore(int taskId, String packageName) {
+        try {
+            Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
+            if (!(executor instanceof Executor)) {
+                throw new IllegalStateException("HyperOS Shell main executor is unavailable");
+            }
+            pendingMiniRestoreTaskId = taskId;
+            ((Executor) executor).execute(() -> restoreMiniOnShellThread(taskId));
+            Log.i("Native fan-selected mini restore scheduled task=" + taskId
+                    + " package=" + packageName);
+            return true;
+        } catch (Throwable error) {
+            pendingMiniRestoreTaskId = -1;
+            Log.e("Cannot schedule fan-selected mini restore task=" + taskId, error);
+            return false;
+        }
+    }
+
+    private void restoreMiniOnShellThread(int taskId) {
+        try {
+            Object handler = XposedHelpers.getObjectField(controller,
+                    "mMiuiFreeformModeMiniStateHandler");
+            XposedHelpers.callMethod(handler, "restoreMiniToFreeformMode", taskId);
+            Log.i("Native owned-mini restore started task=" + taskId);
+        } catch (Throwable error) {
+            pendingPackage = null;
+            pendingMiniRestoreTaskId = -1;
+            Log.e("Cannot restore owned mini task=" + taskId, error);
+        }
+    }
+
+    private void clearOwnership(int taskId, String reason) {
+        if (taskId != ownedTaskId && taskId != trackedTaskId) return;
+        if (taskId == ownedTaskId) ownedTaskId = -1;
+        if (taskId == trackedTaskId) trackedTaskId = -1;
+        ownershipGraceUntil = 0;
+        Log.i("Fan task ownership cleared task=" + taskId + " reason=" + reason
+                + " owned=" + ownedTaskId + " tracked=" + trackedTaskId);
+    }
+
+    private void retainOwnershipDuringModeTransition(int taskId) {
+        long now = SystemClock.elapsedRealtime();
+        long activeUntil = ownershipGraceUntil;
+        trackedTaskId = -1;
+        if (activeUntil > 0 && now >= activeUntil) {
+            clearOwnership(taskId, "unsupported mode after transition grace");
+            return;
+        }
+        if (activeUntil > now) return;
+        long deadline = now + 2000;
+        ownershipGraceUntil = deadline;
+        Log.i("Owned task in transient mode; retaining ownership task=" + taskId
+                + " until=" + deadline);
+        mainHandler.postDelayed(() -> {
+            if (taskId != ownedTaskId || ownershipGraceUntil != deadline) return;
+            Object current = taskInfo(taskId);
+            if (current == null) {
+                clearOwnership(taskId, "task missing after transition grace");
+            } else {
+                onTaskInfo(current);
+            }
+        }, 2050);
     }
 
     private void beginPendingMatch(String packageName) {
@@ -262,6 +408,7 @@ final class HyperOsFreeformBridge {
             if (pendingPackage != null && SystemClock.elapsedRealtime() - pendingSince >= MATCH_WINDOW_MS) {
                 Log.i("No matching freeform task appeared for " + pendingPackage);
                 pendingPackage = null;
+                pendingMiniRestoreTaskId = -1;
             }
         }, MATCH_WINDOW_MS + 100);
     }
@@ -376,6 +523,15 @@ final class HyperOsFreeformBridge {
         try {
             Object value = XposedHelpers.callMethod(target, method);
             return value instanceof Number ? ((Number) value).intValue() : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private static float numberCall(Object target, String method, float fallback) {
+        try {
+            Object value = XposedHelpers.callMethod(target, method);
+            return value instanceof Number ? ((Number) value).floatValue() : fallback;
         } catch (Throwable ignored) {
             return fallback;
         }

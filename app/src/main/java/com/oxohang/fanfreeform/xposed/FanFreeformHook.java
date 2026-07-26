@@ -20,6 +20,8 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     private static final String EVENT_HANDLER = EVENT_CONTROLLER + "$EventHandler";
     private static final String FREEFORM_CONTROLLER =
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController";
+    private static final String FREEFORM_ANIMATION =
+            "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation";
 
     @SuppressLint("StaticFieldLeak")
     private static volatile FanRuntime runtime;
@@ -31,6 +33,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         if (!SYSTEM_UI.equals(loadPackageParam.packageName)) return;
         Log.i("Loading in SystemUI process=" + loadPackageParam.processName);
         hookFreeformController(loadPackageParam.classLoader);
+        hookMiniAnimationTarget(loadPackageParam.classLoader);
         hookInputController(loadPackageParam.classLoader);
     }
 
@@ -127,6 +130,32 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Log.i("Freeform controller hooks installed");
         } catch (Throwable error) {
             Log.e("Freeform controller hooks failed safely", error);
+        }
+    }
+
+    private static void hookMiniAnimationTarget(ClassLoader classLoader) {
+        try {
+            Class<?> animationClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_ANIMATION, classLoader);
+            if (animationClass == null) {
+                Log.i("HyperOS freeform animation is unavailable; right-side correction disabled");
+                return;
+            }
+            XposedBridge.hookAllMethods(animationClass, "startGestureAnimation",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            FanRuntime active = runtime;
+                            if (active == null || param.args.length < 3
+                                    || !(param.args[0] instanceof Number)) return;
+                            active.adjustMiniTargetIfNeeded(
+                                    ((Number) param.args[0]).intValue(),
+                                    param.args[1], param.args[2]);
+                        }
+                    });
+            Log.i("Freeform mini animation target hook installed");
+        } catch (Throwable error) {
+            Log.e("Freeform mini animation target hook failed safely", error);
         }
     }
 }
