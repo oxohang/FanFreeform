@@ -25,6 +25,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.GestureSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.MainActivity"
             android:exported="true">
             <intent-filter>

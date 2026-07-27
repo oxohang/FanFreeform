@@ -74,6 +74,11 @@ public final class ConfigStore {
                 .putBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW)
                 .putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED)
                 .putInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP, ConfigContract.DEFAULT_SIDE_ICON_SIZE_DP)
+                .putInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT)
+                .putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
+                        ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES)
                 .putInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT)
                 .putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT)
                 .putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT)

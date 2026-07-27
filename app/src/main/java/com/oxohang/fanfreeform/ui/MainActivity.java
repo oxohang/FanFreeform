@@ -48,6 +48,9 @@ public final class MainActivity extends Activity {
     private TextView statusText;
     private WindowPreviewView preview;
     private GesturePreviewView gesturePreview;
+    private TextView bottomGestureSummary;
+    private TextView sideGestureSummary;
+    private Switch sideGestureSwitch;
     private int widthPercent;
     private int heightPercent;
     private int positionX;
@@ -77,6 +80,12 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        hotWidthPercent = prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT,
+                ConfigContract.DEFAULT_HOT_WIDTH_PERCENT);
+        hotHeightPercent = prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT,
+                ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT);
+        if (gesturePreview != null) gesturePreview.update(hotWidthPercent, hotHeightPercent);
+        updateGestureSummaries();
         updateStatus();
     }
 
@@ -91,7 +100,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("随用随走", 30, Ui.TEXT, Typeface.BOLD);
         root.addView(title);
-        TextView subtitle = text("HyperOS 3 原生扇形快捷小窗", 15, Ui.MUTED, Typeface.NORMAL);
+        TextView subtitle = text("HyperOS 3 原生快捷小窗", 15, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 18));
         root.addView(subtitle);
 
@@ -107,8 +116,8 @@ public final class MainActivity extends Activity {
         LinearLayout enabledRow = row();
         LinearLayout enabledText = new LinearLayout(this);
         enabledText.setOrientation(LinearLayout.VERTICAL);
-        enabledText.addView(text("启用扇形手势", 17, Ui.TEXT, Typeface.BOLD));
-        enabledText.addView(text("左右底角共用一套快捷应用", 13, Ui.MUTED, Typeface.NORMAL));
+        enabledText.addView(text("启用快捷手势", 17, Ui.TEXT, Typeface.BOLD));
+        enabledText.addView(text("底角斜滑与侧滑列表共用快捷应用", 13, Ui.MUTED, Typeface.NORMAL));
         enabledRow.addView(enabledText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Switch enabled = new Switch(this);
         enabled.setChecked(prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
@@ -166,42 +175,53 @@ public final class MainActivity extends Activity {
         root.addView(appsCard, cardParams(14));
 
         LinearLayout gestureCard = card();
-        gestureCard.addView(text("手势手感", 18, Ui.TEXT, Typeface.BOLD));
+        gestureCard.addView(text("手势方式", 18, Ui.TEXT, Typeface.BOLD));
         gesturePreview = new GesturePreviewView(this);
         gesturePreview.update(hotWidthPercent, hotHeightPercent);
         gestureCard.addView(gesturePreview,
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 150)));
+
+        LinearLayout bottomGestureRow = row();
+        bottomGestureRow.setOnClickListener(view -> openGestureSettings(
+                GestureSettingsActivity.MODE_BOTTOM));
+        LinearLayout bottomGestureText = new LinearLayout(this);
+        bottomGestureText.setOrientation(LinearLayout.VERTICAL);
+        bottomGestureText.addView(text("底角斜滑", 16, Ui.TEXT, Typeface.BOLD));
+        bottomGestureSummary = text("", 13, Ui.MUTED, Typeface.NORMAL);
+        bottomGestureText.addView(bottomGestureSummary);
+        bottomGestureRow.addView(bottomGestureText,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView bottomArrow = text("设置  ›", 14, Ui.ACCENT, Typeface.BOLD);
+        bottomGestureRow.addView(bottomArrow);
+        gestureCard.addView(bottomGestureRow);
+        gestureCard.addView(Ui.divider(this));
+
         LinearLayout sideGestureRow = row();
         LinearLayout sideGestureText = new LinearLayout(this);
         sideGestureText.setOrientation(LinearLayout.VERTICAL);
-        sideGestureText.addView(text("启用侧滑距离触发", 16, Ui.TEXT, Typeface.BOLD));
-        sideGestureText.addView(text("短滑原生返回，长滑呼出侧边扇形", 13, Ui.MUTED, Typeface.NORMAL));
+        sideGestureText.addView(text("侧滑列表", 16, Ui.TEXT, Typeface.BOLD));
+        sideGestureSummary = text("", 13, Ui.MUTED, Typeface.NORMAL);
+        sideGestureText.addView(sideGestureSummary);
+        sideGestureText.setOnClickListener(view -> openGestureSettings(
+                GestureSettingsActivity.MODE_SIDE));
         sideGestureRow.addView(sideGestureText,
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch sideGesture = new Switch(this);
-        sideGesture.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
+        TextView sideSettings = text("设置", 14, Ui.ACCENT, Typeface.BOLD);
+        sideSettings.setPadding(Ui.dp(this, 8), Ui.dp(this, 12), Ui.dp(this, 8), Ui.dp(this, 12));
+        sideSettings.setOnClickListener(view -> openGestureSettings(
+                GestureSettingsActivity.MODE_SIDE));
+        sideGestureRow.addView(sideSettings);
+        sideGestureSwitch = new Switch(this);
+        sideGestureSwitch.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
                 ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
-        sideGesture.setOnCheckedChangeListener((button, checked) ->
+        sideGestureSwitch.setOnCheckedChangeListener((button, checked) ->
                 store.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, checked));
-        sideGestureRow.addView(sideGesture);
+        sideGestureRow.addView(sideGestureSwitch);
         gestureCard.addView(sideGestureRow);
-        gestureCard.addView(slider("侧滑长滑距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT, 18, 50,
-                prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
-                        ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT), value -> value + "%"));
-        gestureCard.addView(slider("触发区宽度", ConfigContract.KEY_HOT_WIDTH_PERCENT, 5, 20,
-                hotWidthPercent, value -> value + "%"));
-        gestureCard.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT, 3,
-                ConfigContract.MAX_HOT_HEIGHT_PERCENT,
-                hotHeightPercent, value -> value + "%"));
-        gestureCard.addView(slider("触发距离", ConfigContract.KEY_TRIGGER_PERCENT, 6, 24,
-                prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));
-        gestureCard.addView(slider("选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT, 35, 75,
-                prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
-        gestureCard.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP, 34, 64,
-                prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
-        TextView gestureNote = text("两种触发方式可以共存。侧滑开启后，最外侧短滑仍是 HyperOS 原生返回，长滑切换为侧边扇形；底角斜滑区域会自动向内避让。", 13, Ui.MUTED, Typeface.NORMAL);
+        TextView gestureNote = text("两种手势上下分区：底角始终贴住物理边缘；侧滑只在其上方工作，短滑仍是系统返回。", 13, Ui.MUTED, Typeface.NORMAL);
         gestureNote.setPadding(0, Ui.dp(this, 2), 0, 0);
         gestureCard.addView(gestureNote);
+        updateGestureSummaries();
         root.addView(gestureCard, cardParams(14));
 
         LinearLayout windowCard = card();
@@ -241,6 +261,40 @@ public final class MainActivity extends Activity {
         resetParams.topMargin = Ui.dp(this, 18);
         root.addView(reset, resetParams);
         return scroll;
+    }
+
+    private void openGestureSettings(String mode) {
+        Intent intent = new Intent(this, GestureSettingsActivity.class);
+        intent.putExtra(GestureSettingsActivity.EXTRA_MODE, mode);
+        startActivity(intent);
+    }
+
+    private void updateGestureSummaries() {
+        if (bottomGestureSummary != null) {
+            int trigger = prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT,
+                    ConfigContract.DEFAULT_TRIGGER_PERCENT);
+            int icon = prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
+                    ConfigContract.DEFAULT_ICON_SIZE_DP);
+            bottomGestureSummary.setText("贴边热区 " + hotWidthPercent + "% × "
+                    + hotHeightPercent + "% · 距离 " + trigger + "% · " + icon + "dp");
+        }
+        if (sideGestureSummary != null) {
+            int trigger = prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
+                    ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT);
+            int safeTop = prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
+                    ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT);
+            boolean names = prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
+                    ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES);
+            sideGestureSummary.setText("长滑 " + trigger + "% · 顶部安全 "
+                    + safeTop + "% · 名称" + (names ? "常显" : "选中显示"));
+        }
+        if (sideGestureSwitch != null) {
+            boolean enabled = prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
+                    ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED);
+            if (sideGestureSwitch.isChecked() != enabled) {
+                sideGestureSwitch.setChecked(enabled);
+            }
+        }
     }
 
     private View actionRow(String title, String key, int defaultAction) {

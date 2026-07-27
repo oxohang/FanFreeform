@@ -30,6 +30,16 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_FAN_SHADOW, prefs.getBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW));
             out.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
             out.putInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT));
+            out.putInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP, prefs.getInt(
+                    ConfigContract.KEY_SIDE_ICON_SIZE_DP,
+                    prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
+                            ConfigContract.DEFAULT_SIDE_ICON_SIZE_DP)));
+            out.putInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT, prefs.getInt(
+                    ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
+                    ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT));
+            out.putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
+                    ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES));
             out.putInt(ConfigContract.KEY_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT));
             out.putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT));
             out.putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT));

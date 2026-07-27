@@ -64,8 +64,13 @@ final class FanRuntime {
     private boolean startedWithTriggerCapture;
     private boolean cornerTapIsOutsideWindow;
     private boolean sideTapIsOutsideWindow;
-    private boolean activeSideFan;
-    private float sideOriginY;
+    private boolean activeSideList;
+    private float sideListTop;
+    private float sideRowHeight;
+    private float sideActivationX;
+    private float sideActivationY;
+    private boolean sideSelectionReady;
+    private int lastHapticSelection = -1;
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
@@ -186,20 +191,17 @@ final class FanRuntime {
             float hotWidth = width * config.hotWidthPercent / 100f;
             float hotHeight = height * config.hotHeightPercent / 100f;
             Insets systemSides = systemSideGestureInsets();
-            int separation = config.sideGestureEnabled ? Math.max(1, Math.round(density)) : 0;
-            int leftCaptureInset = config.sideGestureEnabled
-                    ? systemSides.left + separation : 0;
-            int rightCaptureInset = config.sideGestureEnabled
-                    ? systemSides.right + separation : 0;
             GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(
-                    x, y, width, height, hotWidth, hotHeight,
-                    leftCaptureInset, rightCaptureInset);
-            GestureGeometry.Corner downSide = config.sideGestureEnabled
-                    ? GestureGeometry.sideAt(x, width, systemSides.left, systemSides.right)
+                    x, y, width, height, hotWidth, hotHeight);
+            float sideSafeTop = sideSafeTop(height);
+            float sideSafeBottom = sideSafeBottom(height, hotHeight);
+            GestureGeometry.Corner downSide = config.sideGestureEnabled && downCorner == null
+                    ? GestureGeometry.sideAt(x, y, width, systemSides.left,
+                    systemSides.right, sideSafeTop, sideSafeBottom, 96 * density)
                     : null;
             if (!triggerCapture.isCapturing() && canStart()) {
                 triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent,
-                        leftCaptureInset, rightCaptureInset);
+                        0, 0);
             }
             Rect tracked = freeform.trackedBounds();
             if (downSide != null && canStart()) {
@@ -213,7 +215,8 @@ final class FanRuntime {
                 }
                 armSide(downSide, x, y, event.getDownTime(), event.getEventTime());
                 Log.i("Side-distance gesture armed side=" + downSide
-                        + " threshold=" + config.sideTriggerPercent + "%");
+                        + " threshold=" + config.sideTriggerPercent + "% range="
+                        + Math.round(sideSafeTop) + ".." + Math.round(sideSafeBottom));
                 return;
             }
             if (tracked != null) {
@@ -273,7 +276,7 @@ final class FanRuntime {
                 return;
             }
             outsideGestures.onCancel();
-            activateSideFan(x, y, width, height);
+            activateSideList(x, y, width, height);
             Log.i("Side-distance gesture took over native back distance="
                     + Math.round(GestureGeometry.distance(downX, downY, x, y)));
             return;
@@ -309,8 +312,13 @@ final class FanRuntime {
         if (state == State.CANCELLED && action == MotionEvent.ACTION_MOVE) return;
 
         if (state == State.ACTIVE && action == MotionEvent.ACTION_MOVE) {
-            float selectionRadius = selectionRadius(width, height);
-            updateSelection(x, y, width, height, selectionRadius, iconDiameter(selectionRadius));
+            if (activeSideList) {
+                updateSideListSelection(x, y);
+            } else {
+                float selectionRadius = selectionRadius(width, height);
+                updateSelection(x, y, width, height, selectionRadius,
+                        iconDiameter(selectionRadius));
+            }
             return;
         }
 
@@ -321,8 +329,13 @@ final class FanRuntime {
 
         if (action == MotionEvent.ACTION_UP) {
             if (state == State.ACTIVE) {
-                float selectionRadius = selectionRadius(width, height);
-                updateSelection(x, y, width, height, selectionRadius, iconDiameter(selectionRadius));
+                if (activeSideList) {
+                    updateSideListSelection(x, y);
+                } else {
+                    float selectionRadius = selectionRadius(width, height);
+                    updateSelection(x, y, width, height, selectionRadius,
+                            iconDiameter(selectionRadius));
+                }
                 if (selected >= 0 && selected < targets.size()) {
                     RuntimeTarget target = targets.get(selected);
                     freeform.launch(target, config);
@@ -357,7 +370,7 @@ final class FanRuntime {
         float threshold = Math.min(width, height) * config.triggerPercent / 100f;
         if (distance >= threshold) {
             state = State.ACTIVE;
-            activeSideFan = false;
+            activeSideList = false;
             float selectionRadius = selectionRadius(width, height);
             float iconDiameter = iconDiameter(selectionRadius);
             overlay.show(targets, corner, selectionRadius, iconDiameter, config.fanShadow);
@@ -366,18 +379,27 @@ final class FanRuntime {
         }
     }
 
-    private void activateSideFan(float x, float y, int width, int height) {
+    private void activateSideList(float x, float y, int width, int height) {
         state = State.ACTIVE;
-        activeSideFan = true;
-        float selectionRadius = selectionRadius(width, height);
-        float iconDiameter = iconDiameter(selectionRadius);
-        Insets safe = displaySafeInsets();
-        sideOriginY = GestureGeometry.adjustedSideOriginY(downY, height,
-                selectionRadius, iconDiameter, safe.top, safe.bottom);
-        overlay.showSide(targets, corner, sideOriginY, selectionRadius,
-                iconDiameter, config.fanShadow);
+        activeSideList = true;
+        float hotHeight = height * config.hotHeightPercent / 100f;
+        float safeTop = sideSafeTop(height);
+        float safeBottom = sideSafeBottom(height, hotHeight);
+        float availablePerItem = (safeBottom - safeTop) / Math.max(1, targets.size());
+        float iconDiameter = Math.min(config.sideIconSizeDp * density,
+                Math.max(28 * density, availablePerItem - 4 * density));
+        sideRowHeight = Math.min(iconDiameter + 10 * density, availablePerItem);
+        sideListTop = GestureGeometry.sideListTop(downY, targets.size(),
+                sideRowHeight, safeTop, safeBottom);
+        sideActivationX = x;
+        sideActivationY = y;
+        sideSelectionReady = false;
+        selected = -1;
+        lastHapticSelection = -1;
+        overlay.showSideList(targets, corner, sideListTop, sideRowHeight,
+                iconDiameter, config.sideShowAppNames, config.fanShadow);
         if (config.haptic) vibrateTick();
-        updateSelection(x, y, width, height, selectionRadius, iconDiameter);
+        overlay.update(-1, x, y);
     }
 
     private void arm(GestureGeometry.Corner corner, float x, float y,
@@ -403,11 +425,27 @@ final class FanRuntime {
 
     private void updateSelection(float x, float y, int width, int height,
                                  float radius, float iconDiameter) {
-        selected = activeSideFan
-                ? GestureGeometry.sideSelection(corner, x, y, width, targets.size(),
-                sideOriginY, radius, iconDiameter, 6 * density)
-                : GestureGeometry.selection(corner, x, y, width, height, targets.size(),
+        selected = GestureGeometry.selection(corner, x, y, width, height, targets.size(),
                 radius, iconDiameter, 6 * density);
+        overlay.update(selected, x, y);
+    }
+
+    private void updateSideListSelection(float x, float y) {
+        if (!sideSelectionReady) {
+            if (GestureGeometry.distance(sideActivationX, sideActivationY, x, y)
+                    < sideDirectionSlop) {
+                overlay.update(-1, x, y);
+                return;
+            }
+            sideSelectionReady = true;
+        }
+        int next = GestureGeometry.sideListSelection(
+                y, targets.size(), sideListTop, sideRowHeight);
+        selected = next;
+        if (config.haptic && next >= 0 && next != lastHapticSelection) {
+            vibrateTick();
+            lastHapticSelection = next;
+        }
         overlay.update(selected, x, y);
     }
 
@@ -433,8 +471,13 @@ final class FanRuntime {
         startedWithTriggerCapture = false;
         cornerTapIsOutsideWindow = false;
         sideTapIsOutsideWindow = false;
-        activeSideFan = false;
-        sideOriginY = 0f;
+        activeSideList = false;
+        sideListTop = 0f;
+        sideRowHeight = 0f;
+        sideActivationX = 0f;
+        sideActivationY = 0f;
+        sideSelectionReady = false;
+        lastHapticSelection = -1;
     }
 
     private boolean canStart() {
@@ -446,11 +489,19 @@ final class FanRuntime {
     }
 
     private void refreshTriggerCapture() {
-        Insets systemSides = systemSideGestureInsets();
-        int separation = config.sideGestureEnabled ? Math.max(1, Math.round(density)) : 0;
         triggerCapture.update(canStart(), config.hotWidthPercent, config.hotHeightPercent,
-                config.sideGestureEnabled ? systemSides.left + separation : 0,
-                config.sideGestureEnabled ? systemSides.right + separation : 0);
+                0, 0);
+    }
+
+    private float sideSafeTop(int height) {
+        Insets safe = displaySafeInsets();
+        return Math.max(safe.top, height * config.sideTopSafeMarginPercent / 100f);
+    }
+
+    private float sideSafeBottom(int height, float hotHeight) {
+        Insets safe = displaySafeInsets();
+        return Math.min(height - safe.bottom,
+                height - hotHeight - 24 * density);
     }
 
     private Rect displayBounds() {
@@ -574,7 +625,10 @@ final class FanRuntime {
                         + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
                         + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
                         + "% icon=" + next.iconSizeDp + "dp side="
-                        + next.sideGestureEnabled + "@" + next.sideTriggerPercent + "%");
+                        + next.sideGestureEnabled + "@" + next.sideTriggerPercent
+                        + "% sideIcon=" + next.sideIconSizeDp + "dp safeTop="
+                        + next.sideTopSafeMarginPercent + "% names="
+                        + next.sideShowAppNames);
             });
         } catch (Throwable error) {
             Log.e("Cannot read module configuration", error);

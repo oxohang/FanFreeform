@@ -36,6 +36,14 @@ final class GestureGeometry {
         return null;
     }
 
+    static Corner sideAt(float x, float y, int width, float leftWidth, float rightWidth,
+                         float safeTop, float safeBottom, float minimumHeight) {
+        if (safeBottom - safeTop < minimumHeight || y < safeTop || y > safeBottom) {
+            return null;
+        }
+        return sideAt(x, width, leftWidth, rightWidth);
+    }
+
     static float distance(float downX, float downY, float x, float y) {
         return (float) Math.hypot(x - downX, y - downY);
     }
@@ -95,6 +103,29 @@ final class GestureGeometry {
             if (squaredDistance(x, y, center.x, center.y) <= hitRadiusSquared) return index;
         }
         return -1;
+    }
+
+    static float sideListTop(float requestedCenterY, int itemCount, float rowHeight,
+                             float safeTop, float safeBottom) {
+        if (itemCount <= 0 || rowHeight <= 0f) return safeTop;
+        float listHeight = itemCount * rowHeight;
+        if (listHeight >= safeBottom - safeTop) return safeTop;
+        return Math.max(safeTop,
+                Math.min(safeBottom - listHeight, requestedCenterY - listHeight / 2f));
+    }
+
+    static Point sideListIconCenter(Corner side, int index, int width, float listTop,
+                                    float rowHeight, float iconDiameter, float edgeMargin) {
+        float x = edgeMargin + iconDiameter / 2f;
+        return new Point(side == Corner.LEFT ? x : width - x,
+                listTop + (index + 0.5f) * rowHeight);
+    }
+
+    static int sideListSelection(float y, int itemCount, float listTop, float rowHeight) {
+        if (itemCount <= 0 || rowHeight <= 0f || y < listTop
+                || y >= listTop + itemCount * rowHeight) return -1;
+        int index = (int) ((y - listTop) / rowHeight);
+        return index >= 0 && index < itemCount ? index : -1;
     }
 
     static float effectiveRadius(int itemCount, float configuredRadius,
