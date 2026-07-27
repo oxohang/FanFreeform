@@ -29,6 +29,7 @@ final class FanOverlayView extends View {
     private int selected = -1;
     private float pointerX;
     private float pointerY;
+    private boolean showBackdrop = true;
 
     FanOverlayView(Context context) {
         super(context);
@@ -50,11 +51,12 @@ final class FanOverlayView extends View {
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
-                   float radius, float iconDiameter) {
+                   float radius, float iconDiameter, boolean showBackdrop) {
         this.targets = targets;
         this.corner = corner;
         this.fanRadius = radius;
         this.iconDiameter = iconDiameter;
+        this.showBackdrop = showBackdrop;
         selected = -1;
         updateBackdropShader();
         invalidate();
@@ -74,7 +76,7 @@ final class FanOverlayView extends View {
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
         float originY = getHeight();
         float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
-        canvas.drawCircle(originX, originY, radius + dp(100), backdrop);
+        if (showBackdrop) canvas.drawCircle(originX, originY, radius + dp(100), backdrop);
 
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),

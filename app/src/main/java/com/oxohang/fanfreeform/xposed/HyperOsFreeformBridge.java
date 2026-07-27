@@ -31,6 +31,7 @@ final class HyperOsFreeformBridge {
     private volatile String pendingPackage;
     private volatile long pendingSince;
     private volatile int pendingMiniRestoreTaskId = -1;
+    private volatile GestureConfig latestConfig = GestureConfig.defaults();
 
     HyperOsFreeformBridge(Context context, ClassLoader classLoader, Handler mainHandler) {
         this.context = context;
@@ -47,6 +48,10 @@ final class HyperOsFreeformBridge {
 
     boolean hasController() {
         return controller != null;
+    }
+
+    void updateConfig(GestureConfig config) {
+        if (config != null) latestConfig = config;
     }
 
     boolean launch(RuntimeTarget target, GestureConfig config) {
@@ -279,9 +284,26 @@ final class HyperOsFreeformBridge {
     }
 
     void adjustMiniTargetIfNeeded(int animationType, Object info, Object target) {
+        int taskId = info == null ? -1 : intCall(info, "getTaskId", -1);
+        if (animationType == 4 && taskId >= 0 && taskId == ownedTaskId && target != null) {
+            try {
+                float scale = numberCall(info, "getMiniRestoreScaleX",
+                        numberCall(info, "getFreeformScale", 0.7f));
+                if (scale < 0.35f || scale > 1.2f) scale = 0.7f;
+                Rect configuredBounds = customLaunchBounds(latestConfig, scale);
+                XposedHelpers.callMethod(target, "setAnimParam",
+                        configuredBounds, scale, scale, 0f);
+                Log.i("Redirected native mini restore animation to configured bounds task="
+                        + taskId + " bounds=" + configuredBounds + " scale=" + scale);
+            } catch (Throwable error) {
+                Log.e("Cannot redirect native mini restore to configured bounds task="
+                        + taskId, error);
+            }
+            return;
+        }
         Integer forcedTaskId = FORCE_RIGHT_MINI_TASK.get();
         if (animationType != 11 || forcedTaskId == null || info == null || target == null
-                || intCall(info, "getTaskId", -1) != forcedTaskId) return;
+                || taskId != forcedTaskId) return;
         try {
             float centerX = numberCall(target, "getCenterX", 0f);
             int displayWidth = context.getSystemService(WindowManager.class)

@@ -4,10 +4,14 @@ import android.content.Context;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+
+import de.robv.android.xposed.XposedHelpers;
 
 final class FanTriggerCapture {
     private static final int TYPE_NAVIGATION_BAR_PANEL = 2024;
@@ -18,8 +22,16 @@ final class FanTriggerCapture {
     private View leftView;
     private View rightView;
     private volatile boolean capturing;
+    private volatile long injectedDownTime;
+    private volatile long injectedUntil;
+    private volatile float injectedX;
+    private volatile float injectedY;
     private int width;
     private int height;
+    private boolean desiredEnabled;
+    private int desiredHotWidthPercent;
+    private int desiredHotHeightPercent;
+    private boolean passthroughInProgress;
 
     FanTriggerCapture(Context context, Handler mainHandler) {
         this.context = context;
@@ -35,7 +47,22 @@ final class FanTriggerCapture {
         return capturing;
     }
 
+    boolean isInjectedEvent(MotionEvent event) {
+        if (event == null || SystemClock.uptimeMillis() > injectedUntil) return false;
+        return event.getDownTime() == injectedDownTime
+                || (Math.abs(event.getX() - injectedX) <= 2f
+                && Math.abs(event.getY() - injectedY) <= 2f);
+    }
+
+    void passthroughTap(float x, float y, int displayId) {
+        runOnMain(() -> passthroughTapNow(x, y, displayId));
+    }
+
     private void updateNow(boolean enabled, int hotWidthPercent, int hotHeightPercent) {
+        desiredEnabled = enabled;
+        desiredHotWidthPercent = hotWidthPercent;
+        desiredHotHeightPercent = hotHeightPercent;
+        if (passthroughInProgress) return;
         if (!enabled) {
             removeNow();
             return;
@@ -49,6 +76,49 @@ final class FanTriggerCapture {
         height = nextHeight;
         if (!attach(TYPE_NAVIGATION_BAR_PANEL) && !attach(2038)) {
             Log.i("Corner trigger capture unavailable; using pilfer fallback");
+        }
+    }
+
+    private void passthroughTapNow(float x, float y, int displayId) {
+        if (passthroughInProgress) return;
+        passthroughInProgress = true;
+        removeNow();
+        long downTime = SystemClock.uptimeMillis() + 24L;
+        injectedDownTime = downTime;
+        injectedUntil = downTime + 140L;
+        injectedX = x;
+        injectedY = y;
+        mainHandler.postDelayed(() -> injectTapEvent(MotionEvent.ACTION_DOWN,
+                downTime, downTime, x, y, displayId), 24L);
+        mainHandler.postDelayed(() -> injectTapEvent(MotionEvent.ACTION_UP,
+                downTime, downTime + 18L, x, y, displayId), 42L);
+        mainHandler.postDelayed(() -> {
+            passthroughInProgress = false;
+            updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent);
+            Log.i("Corner trigger capture restored after application tap passthrough");
+        }, 96L);
+        Log.i("Replaying corner tap to application x=" + Math.round(x)
+                + " y=" + Math.round(y));
+    }
+
+    private void injectTapEvent(int action, long downTime, long eventTime,
+                                float x, float y, int displayId) {
+        MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0);
+        try {
+            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            try {
+                XposedHelpers.callMethod(event, "setDisplayId", displayId);
+            } catch (Throwable ignored) {}
+            Object inputManager = context.getSystemService(Context.INPUT_SERVICE);
+            Object result = XposedHelpers.callMethod(inputManager,
+                    "injectInputEvent", event, 0);
+            if (result instanceof Boolean && !((Boolean) result)) {
+                Log.i("Application tap passthrough was rejected action=" + action);
+            }
+        } catch (Throwable error) {
+            Log.e("Cannot replay application tap action=" + action, error);
+        } finally {
+            event.recycle();
         }
     }
 

@@ -58,6 +58,8 @@ final class FanRuntime {
     private float downX;
     private float downY;
     private int selected = -1;
+    private boolean startedWithTriggerCapture;
+    private boolean cornerTapIsOutsideWindow;
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
@@ -152,6 +154,8 @@ final class FanRuntime {
         float x = event.getX();
         float y = event.getY();
 
+        if (triggerCapture.isInjectedEvent(event)) return;
+
         if (state != State.IDLE) {
             boolean replayedDown = action == MotionEvent.ACTION_DOWN
                     && gestureReplayGuard.isRepeatedDown(event.getDownTime());
@@ -182,12 +186,15 @@ final class FanRuntime {
             if (tracked != null) {
                 if (tracked.contains((int) x, (int) y)) return;
                 if (downCorner != null && canStart()) {
-                    outsideGestures.onCancel();
+                    Insets reserves = sideGestureReserves();
+                    outsideGestures.onDown(x, y, tracked, width,
+                            reserves.left, reserves.right, event.getEventTime());
                     if (triggerCapture.isCapturing()) {
                         pilfer(inputMonitor);
                         Log.i("Fan input claimed on down through corner capture window");
                     }
                     arm(downCorner, x, y, event.getDownTime(), event.getEventTime());
+                    cornerTapIsOutsideWindow = true;
                     Log.i("Fan hot zone armed on down corner=" + downCorner);
                     return;
                 }
@@ -216,6 +223,7 @@ final class FanRuntime {
         }
 
         if (state == State.ARMED && action == MotionEvent.ACTION_MOVE) {
+            if (cornerTapIsOutsideWindow) outsideGestures.onMove(x, y);
             float distance = GestureGeometry.distance(downX, downY, x, y);
             GestureArbitrator.Decision decision = gestureArbitrator.update(
                     corner, downX, downY, x, y, directionDecisionDistance);
@@ -226,6 +234,7 @@ final class FanRuntime {
                 return;
             }
             if (!triggerCapture.isCapturing()) pilfer(inputMonitor);
+            outsideGestures.onCancel();
             state = State.CLAIMED;
             Log.i("Fan input claimed after inward-upward direction distance="
                     + Math.round(distance) + " capture="
@@ -265,7 +274,17 @@ final class FanRuntime {
                     Log.i("Fan released without icon hit; launch cancelled");
                 }
             } else if (state == State.IDLE) {
-                outsideGestures.onUp(x, y, event.getEventTime());
+                outsideGestures.onUp(x, y, event.getEventTime(),
+                        () -> pilfer(inputMonitor));
+            } else if (state == State.ARMED && cornerTapIsOutsideWindow) {
+                outsideGestures.onUp(x, y, event.getEventTime(),
+                        () -> pilfer(inputMonitor));
+            } else if (state == State.ARMED && startedWithTriggerCapture
+                    && GestureGeometry.distance(downX, downY, x, y)
+                    <= directionDecisionDistance) {
+                int displayId = context.getDisplay() == null
+                        ? 0 : context.getDisplay().getDisplayId();
+                triggerCapture.passthroughTap(downX, downY, displayId);
             }
             resetFan();
         } else if (action == MotionEvent.ACTION_CANCEL) {
@@ -280,7 +299,7 @@ final class FanRuntime {
             state = State.ACTIVE;
             float selectionRadius = selectionRadius(width, height);
             float iconDiameter = iconDiameter(selectionRadius);
-            overlay.show(targets, corner, selectionRadius, iconDiameter);
+            overlay.show(targets, corner, selectionRadius, iconDiameter, config.fanShadow);
             if (config.haptic) vibrateTick();
             updateSelection(x, y, width, height, selectionRadius, iconDiameter);
         }
@@ -294,6 +313,7 @@ final class FanRuntime {
         this.corner = corner;
         downX = x;
         downY = y;
+        startedWithTriggerCapture = triggerCapture.isCapturing();
     }
 
     private void updateSelection(float x, float y, int width, int height,
@@ -321,6 +341,8 @@ final class FanRuntime {
         state = State.IDLE;
         corner = null;
         selected = -1;
+        startedWithTriggerCapture = false;
+        cornerTapIsOutsideWindow = false;
     }
 
     private boolean canStart() {
@@ -422,6 +444,7 @@ final class FanRuntime {
             mainHandler.post(() -> {
                 config = next;
                 targets = nextTargets;
+                freeform.updateConfig(next);
                 if (!next.enabled || nextTargets.size() < 3) resetFan();
                 refreshTriggerCapture();
                 Log.i("Configuration loaded apps=" + nextTargets.size() + " trigger="

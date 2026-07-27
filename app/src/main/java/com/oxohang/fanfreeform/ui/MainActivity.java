@@ -127,6 +127,18 @@ public final class MainActivity extends Activity {
         haptic.setOnCheckedChangeListener((button, checked) -> store.putBoolean(ConfigContract.KEY_HAPTIC, checked));
         hapticRow.addView(haptic);
         switchCard.addView(hapticRow);
+        switchCard.addView(Ui.divider(this));
+        LinearLayout shadowRow = row();
+        LinearLayout shadowText = new LinearLayout(this);
+        shadowText.setOrientation(LinearLayout.VERTICAL);
+        shadowText.addView(text("扇形背景阴影", 17, Ui.TEXT, Typeface.BOLD));
+        shadowText.addView(text("呼出时显示扇形区域的渐变暗影", 13, Ui.MUTED, Typeface.NORMAL));
+        shadowRow.addView(shadowText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch shadow = new Switch(this);
+        shadow.setChecked(prefs.getBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW));
+        shadow.setOnCheckedChangeListener((button, checked) -> store.putBoolean(ConfigContract.KEY_FAN_SHADOW, checked));
+        shadowRow.addView(shadow);
+        switchCard.addView(shadowRow);
         root.addView(switchCard, cardParams(14));
 
         LinearLayout appsCard = card();
@@ -196,7 +208,7 @@ public final class MainActivity extends Activity {
         behaviorCard.addView(Ui.divider(this));
         behaviorCard.addView(actionRow("窗外·双击", ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
                 ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
-        TextView behavior = text("小窗实际边界外全部使用同一组动作。左右边缘优先保留给系统侧滑；窗外滑动不执行动作。", 14, Ui.MUTED, Typeface.NORMAL);
+        TextView behavior = text("小窗实际边界外四个方向全部使用同一组动作。左右边缘的点按正常执行窗外动作，实际侧滑仍优先交给系统；窗外滑动不执行动作。", 14, Ui.MUTED, Typeface.NORMAL);
         behavior.setLineSpacing(0, 1.18f);
         behavior.setPadding(0, Ui.dp(this, 8), 0, 0);
         behaviorCard.addView(behavior);

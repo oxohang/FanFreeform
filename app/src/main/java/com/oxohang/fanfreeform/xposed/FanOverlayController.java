@@ -24,11 +24,11 @@ final class FanOverlayController {
     }
 
     void show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
-              float radius, float iconDiameter) {
+              float radius, float iconDiameter, boolean showBackdrop) {
         runOnMain(() -> {
             removeNow();
             view = new FanOverlayView(context);
-            view.configure(targets, corner, radius, iconDiameter);
+            view.configure(targets, corner, radius, iconDiameter, showBackdrop);
             view.setAlpha(0f);
             WindowManager.LayoutParams params = params(TYPE_NAVIGATION_BAR_PANEL);
             try {
