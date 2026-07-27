@@ -1,12 +1,13 @@
 # 随用随走（FanFreeform）
 
-面向 HyperOS 3 的 LSPosed 模块：从屏幕左下角或右下角向中心滑动，呼出扇形应用菜单，松手以系统原生小窗打开应用。仅由该手势打开的小窗会响应可配置的窗外单击和双击操作。
+面向 HyperOS 3 的 LSPosed 模块：通过左右底角斜滑或整侧长滑呼出扇形应用菜单，松手以系统原生小窗打开应用。仅由该手势打开的小窗会响应可配置的窗外单击和双击操作。
 
 目标测试环境：HyperOS `OS3.0.317.0.WPBCNXM`、Android 16、`com.android.systemui` `16.03.251211.r`。
 
 ## 已实现
 
 - 左右底角扇形手势，滑动选择、松手启动。
+- 可选的左右整侧距离手势：短滑保留 HyperOS 原生返回，长滑取消返回并展开与侧滑方向匹配的扇形；与底角斜滑同时可用。
 - 3–8 个用户自定义应用，支持搜索、添加、移除和拖动排序。
 - 独立震动开关，可调触发距离、底角触发区宽高、选择半径和图标大小。
 - 全局小窗宽度、高度、水平位置和垂直位置，含可视化预览。
@@ -29,5 +30,5 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 安装 APK 后，在 LSPosed 中启用模块并勾选“系统界面（com.android.systemui）”，随后重启 SystemUI 或手机。打开“随用随走”配置应用，选择 3–8 个应用并调整参数。
 
-详细行为与验收标准见 [基础设计](docs/specs/2026-07-26-hyperos-fan-freeform-design.md)、[交互优化](docs/specs/2026-07-26-interaction-optimization-design.md)、[扇形与窗外交互](docs/specs/2026-07-26-gesture-area-icon-unified-outside-design.md)、[任务复用与手势仲裁](docs/specs/2026-07-26-task-reuse-exit-animation-gesture-arbitration-design.md)、[后台保留与原生关闭](docs/specs/2026-07-27-background-preserving-launch-native-close-design.md) 和 [右上角迷你小窗挂起](docs/specs/2026-07-27-right-top-mini-freeform-design.md)。
+详细行为与验收标准见 [基础设计](docs/specs/2026-07-26-hyperos-fan-freeform-design.md)、[交互优化](docs/specs/2026-07-26-interaction-optimization-design.md)、[扇形与窗外交互](docs/specs/2026-07-26-gesture-area-icon-unified-outside-design.md)、[任务复用与手势仲裁](docs/specs/2026-07-26-task-reuse-exit-animation-gesture-arbitration-design.md)、[后台保留与原生关闭](docs/specs/2026-07-27-background-preserving-launch-native-close-design.md)、[右上角迷你小窗挂起](docs/specs/2026-07-27-right-top-mini-freeform-design.md) 和 [侧滑距离扇形手势](docs/specs/2026-07-27-side-distance-fan-gesture-design.md)。
 已验证的设备、接口和操作链路见 [真机验收记录](docs/device-verification.md)。

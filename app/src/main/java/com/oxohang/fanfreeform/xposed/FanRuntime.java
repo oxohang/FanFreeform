@@ -34,7 +34,7 @@ import java.util.List;
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanRuntime {
-    private enum State { IDLE, ARMED, CLAIMED, ACTIVE, CANCELLED }
+    private enum State { IDLE, ARMED, SIDE_ARMED, CLAIMED, ACTIVE, CANCELLED }
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -44,9 +44,12 @@ final class FanRuntime {
     private final HyperOsFreeformBridge freeform;
     private final OutsideGestureRecognizer outsideGestures;
     private final GestureArbitrator gestureArbitrator = new GestureArbitrator();
+    private final SideGestureArbitrator sideGestureArbitrator = new SideGestureArbitrator();
     private final GestureReplayGuard gestureReplayGuard = new GestureReplayGuard();
     private final float density;
     private final float directionDecisionDistance;
+    private final float sideDirectionSlop;
+    private final float sideVerticalFloor;
     private volatile GestureConfig config = GestureConfig.defaults();
     private volatile List<RuntimeTarget> targets = Collections.emptyList();
     private State state = State.IDLE;
@@ -60,6 +63,9 @@ final class FanRuntime {
     private int selected = -1;
     private boolean startedWithTriggerCapture;
     private boolean cornerTapIsOutsideWindow;
+    private boolean sideTapIsOutsideWindow;
+    private boolean activeSideFan;
+    private float sideOriginY;
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
@@ -69,6 +75,8 @@ final class FanRuntime {
         density = context.getResources().getDisplayMetrics().density;
         ViewConfiguration viewConfiguration = ViewConfiguration.get(context);
         directionDecisionDistance = Math.max(viewConfiguration.getScaledTouchSlop(), 10 * density);
+        sideDirectionSlop = viewConfiguration.getScaledTouchSlop();
+        sideVerticalFloor = 24 * density;
         overlay = new FanOverlayController(context, mainHandler);
         triggerCapture = new FanTriggerCapture(context, mainHandler);
         freeform = new HyperOsFreeformBridge(context, classLoader, mainHandler);
@@ -177,12 +185,37 @@ final class FanRuntime {
             resetFan();
             float hotWidth = width * config.hotWidthPercent / 100f;
             float hotHeight = height * config.hotHeightPercent / 100f;
+            Insets systemSides = systemSideGestureInsets();
+            int separation = config.sideGestureEnabled ? Math.max(1, Math.round(density)) : 0;
+            int leftCaptureInset = config.sideGestureEnabled
+                    ? systemSides.left + separation : 0;
+            int rightCaptureInset = config.sideGestureEnabled
+                    ? systemSides.right + separation : 0;
             GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(
-                    x, y, width, height, hotWidth, hotHeight);
-            if (downCorner != null && !triggerCapture.isCapturing() && canStart()) {
-                triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent);
+                    x, y, width, height, hotWidth, hotHeight,
+                    leftCaptureInset, rightCaptureInset);
+            GestureGeometry.Corner downSide = config.sideGestureEnabled
+                    ? GestureGeometry.sideAt(x, width, systemSides.left, systemSides.right)
+                    : null;
+            if (!triggerCapture.isCapturing() && canStart()) {
+                triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent,
+                        leftCaptureInset, rightCaptureInset);
             }
             Rect tracked = freeform.trackedBounds();
+            if (downSide != null && canStart()) {
+                if (tracked != null && !tracked.contains((int) x, (int) y)) {
+                    Insets reserves = sideGestureReserves();
+                    outsideGestures.onDown(x, y, tracked, width,
+                            reserves.left, reserves.right, event.getEventTime());
+                    sideTapIsOutsideWindow = true;
+                } else {
+                    outsideGestures.onCancel();
+                }
+                armSide(downSide, x, y, event.getDownTime(), event.getEventTime());
+                Log.i("Side-distance gesture armed side=" + downSide
+                        + " threshold=" + config.sideTriggerPercent + "%");
+                return;
+            }
             if (tracked != null) {
                 if (tracked.contains((int) x, (int) y)) return;
                 if (downCorner != null && canStart()) {
@@ -219,6 +252,30 @@ final class FanRuntime {
         if (action == MotionEvent.ACTION_POINTER_DOWN || event.getPointerCount() > 1) {
             resetFan();
             outsideGestures.onCancel();
+            return;
+        }
+
+        if (state == State.SIDE_ARMED && action == MotionEvent.ACTION_MOVE) {
+            if (sideTapIsOutsideWindow) outsideGestures.onMove(x, y);
+            float threshold = width * config.sideTriggerPercent / 100f;
+            SideGestureArbitrator.Decision decision = sideGestureArbitrator.update(
+                    corner, downX, downY, x, y, threshold,
+                    sideDirectionSlop, sideVerticalFloor);
+            if (decision == SideGestureArbitrator.Decision.PENDING) return;
+            if (decision == SideGestureArbitrator.Decision.CANCELLED) {
+                state = State.CANCELLED;
+                Log.i("Side-distance candidate yielded to native input");
+                return;
+            }
+            if (!pilfer(inputMonitor)) {
+                state = State.CANCELLED;
+                Log.i("Side-distance takeover unavailable; native back preserved");
+                return;
+            }
+            outsideGestures.onCancel();
+            activateSideFan(x, y, width, height);
+            Log.i("Side-distance gesture took over native back distance="
+                    + Math.round(GestureGeometry.distance(downX, downY, x, y)));
             return;
         }
 
@@ -279,6 +336,9 @@ final class FanRuntime {
             } else if (state == State.ARMED && cornerTapIsOutsideWindow) {
                 outsideGestures.onUp(x, y, event.getEventTime(),
                         () -> pilfer(inputMonitor));
+            } else if (state == State.SIDE_ARMED && sideTapIsOutsideWindow) {
+                outsideGestures.onUp(x, y, event.getEventTime(),
+                        () -> pilfer(inputMonitor));
             } else if (state == State.ARMED && startedWithTriggerCapture
                     && GestureGeometry.distance(downX, downY, x, y)
                     <= directionDecisionDistance) {
@@ -297,12 +357,27 @@ final class FanRuntime {
         float threshold = Math.min(width, height) * config.triggerPercent / 100f;
         if (distance >= threshold) {
             state = State.ACTIVE;
+            activeSideFan = false;
             float selectionRadius = selectionRadius(width, height);
             float iconDiameter = iconDiameter(selectionRadius);
             overlay.show(targets, corner, selectionRadius, iconDiameter, config.fanShadow);
             if (config.haptic) vibrateTick();
             updateSelection(x, y, width, height, selectionRadius, iconDiameter);
         }
+    }
+
+    private void activateSideFan(float x, float y, int width, int height) {
+        state = State.ACTIVE;
+        activeSideFan = true;
+        float selectionRadius = selectionRadius(width, height);
+        float iconDiameter = iconDiameter(selectionRadius);
+        Insets safe = displaySafeInsets();
+        sideOriginY = GestureGeometry.adjustedSideOriginY(downY, height,
+                selectionRadius, iconDiameter, safe.top, safe.bottom);
+        overlay.showSide(targets, corner, sideOriginY, selectionRadius,
+                iconDiameter, config.fanShadow);
+        if (config.haptic) vibrateTick();
+        updateSelection(x, y, width, height, selectionRadius, iconDiameter);
     }
 
     private void arm(GestureGeometry.Corner corner, float x, float y,
@@ -316,9 +391,22 @@ final class FanRuntime {
         startedWithTriggerCapture = triggerCapture.isCapturing();
     }
 
+    private void armSide(GestureGeometry.Corner side, float x, float y,
+                         long downTime, long eventTime) {
+        sideGestureArbitrator.reset();
+        gestureReplayGuard.begin(downTime, eventTime);
+        state = State.SIDE_ARMED;
+        corner = side;
+        downX = x;
+        downY = y;
+    }
+
     private void updateSelection(float x, float y, int width, int height,
                                  float radius, float iconDiameter) {
-        selected = GestureGeometry.selection(corner, x, y, width, height, targets.size(),
+        selected = activeSideFan
+                ? GestureGeometry.sideSelection(corner, x, y, width, targets.size(),
+                sideOriginY, radius, iconDiameter, 6 * density)
+                : GestureGeometry.selection(corner, x, y, width, height, targets.size(),
                 radius, iconDiameter, 6 * density);
         overlay.update(selected, x, y);
     }
@@ -337,12 +425,16 @@ final class FanRuntime {
     private void resetFan() {
         if (state == State.ACTIVE) overlay.hide();
         gestureArbitrator.reset();
+        sideGestureArbitrator.reset();
         gestureReplayGuard.reset();
         state = State.IDLE;
         corner = null;
         selected = -1;
         startedWithTriggerCapture = false;
         cornerTapIsOutsideWindow = false;
+        sideTapIsOutsideWindow = false;
+        activeSideFan = false;
+        sideOriginY = 0f;
     }
 
     private boolean canStart() {
@@ -354,7 +446,11 @@ final class FanRuntime {
     }
 
     private void refreshTriggerCapture() {
-        triggerCapture.update(canStart(), config.hotWidthPercent, config.hotHeightPercent);
+        Insets systemSides = systemSideGestureInsets();
+        int separation = config.sideGestureEnabled ? Math.max(1, Math.round(density)) : 0;
+        triggerCapture.update(canStart(), config.hotWidthPercent, config.hotHeightPercent,
+                config.sideGestureEnabled ? systemSides.left + separation : 0,
+                config.sideGestureEnabled ? systemSides.right + separation : 0);
     }
 
     private Rect displayBounds() {
@@ -373,6 +469,31 @@ final class FanRuntime {
             return Insets.of(left, 0, right, 0);
         } catch (Throwable error) {
             return Insets.of(fallback, 0, fallback, 0);
+        }
+    }
+
+    private Insets systemSideGestureInsets() {
+        int fallback = Math.round(32 * density);
+        try {
+            WindowMetrics metrics = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics();
+            Insets gestures = metrics.getWindowInsets()
+                    .getInsets(WindowInsets.Type.systemGestures());
+            return Insets.of(gestures.left > 0 ? gestures.left : fallback, 0,
+                    gestures.right > 0 ? gestures.right : fallback, 0);
+        } catch (Throwable error) {
+            return Insets.of(fallback, 0, fallback, 0);
+        }
+    }
+
+    private Insets displaySafeInsets() {
+        try {
+            WindowMetrics metrics = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics();
+            return metrics.getWindowInsets().getInsetsIgnoringVisibility(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        } catch (Throwable error) {
+            return Insets.of(0, Math.round(48 * density), 0, Math.round(32 * density));
         }
     }
 
@@ -397,12 +518,14 @@ final class FanRuntime {
         if (handled) outsideGestures.clearAll();
     }
 
-    private void pilfer(Object inputMonitor) {
-        if (inputMonitor == null) return;
+    private boolean pilfer(Object inputMonitor) {
+        if (inputMonitor == null) return false;
         try {
             XposedHelpers.callMethod(inputMonitor, "pilferPointers");
+            return true;
         } catch (Throwable error) {
             Log.e("Cannot pilfer input pointers", error);
+            return false;
         }
     }
 
@@ -450,7 +573,8 @@ final class FanRuntime {
                 Log.i("Configuration loaded apps=" + nextTargets.size() + " trigger="
                         + next.triggerPercent + "% selection=" + next.selectionRadiusPercent
                         + "% hot=" + next.hotWidthPercent + "x" + next.hotHeightPercent
-                        + "% icon=" + next.iconSizeDp + "dp");
+                        + "% icon=" + next.iconSizeDp + "dp side="
+                        + next.sideGestureEnabled + "@" + next.sideTriggerPercent + "%");
             });
         } catch (Throwable error) {
             Log.e("Cannot read module configuration", error);

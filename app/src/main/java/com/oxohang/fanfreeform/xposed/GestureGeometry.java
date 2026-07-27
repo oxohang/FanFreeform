@@ -18,9 +18,21 @@ final class GestureGeometry {
 
     static Corner cornerAt(float x, float y, int width, int height,
                            float hotWidth, float hotHeight) {
+        return cornerAt(x, y, width, height, hotWidth, hotHeight, 0f, 0f);
+    }
+
+    static Corner cornerAt(float x, float y, int width, int height,
+                           float hotWidth, float hotHeight,
+                           float leftInset, float rightInset) {
         if (y < height - hotHeight) return null;
-        if (x <= hotWidth) return Corner.LEFT;
-        if (x >= width - hotWidth) return Corner.RIGHT;
+        if (x >= leftInset && x <= leftInset + hotWidth) return Corner.LEFT;
+        if (x <= width - rightInset && x >= width - rightInset - hotWidth) return Corner.RIGHT;
+        return null;
+    }
+
+    static Corner sideAt(float x, int width, float leftWidth, float rightWidth) {
+        if (x >= 0f && x <= leftWidth) return Corner.LEFT;
+        if (x <= width && x >= width - rightWidth) return Corner.RIGHT;
         return null;
     }
 
@@ -48,6 +60,39 @@ final class GestureGeometry {
             if (squaredDistance(x, y, center.x, center.y) <= hitRadiusSquared) {
                 return index;
             }
+        }
+        return -1;
+    }
+
+    static Point sideIconCenter(Corner side, int index, int itemCount,
+                                int width, float originY, float radius) {
+        double degrees = itemCount <= 1 ? 0.0 : -55.0 + (110.0 * index / (itemCount - 1));
+        double radians = Math.toRadians(degrees);
+        float horizontal = (float) (radius * Math.cos(radians));
+        float vertical = (float) (radius * Math.sin(radians));
+        return new Point(side == Corner.LEFT ? horizontal : width - horizontal,
+                originY + vertical);
+    }
+
+    static float adjustedSideOriginY(float requestedY, int height, float radius,
+                                     float iconDiameter, float safeTop, float safeBottom) {
+        float span = (float) (radius * Math.sin(Math.toRadians(55.0)))
+                + iconDiameter / 2f + 8f;
+        float minimum = safeTop + span;
+        float maximum = height - safeBottom - span;
+        if (minimum > maximum) return (safeTop + height - safeBottom) / 2f;
+        return Math.max(minimum, Math.min(maximum, requestedY));
+    }
+
+    static int sideSelection(Corner side, float x, float y, int width,
+                             int itemCount, float originY, float radius,
+                             float iconDiameter, float tolerance) {
+        if (itemCount <= 0) return -1;
+        float hitRadius = iconDiameter / 2f + tolerance;
+        float hitRadiusSquared = hitRadius * hitRadius;
+        for (int index = 0; index < itemCount; index++) {
+            Point center = sideIconCenter(side, index, itemCount, width, originY, radius);
+            if (squaredDistance(x, y, center.x, center.y) <= hitRadiusSquared) return index;
         }
         return -1;
     }

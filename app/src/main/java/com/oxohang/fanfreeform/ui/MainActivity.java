@@ -171,6 +171,23 @@ public final class MainActivity extends Activity {
         gesturePreview.update(hotWidthPercent, hotHeightPercent);
         gestureCard.addView(gesturePreview,
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 150)));
+        LinearLayout sideGestureRow = row();
+        LinearLayout sideGestureText = new LinearLayout(this);
+        sideGestureText.setOrientation(LinearLayout.VERTICAL);
+        sideGestureText.addView(text("启用侧滑距离触发", 16, Ui.TEXT, Typeface.BOLD));
+        sideGestureText.addView(text("短滑原生返回，长滑呼出侧边扇形", 13, Ui.MUTED, Typeface.NORMAL));
+        sideGestureRow.addView(sideGestureText,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch sideGesture = new Switch(this);
+        sideGesture.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
+                ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
+        sideGesture.setOnCheckedChangeListener((button, checked) ->
+                store.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, checked));
+        sideGestureRow.addView(sideGesture);
+        gestureCard.addView(sideGestureRow);
+        gestureCard.addView(slider("侧滑长滑距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT, 18, 50,
+                prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT), value -> value + "%"));
         gestureCard.addView(slider("触发区宽度", ConfigContract.KEY_HOT_WIDTH_PERCENT, 5, 20,
                 hotWidthPercent, value -> value + "%"));
         gestureCard.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT, 3,
@@ -182,7 +199,7 @@ public final class MainActivity extends Activity {
                 prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
         gestureCard.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP, 34, 64,
                 prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
-        TextView gestureNote = text("底角触发区直接捕获触摸，不会同时触发系统导航；朝屏幕内侧斜上方滑动即可呼出。图标过多时会自动缩小防止重叠。", 13, Ui.MUTED, Typeface.NORMAL);
+        TextView gestureNote = text("两种触发方式可以共存。侧滑开启后，最外侧短滑仍是 HyperOS 原生返回，长滑切换为侧边扇形；底角斜滑区域会自动向内避让。", 13, Ui.MUTED, Typeface.NORMAL);
         gestureNote.setPadding(0, Ui.dp(this, 2), 0, 0);
         gestureCard.addView(gestureNote);
         root.addView(gestureCard, cardParams(14));

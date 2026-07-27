@@ -10,8 +10,8 @@ android {
         applicationId = "com.oxohang.fanfreeform"
         minSdk = 30
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.4.0"
+        versionCode = 14
+        versionName = "0.4.1"
     }
 
     buildTypes {

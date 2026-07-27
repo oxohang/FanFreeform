@@ -28,9 +28,13 @@ final class FanTriggerCapture {
     private volatile float injectedY;
     private int width;
     private int height;
+    private int leftInset;
+    private int rightInset;
     private boolean desiredEnabled;
     private int desiredHotWidthPercent;
     private int desiredHotHeightPercent;
+    private int desiredLeftInset;
+    private int desiredRightInset;
     private boolean passthroughInProgress;
 
     FanTriggerCapture(Context context, Handler mainHandler) {
@@ -39,8 +43,10 @@ final class FanTriggerCapture {
         windowManager = context.getSystemService(WindowManager.class);
     }
 
-    void update(boolean enabled, int hotWidthPercent, int hotHeightPercent) {
-        runOnMain(() -> updateNow(enabled, hotWidthPercent, hotHeightPercent));
+    void update(boolean enabled, int hotWidthPercent, int hotHeightPercent,
+                int leftInset, int rightInset) {
+        runOnMain(() -> updateNow(enabled, hotWidthPercent, hotHeightPercent,
+                leftInset, rightInset));
     }
 
     boolean isCapturing() {
@@ -58,10 +64,13 @@ final class FanTriggerCapture {
         runOnMain(() -> passthroughTapNow(x, y, displayId));
     }
 
-    private void updateNow(boolean enabled, int hotWidthPercent, int hotHeightPercent) {
+    private void updateNow(boolean enabled, int hotWidthPercent, int hotHeightPercent,
+                           int leftInset, int rightInset) {
         desiredEnabled = enabled;
         desiredHotWidthPercent = hotWidthPercent;
         desiredHotHeightPercent = hotHeightPercent;
+        desiredLeftInset = Math.max(0, leftInset);
+        desiredRightInset = Math.max(0, rightInset);
         if (passthroughInProgress) return;
         if (!enabled) {
             removeNow();
@@ -70,10 +79,14 @@ final class FanTriggerCapture {
         Rect bounds = windowManager.getCurrentWindowMetrics().getBounds();
         int nextWidth = Math.max(1, bounds.width() * hotWidthPercent / 100);
         int nextHeight = Math.max(1, bounds.height() * hotHeightPercent / 100);
-        if (capturing && nextWidth == width && nextHeight == height) return;
+        if (capturing && nextWidth == width && nextHeight == height
+                && this.leftInset == desiredLeftInset
+                && this.rightInset == desiredRightInset) return;
         removeNow();
         width = nextWidth;
         height = nextHeight;
+        this.leftInset = desiredLeftInset;
+        this.rightInset = desiredRightInset;
         if (!attach(TYPE_NAVIGATION_BAR_PANEL) && !attach(2038)) {
             Log.i("Corner trigger capture unavailable; using pilfer fallback");
         }
@@ -94,7 +107,8 @@ final class FanTriggerCapture {
                 downTime, downTime + 18L, x, y, displayId), 42L);
         mainHandler.postDelayed(() -> {
             passthroughInProgress = false;
-            updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent);
+            updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent,
+                    desiredLeftInset, desiredRightInset);
             Log.i("Corner trigger capture restored after application tap passthrough");
         }, 96L);
         Log.i("Replaying corner tap to application x=" + Math.round(x)
@@ -127,14 +141,14 @@ final class FanTriggerCapture {
         View right = captureView("RIGHT");
         try {
             windowManager.addView(left, params(type, Gravity.BOTTOM | Gravity.START,
-                    "FanFreeformTriggerLeft"));
+                    "FanFreeformTriggerLeft", leftInset));
             windowManager.addView(right, params(type, Gravity.BOTTOM | Gravity.END,
-                    "FanFreeformTriggerRight"));
+                    "FanFreeformTriggerRight", rightInset));
             leftView = left;
             rightView = right;
             capturing = true;
             Log.i("Corner trigger capture attached size=" + width + "x" + height
-                    + " type=" + type);
+                    + " inset=" + leftInset + "/" + rightInset + " type=" + type);
             return true;
         } catch (Throwable error) {
             removeView(left);
@@ -160,7 +174,8 @@ final class FanTriggerCapture {
         return view;
     }
 
-    private WindowManager.LayoutParams params(int type, int gravity, String title) {
+    private WindowManager.LayoutParams params(int type, int gravity, String title,
+                                              int horizontalInset) {
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 width, height, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -169,6 +184,7 @@ final class FanTriggerCapture {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         params.gravity = gravity;
+        params.x = horizontalInset;
         params.setTitle(title);
         params.setFitInsetsTypes(0);
         params.layoutInDisplayCutoutMode =

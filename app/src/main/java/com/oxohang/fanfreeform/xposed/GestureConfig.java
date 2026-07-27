@@ -15,6 +15,8 @@ final class GestureConfig {
     final boolean enabled;
     final boolean haptic;
     final boolean fanShadow;
+    final boolean sideGestureEnabled;
+    final int sideTriggerPercent;
     final int triggerPercent;
     final int selectionRadiusPercent;
     final int hotWidthPercent;
@@ -29,6 +31,7 @@ final class GestureConfig {
     final List<ComponentName> components;
 
     private GestureConfig(boolean enabled, boolean haptic, boolean fanShadow,
+                          boolean sideGestureEnabled, int sideTriggerPercent,
                           int triggerPercent, int selectionRadiusPercent,
                           int hotWidthPercent, int hotHeightPercent, int iconSizeDp,
                           int widthPercent, int heightPercent, int positionX,
@@ -37,6 +40,8 @@ final class GestureConfig {
         this.enabled = enabled;
         this.haptic = haptic;
         this.fanShadow = fanShadow;
+        this.sideGestureEnabled = sideGestureEnabled;
+        this.sideTriggerPercent = clamp(sideTriggerPercent, 18, 50);
         this.triggerPercent = clamp(triggerPercent, 6, 24);
         this.selectionRadiusPercent = clamp(selectionRadiusPercent, 35, 75);
         this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
@@ -54,6 +59,8 @@ final class GestureConfig {
 
     static GestureConfig defaults() {
         return new GestureConfig(true, true, ConfigContract.DEFAULT_FAN_SHADOW,
+                ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED,
+                ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT,
                 ConfigContract.DEFAULT_TRIGGER_PERCENT,
                 ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT,
                 ConfigContract.DEFAULT_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT,
@@ -78,6 +85,8 @@ final class GestureConfig {
                 bundle.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED),
                 bundle.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC),
                 bundle.getBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW),
+                bundle.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED),
+                bundle.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT),
                 bundle.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT),
                 bundle.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT),
                 bundle.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT),

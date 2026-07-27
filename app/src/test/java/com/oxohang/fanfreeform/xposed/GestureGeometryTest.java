@@ -85,4 +85,31 @@ public class GestureGeometryTest {
         assertTrue(GestureGeometry.inSideGestureReserve(1150, 1200, 60, 70));
         assertFalse(GestureGeometry.inSideGestureReserve(600, 1200, 60, 70));
     }
+
+    @Test
+    public void insetBottomCornersDoNotOverlapSideGestureStrip() {
+        assertEquals(GestureGeometry.Corner.LEFT,
+                GestureGeometry.cornerAt(100, 2500, 1200, 2600,
+                        96, 440, 62, 62));
+        assertNull(GestureGeometry.cornerAt(30, 2500, 1200, 2600,
+                96, 440, 62, 62));
+        assertEquals(GestureGeometry.Corner.RIGHT,
+                GestureGeometry.cornerAt(1100, 2500, 1200, 2600,
+                        96, 440, 62, 62));
+    }
+
+    @Test
+    public void sideFanMirrorsAndClampsVertically() {
+        GestureGeometry.Point left = GestureGeometry.sideIconCenter(
+                GestureGeometry.Corner.LEFT, 1, 3, 1200, 1300, 500);
+        GestureGeometry.Point right = GestureGeometry.sideIconCenter(
+                GestureGeometry.Corner.RIGHT, 1, 3, 1200, 1300, 500);
+        assertEquals(1200f, left.x + right.x, 0.01f);
+        assertEquals(left.y, right.y, 0.01f);
+        float adjusted = GestureGeometry.adjustedSideOriginY(
+                10, 2600, 500, 46, 144, 74);
+        assertTrue(adjusted > 500f);
+        assertEquals(1, GestureGeometry.sideSelection(GestureGeometry.Corner.LEFT,
+                left.x, left.y, 1200, 3, 1300, 500, 46, 1));
+    }
 }

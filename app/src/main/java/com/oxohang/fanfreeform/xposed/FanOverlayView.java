@@ -30,6 +30,8 @@ final class FanOverlayView extends View {
     private float pointerX;
     private float pointerY;
     private boolean showBackdrop = true;
+    private boolean sideLayout;
+    private float originY;
 
     FanOverlayView(Context context) {
         super(context);
@@ -57,6 +59,23 @@ final class FanOverlayView extends View {
         this.fanRadius = radius;
         this.iconDiameter = iconDiameter;
         this.showBackdrop = showBackdrop;
+        this.sideLayout = false;
+        this.originY = 0f;
+        selected = -1;
+        updateBackdropShader();
+        invalidate();
+    }
+
+    void configureSide(List<RuntimeTarget> targets, GestureGeometry.Corner side,
+                       float originY, float radius, float iconDiameter,
+                       boolean showBackdrop) {
+        this.targets = targets;
+        this.corner = side;
+        this.fanRadius = radius;
+        this.iconDiameter = iconDiameter;
+        this.showBackdrop = showBackdrop;
+        this.sideLayout = true;
+        this.originY = originY;
         selected = -1;
         updateBackdropShader();
         invalidate();
@@ -74,12 +93,15 @@ final class FanOverlayView extends View {
         super.onDraw(canvas);
         if (targets.isEmpty()) return;
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
-        float originY = getHeight();
+        float drawOriginY = sideLayout ? originY : getHeight();
         float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
-        if (showBackdrop) canvas.drawCircle(originX, originY, radius + dp(100), backdrop);
+        if (showBackdrop) canvas.drawCircle(originX, drawOriginY, radius + dp(100), backdrop);
 
         for (int i = 0; i < targets.size(); i++) {
-            GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
+            GestureGeometry.Point center = sideLayout
+                    ? GestureGeometry.sideIconCenter(corner, i, targets.size(),
+                    getWidth(), originY, radius)
+                    : GestureGeometry.iconCenter(corner, i, targets.size(),
                     getWidth(), getHeight(), radius);
             float x = center.x;
             float y = center.y;
@@ -143,7 +165,8 @@ final class FanOverlayView extends View {
         if (getWidth() <= 0 || getHeight() <= 0) return;
         if (fanRadius <= 0) fanRadius = Math.min(getWidth(), getHeight()) * 0.58f;
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
-        backdrop.setShader(new RadialGradient(originX, getHeight(), fanRadius + dp(100),
+        float drawOriginY = sideLayout ? originY : getHeight();
+        backdrop.setShader(new RadialGradient(originX, drawOriginY, fanRadius + dp(100),
                 new int[]{0x99202742, 0x77202742, 0x00202742},
                 new float[]{0f, 0.72f, 1f}, Shader.TileMode.CLAMP));
     }

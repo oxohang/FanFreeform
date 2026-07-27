@@ -12,6 +12,8 @@ public final class ConfigContract {
     public static final String KEY_ENABLED = "enabled";
     public static final String KEY_HAPTIC = "haptic";
     public static final String KEY_FAN_SHADOW = "fan_shadow";
+    public static final String KEY_SIDE_GESTURE_ENABLED = "side_gesture_enabled";
+    public static final String KEY_SIDE_TRIGGER_PERCENT = "side_trigger_percent";
     public static final String KEY_TRIGGER_PERCENT = "trigger_percent";
     public static final String KEY_SELECTION_RADIUS_PERCENT = "selection_radius_percent";
     public static final String KEY_HOT_WIDTH_PERCENT = "hot_width_percent";
@@ -39,6 +41,8 @@ public final class ConfigContract {
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean DEFAULT_HAPTIC = true;
     public static final boolean DEFAULT_FAN_SHADOW = true;
+    public static final boolean DEFAULT_SIDE_GESTURE_ENABLED = false;
+    public static final int DEFAULT_SIDE_TRIGGER_PERCENT = 30;
     public static final int DEFAULT_TRIGGER_PERCENT = 12;
     public static final int DEFAULT_SELECTION_RADIUS_PERCENT = 58;
     public static final int DEFAULT_HOT_WIDTH_PERCENT = 12;
