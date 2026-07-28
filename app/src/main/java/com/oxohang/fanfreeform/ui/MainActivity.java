@@ -11,6 +11,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.format.DateUtils;
 import android.view.DragEvent;
@@ -32,13 +34,24 @@ import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
+
 import java.util.ArrayList;
 import java.util.List;
 
 @SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_APP = 41;
-    private static final String[] ACTION_LABELS = {"无操作", "关闭", "挂起到右上角", "全屏"};
+    private static final String[] ACTION_LABELS = {
+            "无操作", "关闭", "挂起到右上角", "全屏"
+    };
+    private static final int[] ACTION_VALUES = {
+            ConfigContract.ACTION_NONE,
+            ConfigContract.ACTION_CLOSE,
+            ConfigContract.ACTION_PIN,
+            ConfigContract.ACTION_FULLSCREEN
+    };
 
     private ConfigStore store;
     private SharedPreferences prefs;
@@ -98,7 +111,7 @@ public final class MainActivity extends Activity {
         root.setPadding(Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 36));
         scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("随用随走", 30, Ui.TEXT, Typeface.BOLD);
+        TextView title = text("Hyper手势", 30, Ui.TEXT, Typeface.BOLD);
         root.addView(title);
         TextView subtitle = text("HyperOS 3 原生快捷小窗", 15, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 18));
@@ -283,10 +296,19 @@ public final class MainActivity extends Activity {
                     ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT);
             int safeTop = prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                     ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT);
+            int reverseCancel = Math.max(ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
+                    Math.min(ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
+                            prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                                    ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT)));
             boolean names = prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
                     ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES);
+            boolean follow = prefs.getBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                    ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER);
             sideGestureSummary.setText("长滑 " + trigger + "% · 顶部安全 "
-                    + safeTop + "% · 名称" + (names ? "常显" : "选中显示"));
+                    + safeTop + "% · 反向 " + reverseCancel + "% · "
+                    + (follow ? "手指前方" : "贴边")
+                    + " · 名称"
+                    + (names ? "常显" : "选中显示"));
         }
         if (sideGestureSwitch != null) {
             boolean enabled = prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
@@ -307,18 +329,26 @@ public final class MainActivity extends Activity {
                 android.R.layout.simple_spinner_item, ACTION_LABELS);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
-        spinner.setSelection(Math.max(0, Math.min(ACTION_LABELS.length - 1,
-                prefs.getInt(key, defaultAction))), false);
+        spinner.setSelection(actionIndex(prefs.getInt(key, defaultAction)), false);
         spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
-                if (prefs.getInt(key, defaultAction) != position) store.putInt(key, position);
+                int action = ACTION_VALUES[Math.max(0, Math.min(ACTION_VALUES.length - 1,
+                        position))];
+                if (prefs.getInt(key, defaultAction) != action) store.putInt(key, action);
             }
 
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
         actionRow.addView(spinner, new LinearLayout.LayoutParams(Ui.dp(this, 116), Ui.dp(this, 52)));
         return actionRow;
+    }
+
+    private static int actionIndex(int action) {
+        for (int index = 0; index < ACTION_VALUES.length; index++) {
+            if (ACTION_VALUES[index] == action) return index;
+        }
+        return 0;
     }
 
     private void renderApps() {
@@ -365,6 +395,11 @@ public final class MainActivity extends Activity {
                     new View.DragShadowBuilder(row), target, 0));
             row.addView(drag, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)));
 
+            Button shortcutBtn = compactButton("📌");
+            shortcutBtn.setContentDescription("创建桌面快捷方式");
+            shortcutBtn.setOnClickListener(view -> createAppShortcut(target));
+            row.addView(shortcutBtn);
+
             Button remove = compactButton("移除");
             remove.setEnabled(targets.size() > 3 || targets.size() < 3);
             remove.setOnClickListener(view -> {
@@ -398,6 +433,45 @@ public final class MainActivity extends Activity {
     private void saveTargets() {
         store.setTargets(targets);
         renderApps();
+    }
+
+    @SuppressLint("NewApi")
+    private void createAppShortcut(AppTarget target) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Toast.makeText(this, "Android 8+ 才支持桌面快捷方式", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
+        if (shortcutManager == null || !shortcutManager.isRequestPinShortcutSupported()) {
+            Toast.makeText(this, "当前桌面不支持创建快捷方式", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        PackageManager pm = getPackageManager();
+        try {
+            ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
+            CharSequence appLabel = info.loadLabel(pm);
+            if (appLabel == null) appLabel = target.packageName();
+            Drawable iconDrawable = info.loadIcon(pm);
+
+            String id = "fan_" + target.componentName().flattenToShortString()
+                    .replace('/', '_').replace('.', '_');
+
+            ShortcutInfo shortcut = new ShortcutInfo.Builder(this, id)
+                    .setShortLabel(appLabel)
+                    .setLongLabel(appLabel)
+                    .setIcon(Icon.createWithAdaptiveBitmap(
+                            Ui.drawableToBitmap(iconDrawable)))
+                    .setIntent(new Intent(Intent.ACTION_MAIN)
+                            .addCategory(Intent.CATEGORY_LAUNCHER)
+                            .setComponent(target.componentName())
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    .build();
+
+            shortcutManager.requestPinShortcut(shortcut, null);
+            Toast.makeText(this, "请在桌面确认添加快捷方式", Toast.LENGTH_SHORT).show();
+        } catch (Exception ignored) {
+            Toast.makeText(this, "无法为该应用创建快捷方式", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override

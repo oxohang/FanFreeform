@@ -1,7 +1,10 @@
 package com.oxohang.fanfreeform.ui;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,6 +33,20 @@ final class Ui {
         view.setBackgroundColor(Color.rgb(235, 237, 244));
         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 1)));
         return view;
+    }
+
+    /** 将 Drawable 转为 Bitmap，用于 ShortcutManager 创建图标。 */
+    static Bitmap drawableToBitmap(Drawable drawable) {
+        if (drawable instanceof android.graphics.drawable.BitmapDrawable) {
+            return ((android.graphics.drawable.BitmapDrawable) drawable).getBitmap();
+        }
+        int width = Math.max(1, drawable.getIntrinsicWidth());
+        int height = Math.max(1, drawable.getIntrinsicHeight());
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+        drawable.draw(canvas);
+        return bitmap;
     }
 }
 
