@@ -126,6 +126,16 @@ public final class GestureSettingsActivity extends Activity {
                 8, 35, prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT),
                 value -> value + "%"));
+        card.addView(slider("反向取消距离", ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
+                ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
+                prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT),
+                value -> value + "%"));
+        card.addView(Ui.divider(this));
+        card.addView(booleanRow("跟随手指显示", "列表在长滑达到阈值时显示于手指前方",
+                ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
         card.addView(Ui.divider(this));
         LinearLayout namesRow = row();
         LinearLayout labels = new LinearLayout(this);
@@ -146,6 +156,22 @@ public final class GestureSettingsActivity extends Activity {
                 13, Ui.MUTED, Typeface.NORMAL);
         note.setPadding(0, Ui.dp(this, 8), 0, 0);
         card.addView(note);
+    }
+
+    private View booleanRow(String title, String subtitle, String key, boolean defaultValue) {
+        LinearLayout settingRow = row();
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text(title, 16, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text(subtitle, 13, Ui.MUTED, Typeface.NORMAL));
+        settingRow.addView(labels, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch toggle = new Switch(this);
+        toggle.setChecked(prefs.getBoolean(key, defaultValue));
+        toggle.setOnCheckedChangeListener((button, checked) ->
+                store.putBoolean(key, checked));
+        settingRow.addView(toggle);
+        return settingRow;
     }
 
     private View slider(String title, String key, int min, int max, int current,

@@ -7,6 +7,8 @@ import android.os.Handler;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.InputDevice;
+import android.view.KeyCharacterMap;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -62,6 +64,10 @@ final class FanTriggerCapture {
 
     void passthroughTap(float x, float y, int displayId) {
         runOnMain(() -> passthroughTapNow(x, y, displayId));
+    }
+
+    void dispatchBack(int displayId) {
+        runOnMain(() -> dispatchBackNow(displayId));
     }
 
     private void updateNow(boolean enabled, int hotWidthPercent, int hotHeightPercent,
@@ -133,6 +139,33 @@ final class FanTriggerCapture {
             Log.e("Cannot replay application tap action=" + action, error);
         } finally {
             event.recycle();
+        }
+    }
+
+    private void dispatchBackNow(int displayId) {
+        long downTime = SystemClock.uptimeMillis();
+        injectBackEvent(KeyEvent.ACTION_DOWN, downTime, downTime, displayId);
+        injectBackEvent(KeyEvent.ACTION_UP, downTime, downTime + 16L, displayId);
+        Log.i("Captured side swipe dispatched as system back");
+    }
+
+    private void injectBackEvent(int action, long downTime, long eventTime, int displayId) {
+        KeyEvent event = new KeyEvent(downTime, eventTime, action, KeyEvent.KEYCODE_BACK,
+                0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
+                InputDevice.SOURCE_KEYBOARD);
+        try {
+            try {
+                XposedHelpers.callMethod(event, "setDisplayId", displayId);
+            } catch (Throwable ignored) {}
+            Object inputManager = context.getSystemService(Context.INPUT_SERVICE);
+            Object result = XposedHelpers.callMethod(inputManager,
+                    "injectInputEvent", event, 0);
+            if (result instanceof Boolean && !((Boolean) result)) {
+                Log.i("Captured side back was rejected action=" + action);
+            }
+        } catch (Throwable error) {
+            Log.e("Cannot dispatch captured side back action=" + action, error);
         }
     }
 

@@ -114,6 +114,27 @@ final class GestureGeometry {
                 Math.min(safeBottom - listHeight, requestedCenterY - listHeight / 2f));
     }
 
+    static float sideListTopForAnchor(float requestedY, int itemCount, int anchorIndex,
+                                      float rowHeight, float safeTop, float safeBottom) {
+        if (itemCount <= 0 || rowHeight <= 0f) return safeTop;
+        int anchor = Math.max(0, Math.min(itemCount - 1, anchorIndex));
+        float listHeight = itemCount * rowHeight;
+        if (listHeight >= safeBottom - safeTop) return safeTop;
+        float requestedTop = requestedY - (anchor + 0.5f) * rowHeight;
+        return Math.max(safeTop, Math.min(safeBottom - listHeight, requestedTop));
+    }
+
+    static float sideListCenterX(Corner side, float pointerX, int width,
+                                 float iconDiameter, float edgeMargin,
+                                 boolean followFinger) {
+        float minimum = edgeMargin + iconDiameter / 2f;
+        float maximum = width - minimum;
+        if (!followFinger) return side == Corner.LEFT ? minimum : maximum;
+        float offset = iconDiameter + edgeMargin;
+        float requested = side == Corner.LEFT ? pointerX + offset : pointerX - offset;
+        return Math.max(minimum, Math.min(maximum, requested));
+    }
+
     static Point sideListIconCenter(Corner side, int index, int width, float listTop,
                                     float rowHeight, float iconDiameter, float edgeMargin) {
         float x = edgeMargin + iconDiameter / 2f;
@@ -121,11 +142,52 @@ final class GestureGeometry {
                 listTop + (index + 0.5f) * rowHeight);
     }
 
+    static Point sideListIconCenter(int index, float centerX, float listTop,
+                                    float rowHeight) {
+        return new Point(centerX, listTop + (index + 0.5f) * rowHeight);
+    }
+
     static int sideListSelection(float y, int itemCount, float listTop, float rowHeight) {
         if (itemCount <= 0 || rowHeight <= 0f || y < listTop
                 || y >= listTop + itemCount * rowHeight) return -1;
         int index = (int) ((y - listTop) / rowHeight);
         return index >= 0 && index < itemCount ? index : -1;
+    }
+
+    static boolean insideSideList(float x, float y, float centerX, float hitWidth,
+                                  int itemCount, float listTop, float rowHeight) {
+        if (itemCount <= 0 || hitWidth <= 0f || rowHeight <= 0f) return false;
+        return Math.abs(x - centerX) <= hitWidth / 2f
+                && y >= listTop && y < listTop + itemCount * rowHeight;
+    }
+
+    static float sideReverseDistance(Corner side, float activationX, float pointerX) {
+        return side == Corner.LEFT
+                ? Math.max(0f, activationX - pointerX)
+                : Math.max(0f, pointerX - activationX);
+    }
+
+    static float sideListOpacity(float reverseDistance, float cancelDistance) {
+        if (cancelDistance <= 0f) return 0f;
+        float progress = Math.max(0f, Math.min(1f, reverseDistance / cancelDistance));
+        return 1f - progress;
+    }
+
+    static boolean outsideSideListVertically(float y, int itemCount,
+                                             float listTop, float rowHeight) {
+        return itemCount <= 0 || rowHeight <= 0f || y < listTop
+                || y >= listTop + itemCount * rowHeight;
+    }
+
+    static boolean beyondSideListInward(Corner side, float x, float centerX,
+                                        float hitWidth) {
+        float half = hitWidth / 2f;
+        return side == Corner.LEFT ? x > centerX + half : x < centerX - half;
+    }
+
+    static int wheelSelection(float position, int itemCount) {
+        if (itemCount <= 0) return -1;
+        return Math.max(0, Math.min(itemCount - 1, Math.round(position)));
     }
 
     static float effectiveRadius(int itemCount, float configuredRadius,
@@ -149,8 +211,37 @@ final class GestureGeometry {
         return OutsideRegion.OUTSIDE;
     }
 
+    static boolean insideEither(float x, float y,
+                                int firstLeft, int firstTop, int firstRight, int firstBottom,
+                                int secondLeft, int secondTop, int secondRight, int secondBottom,
+                                boolean hasSecond) {
+        if (outsideRegion(x, y, firstLeft, firstTop, firstRight, firstBottom)
+                == OutsideRegion.INSIDE) return true;
+        return hasSecond && outsideRegion(x, y, secondLeft, secondTop,
+                secondRight, secondBottom) == OutsideRegion.INSIDE;
+    }
+
     static boolean inSideGestureReserve(float x, int width, float leftReserve, float rightReserve) {
         return x <= leftReserve || x >= width - rightReserve;
+    }
+
+    static boolean shouldYieldSideTap(boolean fromLeft, float downX, float downY,
+                                      float x, float y, float swipeDecisionDistance,
+                                      float tapRetentionDistance) {
+        float horizontal = fromLeft ? x - downX : downX - x;
+        float vertical = Math.abs(y - downY);
+        if (horizontal >= swipeDecisionDistance && horizontal >= vertical * 1.1f) {
+            return true;
+        }
+        return distance(downX, downY, x, y) > tapRetentionDistance;
+    }
+
+    static boolean isIntentionalSideSwipe(Corner side, float downX, float downY,
+                                           float x, float y, float decisionDistance) {
+        if (side == null) return false;
+        float inward = side == Corner.LEFT ? x - downX : downX - x;
+        float vertical = Math.abs(y - downY);
+        return inward >= decisionDistance && inward >= vertical * 1.1f;
     }
 
     private static float squaredDistance(float x1, float y1, float x2, float y2) {

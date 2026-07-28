@@ -71,6 +71,22 @@ public class GestureGeometryTest {
     }
 
     @Test
+    public void treatsOnlyActualImeRectangleAsPartOfFreeform() {
+        assertTrue(GestureGeometry.insideEither(500, 1000,
+                200, 500, 900, 1800,
+                0, 1900, 1200, 2608, true));
+        assertTrue(GestureGeometry.insideEither(500, 2300,
+                200, 500, 900, 1800,
+                0, 1900, 1200, 2608, true));
+        assertFalse(GestureGeometry.insideEither(500, 1850,
+                200, 500, 900, 1800,
+                0, 1900, 1200, 2608, true));
+        assertFalse(GestureGeometry.insideEither(500, 2300,
+                200, 500, 900, 1800,
+                0, 1900, 1200, 2608, false));
+    }
+
+    @Test
     public void growsRadiusBeforeShrinkingBelowMinimumIconSize() {
         float radius = GestureGeometry.effectiveRadius(8, 140, 28, 6);
         float diameter = GestureGeometry.effectiveIconDiameter(8, radius, 46, 28, 6);
@@ -84,6 +100,38 @@ public class GestureGeometryTest {
         assertTrue(GestureGeometry.inSideGestureReserve(20, 1200, 60, 70));
         assertTrue(GestureGeometry.inSideGestureReserve(1150, 1200, 60, 70));
         assertFalse(GestureGeometry.inSideGestureReserve(600, 1200, 60, 70));
+    }
+
+    @Test
+    public void sideTapKeepsNaturalJitterButYieldsToIntentionalBackSwipe() {
+        assertFalse(GestureGeometry.shouldYieldSideTap(
+                true, 20, 1000, 42, 1024, 36, 54));
+        assertFalse(GestureGeometry.shouldYieldSideTap(
+                false, 1180, 1000, 1158, 1024, 36, 54));
+        assertTrue(GestureGeometry.shouldYieldSideTap(
+                true, 20, 1000, 70, 1008, 36, 54));
+        assertTrue(GestureGeometry.shouldYieldSideTap(
+                false, 1180, 1000, 1130, 992, 36, 54));
+    }
+
+    @Test
+    public void sideTapYieldsAfterLargeNonBackMovement() {
+        assertTrue(GestureGeometry.shouldYieldSideTap(
+                true, 20, 1000, 35, 1060, 36, 54));
+        assertTrue(GestureGeometry.shouldYieldSideTap(
+                false, 1180, 1000, 1190, 1060, 36, 54));
+    }
+
+    @Test
+    public void recognizesOnlyIntentionalInwardSideSwipe() {
+        assertTrue(GestureGeometry.isIntentionalSideSwipe(
+                GestureGeometry.Corner.LEFT, 10, 1000, 60, 1010, 36));
+        assertTrue(GestureGeometry.isIntentionalSideSwipe(
+                GestureGeometry.Corner.RIGHT, 1190, 1000, 1140, 990, 36));
+        assertFalse(GestureGeometry.isIntentionalSideSwipe(
+                GestureGeometry.Corner.LEFT, 10, 1000, 30, 1002, 36));
+        assertFalse(GestureGeometry.isIntentionalSideSwipe(
+                GestureGeometry.Corner.RIGHT, 1190, 1000, 1140, 1080, 36));
     }
 
     @Test
@@ -114,5 +162,73 @@ public class GestureGeometryTest {
         assertTrue(top + 6 * 150 <= 2136f);
         assertEquals(2, GestureGeometry.sideListSelection(left.y, 6, top, 150));
         assertEquals(-1, GestureGeometry.sideListSelection(top - 1, 6, top, 150));
+    }
+
+    @Test
+    public void fingerCenteredListAlignsChosenMiddleItem() {
+        float oddTop = GestureGeometry.sideListTopForAnchor(
+                1300, 7, 3, 150, 520, 2136);
+        GestureGeometry.Point oddMiddle = GestureGeometry.sideListIconCenter(
+                3, 460, oddTop, 150);
+        assertEquals(1300f, oddMiddle.y, 0.01f);
+
+        float evenTop = GestureGeometry.sideListTopForAnchor(
+                1300, 8, 3, 150, 400, 2200);
+        GestureGeometry.Point upperMiddle = GestureGeometry.sideListIconCenter(
+                3, 460, evenTop, 150);
+        assertEquals(1300f, upperMiddle.y, 0.01f);
+    }
+
+    @Test
+    public void followFingerListAppearsAheadOfSwipeAndListExitIsExplicit() {
+        assertEquals(620f, GestureGeometry.sideListCenterX(
+                GestureGeometry.Corner.LEFT, 460, 1200, 120, 40, true), 0.01f);
+        assertEquals(580f, GestureGeometry.sideListCenterX(
+                GestureGeometry.Corner.RIGHT, 740, 1200, 120, 40, true), 0.01f);
+        assertEquals(100f, GestureGeometry.sideListCenterX(
+                GestureGeometry.Corner.LEFT, 460, 1200, 120, 40, false), 0.01f);
+        assertEquals(1100f, GestureGeometry.sideListCenterX(
+                GestureGeometry.Corner.RIGHT, 740, 1200, 120, 40, false), 0.01f);
+        assertTrue(GestureGeometry.insideSideList(
+                470, 900, 460, 180, 7, 600, 100));
+        assertFalse(GestureGeometry.insideSideList(
+                560, 900, 460, 180, 7, 600, 100));
+        assertFalse(GestureGeometry.insideSideList(
+                460, 1300, 460, 180, 7, 600, 100));
+    }
+
+    @Test
+    public void wheelSelectionClampsAndRoundsToCenter() {
+        assertEquals(0, GestureGeometry.wheelSelection(-0.4f, 7));
+        assertEquals(3, GestureGeometry.wheelSelection(2.6f, 7));
+        assertEquals(6, GestureGeometry.wheelSelection(8f, 7));
+        assertEquals(-1, GestureGeometry.wheelSelection(2f, 0));
+    }
+
+    @Test
+    public void sideReverseFadeMirrorsAndClamps() {
+        assertEquals(40f, GestureGeometry.sideReverseDistance(
+                GestureGeometry.Corner.LEFT, 400, 360), 0.01f);
+        assertEquals(40f, GestureGeometry.sideReverseDistance(
+                GestureGeometry.Corner.RIGHT, 800, 840), 0.01f);
+        assertEquals(0f, GestureGeometry.sideReverseDistance(
+                GestureGeometry.Corner.LEFT, 400, 500), 0.01f);
+        assertEquals(1f, GestureGeometry.sideListOpacity(0, 120), 0.01f);
+        assertEquals(0.5f, GestureGeometry.sideListOpacity(60, 120), 0.01f);
+        assertEquals(0f, GestureGeometry.sideListOpacity(140, 120), 0.01f);
+    }
+
+    @Test
+    public void sideListExitDistinguishesEdgeInwardAndVerticalDirections() {
+        assertTrue(GestureGeometry.outsideSideListVertically(590, 7, 600, 100));
+        assertFalse(GestureGeometry.outsideSideListVertically(900, 7, 600, 100));
+        assertTrue(GestureGeometry.beyondSideListInward(
+                GestureGeometry.Corner.LEFT, 570, 460, 180));
+        assertFalse(GestureGeometry.beyondSideListInward(
+                GestureGeometry.Corner.LEFT, 350, 460, 180));
+        assertTrue(GestureGeometry.beyondSideListInward(
+                GestureGeometry.Corner.RIGHT, 630, 740, 180));
+        assertFalse(GestureGeometry.beyondSideListInward(
+                GestureGeometry.Corner.RIGHT, 850, 740, 180));
     }
 }

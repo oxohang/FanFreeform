@@ -40,6 +40,17 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
                     ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES));
+            out.putBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                    ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
+            out.putBoolean(ConfigContract.KEY_SIDE_WHEEL_MODE, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_WHEEL_MODE,
+                    ConfigContract.DEFAULT_SIDE_WHEEL_MODE));
+            out.putInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                    Math.max(ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
+                            Math.min(ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
+                                    prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                                            ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT))));
             out.putInt(ConfigContract.KEY_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT));
             out.putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT));
             out.putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT));
@@ -49,10 +60,6 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT));
             out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
             out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
-            out.putInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, ConfigContract.DEFAULT_UPPER_SINGLE_ACTION));
-            out.putInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, ConfigContract.DEFAULT_UPPER_DOUBLE_ACTION));
-            out.putInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, ConfigContract.DEFAULT_LOWER_SINGLE_ACTION));
-            out.putInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, ConfigContract.DEFAULT_LOWER_DOUBLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
             out.putString(ConfigContract.KEY_COMPONENTS, prefs.getString(ConfigContract.KEY_COMPONENTS, "[]"));

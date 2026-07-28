@@ -20,6 +20,9 @@ final class GestureConfig {
     final int sideIconSizeDp;
     final int sideTopSafeMarginPercent;
     final boolean sideShowAppNames;
+    final boolean sideFollowFinger;
+    final boolean sideWheelMode;
+    final int sideReverseCancelPercent;
     final int triggerPercent;
     final int selectionRadiusPercent;
     final int hotWidthPercent;
@@ -36,7 +39,8 @@ final class GestureConfig {
     private GestureConfig(boolean enabled, boolean haptic, boolean fanShadow,
                           boolean sideGestureEnabled, int sideTriggerPercent,
                           int sideIconSizeDp, int sideTopSafeMarginPercent,
-                          boolean sideShowAppNames,
+                          boolean sideShowAppNames, boolean sideFollowFinger,
+                          boolean sideWheelMode, int sideReverseCancelPercent,
                           int triggerPercent, int selectionRadiusPercent,
                           int hotWidthPercent, int hotHeightPercent, int iconSizeDp,
                           int widthPercent, int heightPercent, int positionX,
@@ -50,6 +54,11 @@ final class GestureConfig {
         this.sideIconSizeDp = clamp(sideIconSizeDp, 34, 64);
         this.sideTopSafeMarginPercent = clamp(sideTopSafeMarginPercent, 8, 35);
         this.sideShowAppNames = sideShowAppNames;
+        this.sideFollowFinger = sideFollowFinger;
+        this.sideWheelMode = false;
+        this.sideReverseCancelPercent = clamp(sideReverseCancelPercent,
+                ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
+                ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT);
         this.triggerPercent = clamp(triggerPercent, 6, 24);
         this.selectionRadiusPercent = clamp(selectionRadiusPercent, 35, 75);
         this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
@@ -60,8 +69,8 @@ final class GestureConfig {
         this.heightPercent = clamp(heightPercent, 35, 85);
         this.positionX = clamp(positionX, 0, 100);
         this.positionY = clamp(positionY, 0, 100);
-        this.outsideSingleAction = clamp(outsideSingleAction, 0, 3);
-        this.outsideDoubleAction = clamp(outsideDoubleAction, 0, 3);
+        this.outsideSingleAction = supportedOutsideAction(outsideSingleAction);
+        this.outsideDoubleAction = supportedOutsideAction(outsideDoubleAction);
         this.components = Collections.unmodifiableList(components);
     }
 
@@ -72,6 +81,9 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_SIDE_ICON_SIZE_DP,
                 ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES,
+                ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER,
+                ConfigContract.DEFAULT_SIDE_WHEEL_MODE,
+                ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.DEFAULT_TRIGGER_PERCENT,
                 ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT,
                 ConfigContract.DEFAULT_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT,
@@ -105,6 +117,12 @@ final class GestureConfig {
                         ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT),
                 bundle.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
                         ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES),
+                bundle.getBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                        ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER),
+                bundle.getBoolean(ConfigContract.KEY_SIDE_WHEEL_MODE,
+                        ConfigContract.DEFAULT_SIDE_WHEEL_MODE),
+                bundle.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT),
                 bundle.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT),
                 bundle.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT),
                 bundle.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT),
@@ -125,5 +143,12 @@ final class GestureConfig {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static int supportedOutsideAction(int action) {
+        return action == ConfigContract.ACTION_CLOSE
+                || action == ConfigContract.ACTION_PIN
+                || action == ConfigContract.ACTION_FULLSCREEN
+                ? action : ConfigContract.ACTION_NONE;
     }
 }

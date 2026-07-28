@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class ConfigStore {
+    private static final String KEY_DOUBLE_PIN_MIGRATED = "double_pin_migrated_v1";
     private final Context context;
     private final SharedPreferences preferences;
 
@@ -23,6 +24,7 @@ public final class ConfigStore {
         preferences = this.context.getSharedPreferences(ConfigContract.PREFS, Context.MODE_PRIVATE);
         seedDefaultsIfNeeded(this.context, preferences);
         migrateUnifiedActionsIfNeeded(preferences);
+        migrateDoubleTapPinIfNeeded(preferences);
     }
 
     public SharedPreferences preferences() {
@@ -79,6 +81,12 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT)
                 .putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
                         ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES)
+                .putBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                        ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER)
+                .putBoolean(ConfigContract.KEY_SIDE_WHEEL_MODE,
+                        ConfigContract.DEFAULT_SIDE_WHEEL_MODE)
+                .putInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT)
                 .putInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT)
                 .putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT)
                 .putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT)
@@ -88,10 +96,6 @@ public final class ConfigStore {
                 .putInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT)
                 .putInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X)
                 .putInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y)
-                .putInt(ConfigContract.KEY_UPPER_SINGLE_ACTION, ConfigContract.DEFAULT_UPPER_SINGLE_ACTION)
-                .putInt(ConfigContract.KEY_UPPER_DOUBLE_ACTION, ConfigContract.DEFAULT_UPPER_DOUBLE_ACTION)
-                .putInt(ConfigContract.KEY_LOWER_SINGLE_ACTION, ConfigContract.DEFAULT_LOWER_SINGLE_ACTION)
-                .putInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION, ConfigContract.DEFAULT_LOWER_DOUBLE_ACTION)
                 .putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION)
                 .putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION)
                 .apply();
@@ -142,14 +146,24 @@ public final class ConfigStore {
         SharedPreferences.Editor editor = preferences.edit();
         if (needsSingle) {
             editor.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION,
-                    preferences.getInt(ConfigContract.KEY_LOWER_SINGLE_ACTION,
+                    preferences.getInt("lower_single_action",
                             ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
         }
         if (needsDouble) {
             editor.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
-                    preferences.getInt(ConfigContract.KEY_LOWER_DOUBLE_ACTION,
+                    preferences.getInt("lower_double_action",
                             ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
         }
         editor.commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateDoubleTapPinIfNeeded(SharedPreferences preferences) {
+        if (preferences.getBoolean(KEY_DOUBLE_PIN_MIGRATED, false)) return;
+        preferences.edit()
+                .putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
+                        ConfigContract.ACTION_PIN)
+                .putBoolean(KEY_DOUBLE_PIN_MIGRATED, true)
+                .commit();
     }
 }

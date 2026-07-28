@@ -127,6 +127,17 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                     }
                 }
             });
+            XposedBridge.hookAllMethods(controllerClass, "onImeVisibilityChanged",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (runtime == null || param.args.length < 2
+                                    || !(param.args[0] instanceof Boolean)
+                                    || !(param.args[1] instanceof Number)) return;
+                            runtime.onImeVisibilityChanged((Boolean) param.args[0],
+                                    ((Number) param.args[1]).intValue());
+                        }
+                    });
             Log.i("Freeform controller hooks installed");
         } catch (Throwable error) {
             Log.e("Freeform controller hooks failed safely", error);
@@ -138,7 +149,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Class<?> animationClass = XposedHelpers.findClassIfExists(
                     FREEFORM_ANIMATION, classLoader);
             if (animationClass == null) {
-                Log.i("HyperOS freeform animation is unavailable; right-side correction disabled");
+                Log.i("HyperOS freeform animation unavailable; mini target correction disabled");
                 return;
             }
             XposedBridge.hookAllMethods(animationClass, "startGestureAnimation",
@@ -158,4 +169,5 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Log.e("Freeform mini animation target hook failed safely", error);
         }
     }
+
 }

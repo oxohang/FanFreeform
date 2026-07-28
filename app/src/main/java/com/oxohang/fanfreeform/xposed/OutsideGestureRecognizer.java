@@ -14,6 +14,9 @@ final class OutsideGestureRecognizer {
     private final Handler handler;
     private final Listener listener;
     private final float touchSlopSquared;
+    private final float sideTapSlopSquared;
+    private final float sideSwipeDecisionDistance;
+    private final float sideTapRetentionDistance;
     private final float doubleTapSlopSquared;
     private final long doubleTapTimeout;
     private final long tapTimeout;
@@ -21,6 +24,7 @@ final class OutsideGestureRecognizer {
     private boolean active;
     private boolean secondTap;
     private boolean sideGestureCandidate;
+    private boolean sideFromLeft;
     private float downX;
     private float downY;
     private long downTime;
@@ -30,12 +34,16 @@ final class OutsideGestureRecognizer {
     private long pendingTime;
     private final Runnable singleTapRunnable = this::dispatchPendingSingle;
 
-    OutsideGestureRecognizer(Handler handler, ViewConfiguration configuration, Listener listener) {
+    OutsideGestureRecognizer(Handler handler, ViewConfiguration configuration,
+                             float density, Listener listener) {
         this.handler = handler;
         this.listener = listener;
         float touchSlop = configuration.getScaledTouchSlop();
         float doubleTapSlop = configuration.getScaledDoubleTapSlop();
         this.touchSlopSquared = touchSlop * touchSlop;
+        this.sideSwipeDecisionDistance = Math.max(touchSlop * 1.5f, 12f * density);
+        this.sideTapRetentionDistance = Math.max(touchSlop * 2f, 18f * density);
+        this.sideTapSlopSquared = sideTapRetentionDistance * sideTapRetentionDistance;
         this.doubleTapSlopSquared = doubleTapSlop * doubleTapSlop;
         this.doubleTapTimeout = Math.min(ViewConfiguration.getDoubleTapTimeout(),
                 DOUBLE_TAP_WINDOW_MS);
@@ -47,6 +55,7 @@ final class OutsideGestureRecognizer {
         active = false;
         secondTap = false;
         sideGestureCandidate = false;
+        sideFromLeft = false;
         if (bounds == null) return false;
 
         GestureGeometry.OutsideRegion region = GestureGeometry.outsideRegion(
@@ -55,6 +64,7 @@ final class OutsideGestureRecognizer {
 
         sideGestureCandidate = GestureGeometry.inSideGestureReserve(
                 x, displayWidth, leftReserve, rightReserve);
+        sideFromLeft = sideGestureCandidate && x <= leftReserve;
 
         if (pendingTap) {
             boolean inTime = eventTime - pendingTime <= doubleTapTimeout;
@@ -78,28 +88,24 @@ final class OutsideGestureRecognizer {
     }
 
     void onMove(float x, float y) {
-        if (active && squaredDistance(x, y, downX, downY) > touchSlopSquared) {
+        if (!active) return;
+        boolean movedOutsideTap = sideGestureCandidate
+                ? GestureGeometry.shouldYieldSideTap(sideFromLeft, downX, downY, x, y,
+                sideSwipeDecisionDistance, sideTapRetentionDistance)
+                : squaredDistance(x, y, downX, downY) > touchSlopSquared;
+        if (movedOutsideTap) {
             active = false;
             secondTap = false;
             if (sideGestureCandidate) {
-                Log.i("Outside side-edge movement yielded to system gesture");
+                Log.i("Outside side-edge movement yielded to system gesture dx="
+                        + Math.round(x - downX) + " dy=" + Math.round(y - downY));
             }
             sideGestureCandidate = false;
         }
     }
 
     void onUp(float x, float y, long eventTime, Runnable claimInput) {
-        if (!active) return;
-        boolean valid = eventTime - downTime <= tapTimeout
-                && squaredDistance(x, y, downX, downY) <= touchSlopSquared;
-        active = false;
-        if (!valid) {
-            secondTap = false;
-            sideGestureCandidate = false;
-            return;
-        }
-        if (sideGestureCandidate && claimInput != null) claimInput.run();
-        sideGestureCandidate = false;
+        if (!finishTap(x, y, eventTime, claimInput)) return;
         if (secondTap) {
             clearPending();
             secondTap = false;
@@ -114,10 +120,19 @@ final class OutsideGestureRecognizer {
         handler.postDelayed(singleTapRunnable, doubleTapTimeout);
     }
 
+    void onUpImmediate(float x, float y, long eventTime,
+                       Runnable claimInput, Runnable action) {
+        if (!finishTap(x, y, eventTime, claimInput)) return;
+        clearPending();
+        secondTap = false;
+        if (action != null) action.run();
+    }
+
     void onCancel() {
         active = false;
         secondTap = false;
         sideGestureCandidate = false;
+        sideFromLeft = false;
     }
 
     void clearAll() {
@@ -129,6 +144,25 @@ final class OutsideGestureRecognizer {
         if (!pendingTap) return;
         clearPending();
         listener.onOutsideAction(false);
+    }
+
+    private boolean finishTap(float x, float y, long eventTime, Runnable claimInput) {
+        if (!active) return false;
+        float allowedMovementSquared = sideGestureCandidate
+                ? sideTapSlopSquared : touchSlopSquared;
+        boolean valid = eventTime - downTime <= tapTimeout
+                && squaredDistance(x, y, downX, downY) <= allowedMovementSquared;
+        active = false;
+        if (!valid) {
+            secondTap = false;
+            sideGestureCandidate = false;
+            sideFromLeft = false;
+            return false;
+        }
+        if (sideGestureCandidate && claimInput != null) claimInput.run();
+        sideGestureCandidate = false;
+        sideFromLeft = false;
+        return true;
     }
 
     private void clearPending() {
