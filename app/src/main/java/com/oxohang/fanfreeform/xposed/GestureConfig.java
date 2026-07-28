@@ -6,7 +6,6 @@ import android.os.Bundle;
 import com.oxohang.fanfreeform.config.ConfigContract;
 
 import org.json.JSONArray;
-import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,7 +35,6 @@ final class GestureConfig {
     final int outsideSingleAction;
     final int outsideDoubleAction;
     final List<ComponentName> components;
-    final List<Boolean> shortcutFlags; // true = shortcut (specific activity), false = app (launcher)
 
     private GestureConfig(boolean enabled, boolean haptic, boolean fanShadow,
                           boolean sideGestureEnabled, int sideTriggerPercent,
@@ -47,7 +45,7 @@ final class GestureConfig {
                           int hotWidthPercent, int hotHeightPercent, int iconSizeDp,
                           int widthPercent, int heightPercent, int positionX,
                           int positionY, int outsideSingleAction, int outsideDoubleAction,
-                          List<ComponentName> components, List<Boolean> shortcutFlags) {
+                          List<ComponentName> components) {
         this.enabled = enabled;
         this.haptic = haptic;
         this.fanShadow = fanShadow;
@@ -74,9 +72,6 @@ final class GestureConfig {
         this.outsideSingleAction = supportedOutsideAction(outsideSingleAction);
         this.outsideDoubleAction = supportedOutsideAction(outsideDoubleAction);
         this.components = Collections.unmodifiableList(components);
-        this.shortcutFlags = shortcutFlags != null
-                ? Collections.unmodifiableList(new ArrayList<>(shortcutFlags))
-                : Collections.emptyList();
     }
 
     static GestureConfig defaults() {
@@ -96,30 +91,17 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_WIDTH_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT,
                 ConfigContract.DEFAULT_POSITION_X, ConfigContract.DEFAULT_POSITION_Y,
                 ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION,
-                new ArrayList<>(), new ArrayList<>());
+                new ArrayList<>());
     }
 
     static GestureConfig from(Bundle bundle) {
         if (bundle == null) return defaults();
         ArrayList<ComponentName> components = new ArrayList<>();
-        ArrayList<Boolean> shortcutFlags = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(bundle.getString(ConfigContract.KEY_COMPONENTS, "[]"));
             for (int i = 0; i < Math.min(8, array.length()); i++) {
-                Object item = array.opt(i);
-                ComponentName component = null;
-                boolean shortcut = false;
-                if (item instanceof String) {
-                    component = ComponentName.unflattenFromString((String) item);
-                } else if (item instanceof JSONObject) {
-                    JSONObject obj = (JSONObject) item;
-                    component = ComponentName.unflattenFromString(obj.optString("c", ""));
-                    shortcut = obj.optBoolean("s", false);
-                }
-                if (component != null && !components.contains(component)) {
-                    components.add(component);
-                    shortcutFlags.add(shortcut);
-                }
+                ComponentName component = ComponentName.unflattenFromString(array.optString(i));
+                if (component != null && !components.contains(component)) components.add(component);
             }
         } catch (Exception ignored) {}
         return new GestureConfig(
@@ -152,7 +134,7 @@ final class GestureConfig {
                 bundle.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y),
                 bundle.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION),
                 bundle.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION),
-                components, shortcutFlags);
+                components);
     }
 
     boolean ready() {

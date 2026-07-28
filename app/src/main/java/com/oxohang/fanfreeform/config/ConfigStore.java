@@ -37,24 +37,14 @@ public final class ConfigStore {
         try {
             JSONArray array = new JSONArray(raw);
             for (int i = 0; i < array.length(); i++) {
-                Object item = array.get(i);
-                String flattened;
-                boolean shortcut = false;
-                if (item instanceof String) {
-                    flattened = (String) item;
-                } else if (item instanceof org.json.JSONObject) {
-                    org.json.JSONObject obj = (org.json.JSONObject) item;
-                    flattened = obj.optString("c", "");
-                    shortcut = obj.optBoolean("s", false);
-                } else {
-                    continue;
-                }
-                AppTarget target = new AppTarget(flattened, shortcut);
+                String flattened = array.optString(i, "");
+                AppTarget target = new AppTarget(flattened);
                 if (target.componentName() != null && !result.contains(target)) {
                     result.add(target);
                 }
             }
         } catch (Exception ignored) {
+            // A malformed list is treated as empty; the settings UI can repair it.
         }
         return result;
     }
@@ -63,17 +53,7 @@ public final class ConfigStore {
         JSONArray array = new JSONArray();
         int count = Math.min(8, targets.size());
         for (int i = 0; i < count; i++) {
-            AppTarget t = targets.get(i);
-            if (t.isShortcut) {
-                org.json.JSONObject obj = new org.json.JSONObject();
-                try {
-                    obj.put("c", t.component);
-                    obj.put("s", true);
-                } catch (Exception ignored) {}
-                array.put(obj);
-            } else {
-                array.put(t.component);
-            }
+            array.put(targets.get(i).component);
         }
         preferences.edit().putString(ConfigContract.KEY_COMPONENTS, array.toString()).apply();
         notifyChanged();

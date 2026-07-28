@@ -7,16 +7,10 @@ final class RuntimeTarget {
     final ComponentName component;
     final String label;
     final Drawable icon;
-    final boolean isShortcut;
 
     RuntimeTarget(ComponentName component, String label, Drawable icon) {
-        this(component, label, icon, false);
-    }
-
-    RuntimeTarget(ComponentName component, String label, Drawable icon, boolean isShortcut) {
         this.component = component;
         this.label = label;
         this.icon = icon;
-        this.isShortcut = isShortcut;
     }
 }

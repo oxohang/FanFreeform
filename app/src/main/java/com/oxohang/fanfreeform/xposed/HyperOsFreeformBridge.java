@@ -143,17 +143,10 @@ final class HyperOsFreeformBridge {
             Rect launchBounds = customLaunchBounds(config, scale);
             options.setLaunchBounds(launchBounds);
 
-            Intent intent;
-            if (target.isShortcut) {
-                intent = new Intent(Intent.ACTION_VIEW)
-                        .setComponent(target.component)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            } else {
-                intent = new Intent(Intent.ACTION_MAIN)
-                        .addCategory(Intent.CATEGORY_LAUNCHER)
-                        .setComponent(target.component)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            }
+            Intent intent = new Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(target.component)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ActivityManager.RunningTaskInfo existing = findRunningTask(packageName);
             if (existing != null) forceTaskResizable(existing.taskId);
             Bundle launchOptions = options.toBundle();

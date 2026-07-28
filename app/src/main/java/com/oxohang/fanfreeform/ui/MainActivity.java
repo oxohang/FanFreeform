@@ -384,12 +384,7 @@ public final class MainActivity extends Activity {
             labels.setOrientation(LinearLayout.VERTICAL);
             labels.setPadding(Ui.dp(this, 12), 0, 0, 0);
             labels.addView(label);
-            if (target.isShortcut) {
-                TextView badge = text("快捷方式", 11, 0xff6572f6, Typeface.BOLD);
-                labels.addView(badge);
-            } else {
-                labels.addView(packageName);
-            }
+            labels.addView(packageName);
             row.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
             TextView drag = text("≡", 26, Ui.MUTED, Typeface.NORMAL);
@@ -487,8 +482,7 @@ public final class MainActivity extends Activity {
         String flattened = data.getStringExtra(AppPickerActivity.EXTRA_COMPONENT);
         ComponentName component = ComponentName.unflattenFromString(flattened == null ? "" : flattened);
         if (component == null) return;
-        boolean isShortcut = data.getBooleanExtra(AppPickerActivity.EXTRA_IS_SHORTCUT, false);
-        AppTarget target = new AppTarget(component.flattenToString(), isShortcut);
+        AppTarget target = new AppTarget(component.flattenToString());
         if (targets.contains(target)) {
             Toast.makeText(this, "该应用已经在列表中", Toast.LENGTH_SHORT).show();
             return;
