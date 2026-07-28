@@ -50,6 +50,12 @@ final class FanOverlayView extends View {
     private float launchAnimRotation = 0f;
     private ValueAnimator launchAnimator;
 
+    // 扇形弹出动画状态
+    private float entryProgress = 1f;
+    private ValueAnimator entryAnimator;
+    private static final long ENTRY_STAGGER_MS = 35;
+    private static final long ENTRY_ICON_DURATION_MS = 200;
+
     FanOverlayView(Context context) {
         super(context);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -74,6 +80,8 @@ final class FanOverlayView extends View {
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                    float radius, float iconDiameter, boolean showBackdrop) {
+        cancelLaunchAnimation();
+        cancelEntryAnimation();
         this.targets = targets;
         this.corner = corner;
         this.fanRadius = radius;
@@ -86,7 +94,7 @@ final class FanOverlayView extends View {
         this.showSideNames = false;
         selected = -1;
         updateBackdropShader();
-        invalidate();
+        startEntryAnimation();
     }
 
     void configureSideList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -112,6 +120,36 @@ final class FanOverlayView extends View {
         pointerX = x;
         pointerY = y;
         invalidate();
+    }
+
+    /** 扇形弹出时图标从底角滑入，带动画。 */
+    private void startEntryAnimation() {
+        if (targets.isEmpty()) { entryProgress = 1f; return; }
+        cancelEntryAnimation();
+        entryProgress = 0f;
+        long totalDuration = ENTRY_STAGGER_MS * (targets.size() - 1) + ENTRY_ICON_DURATION_MS;
+        entryAnimator = ValueAnimator.ofFloat(0f, 1f);
+        entryAnimator.setDuration(totalDuration);
+        entryAnimator.setInterpolator(new android.view.animation.LinearInterpolator());
+        entryAnimator.addUpdateListener(anim -> {
+            entryProgress = (float) anim.getAnimatedValue();
+            invalidate();
+        });
+        entryAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                entryProgress = 1f;
+                entryAnimator = null;
+            }
+        });
+        entryAnimator.start();
+    }
+
+    private void cancelEntryAnimation() {
+        if (entryAnimator != null) {
+            entryAnimator.cancel();
+            entryAnimator = null;
+        }
+        entryProgress = 1f;
     }
 
     /**
@@ -161,6 +199,19 @@ final class FanOverlayView extends View {
         launchAnimRotation = 0f;
     }
 
+    private float entryProgressForIndex(int index) {
+        if (entryProgress >= 1f || targets.size() <= 1) return 1f;
+        long totalDuration = ENTRY_STAGGER_MS * (targets.size() - 1) + ENTRY_ICON_DURATION_MS;
+        long iconStart = index * ENTRY_STAGGER_MS;
+        long iconEnd = iconStart + ENTRY_ICON_DURATION_MS;
+        float raw = (entryProgress * totalDuration - iconStart) / (float) ENTRY_ICON_DURATION_MS;
+        if (raw <= 0f) return 0f;
+        if (raw >= 1f) return 1f;
+        // Decelerate: 1 - (1 - t)^2
+        float t = raw;
+        return 1f - (1f - t) * (1f - t);
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -177,27 +228,38 @@ final class FanOverlayView extends View {
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
                     getWidth(), getHeight(), radius);
-            float x = center.x;
-            float y = center.y;
+            float cX = center.x;
+            float cY = center.y;
+            float fanOriginX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
+            float fanOriginY = getHeight();
+
             boolean active = i == selected;
             boolean launching = i == launchAnimIndex;
+            float entryT = entryProgressForIndex(i);
+            float drawX = fanOriginX + (cX - fanOriginX) * entryT;
+            float drawY = fanOriginY + (cY - fanOriginY) * entryT;
+            float entryScale = 0.3f + 0.7f * entryT;
+
             float diameter = iconDiameter * (active ? 1.08f : 1f);
             float iconRadius = diameter / 2f;
 
             if (launching) {
                 canvas.save();
-                canvas.rotate(launchAnimRotation, x, y);
-                canvas.scale(launchAnimScale, launchAnimScale, x, y);
+                canvas.rotate(launchAnimRotation, drawX, drawY);
+                canvas.scale(launchAnimScale * entryScale, launchAnimScale * entryScale, drawX, drawY);
+            } else if (entryT < 1f) {
+                canvas.save();
+                canvas.scale(entryScale, entryScale, drawX, drawY);
             }
 
-            canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
-            drawCircularIcon(canvas, targets.get(i).icon, x, y, diameter);
-            canvas.drawCircle(x, y, iconRadius - dp(0.5f), iconStrokePaint);
+            canvas.drawCircle(drawX, drawY, iconRadius, iconShadowPaint);
+            drawCircularIcon(canvas, targets.get(i).icon, drawX, drawY, diameter);
+            canvas.drawCircle(drawX, drawY, iconRadius - dp(0.5f), iconStrokePaint);
             if (!launching && active) {
-                canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
+                canvas.drawCircle(drawX, drawY, iconRadius + dp(6), selectedPaint);
             }
 
-            if (launching) {
+            if (launching || entryT < 1f) {
                 canvas.restore();
             }
         }

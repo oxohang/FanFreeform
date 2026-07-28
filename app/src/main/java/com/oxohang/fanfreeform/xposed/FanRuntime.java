@@ -978,13 +978,16 @@ final class FanRuntime {
             GestureConfig next = GestureConfig.from(bundle);
             ArrayList<RuntimeTarget> resolved = new ArrayList<>();
             PackageManager packageManager = context.getPackageManager();
-            for (ComponentName component : next.components) {
+            int componentCount = Math.min(next.components.size(), next.shortcutFlags.size());
+            for (int idx = 0; idx < next.components.size(); idx++) {
+                ComponentName component = next.components.get(idx);
+                boolean isShortcut = idx < next.shortcutFlags.size() && next.shortcutFlags.get(idx);
                 try {
                     ActivityInfo info = packageManager.getActivityInfo(component, 0);
                     CharSequence label = info.loadLabel(packageManager);
                     resolved.add(new RuntimeTarget(component,
                             label == null ? component.getPackageName() : label.toString(),
-                            info.loadIcon(packageManager)));
+                            info.loadIcon(packageManager), isShortcut));
                 } catch (Throwable error) {
                     Log.e("Configured activity is unavailable: " + component.flattenToShortString(), error);
                 }

@@ -6,9 +6,15 @@ import java.util.Objects;
 
 public final class AppTarget {
     public final String component;
+    public final boolean isShortcut;
 
     public AppTarget(String component) {
+        this(component, false);
+    }
+
+    public AppTarget(String component, boolean isShortcut) {
         this.component = component;
+        this.isShortcut = isShortcut;
     }
 
     public ComponentName componentName() {

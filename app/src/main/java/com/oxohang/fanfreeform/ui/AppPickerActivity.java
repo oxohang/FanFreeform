@@ -14,6 +14,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -30,9 +31,11 @@ import java.util.Set;
 
 public final class AppPickerActivity extends Activity {
     public static final String EXTRA_COMPONENT = "component";
+    public static final String EXTRA_IS_SHORTCUT = "is_shortcut";
     private final ArrayList<Entry> all = new ArrayList<>();
     private final ArrayList<Entry> filtered = new ArrayList<>();
     private AppAdapter adapter;
+    private boolean showShortcuts;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -50,15 +53,53 @@ public final class AppPickerActivity extends Activity {
         title.setTextColor(Ui.TEXT);
         title.setTextSize(26);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 16));
+        title.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 8));
         root.addView(title);
 
+        // 模式切换：应用 / 快捷方式
+        LinearLayout modeRow = new LinearLayout(this);
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setPadding(0, 0, 0, Ui.dp(this, 12));
+
+        Button appMode = new Button(this);
+        appMode.setText("应用");
+        appMode.setTextSize(14);
+        appMode.setTypeface(null, android.graphics.Typeface.BOLD);
+        appMode.setPadding(Ui.dp(this, 16), Ui.dp(this, 6), Ui.dp(this, 16), Ui.dp(this, 6));
+        appMode.setBackground(Ui.rounded(this, 0xff6572f6, 12));
+        appMode.setTextColor(Color.WHITE);
+
+        Button shortcutMode = new Button(this);
+        shortcutMode.setText("快捷方式");
+        shortcutMode.setTextSize(14);
+        shortcutMode.setPadding(Ui.dp(this, 16), Ui.dp(this, 6), Ui.dp(this, 16), Ui.dp(this, 6));
+        shortcutMode.setBackground(Ui.rounded(this, 0xffe8e8f0, 12));
+        shortcutMode.setTextColor(Ui.MUTED);
+
         EditText search = new EditText(this);
-        search.setHint("搜索应用");
+        search.setHint("搜索");
         search.setSingleLine(true);
         search.setTextSize(16);
         search.setPadding(Ui.dp(this, 16), 0, Ui.dp(this, 16), 0);
         search.setBackground(Ui.rounded(this, Color.WHITE, 16));
+
+        Runnable updateMode = () -> {
+            boolean sc = showShortcuts;
+            appMode.setBackground(Ui.rounded(this, sc ? 0xffe8e8f0 : 0xff6572f6, 12));
+            appMode.setTextColor(sc ? Ui.MUTED : Color.WHITE);
+            shortcutMode.setBackground(Ui.rounded(this, sc ? 0xff6572f6 : 0xffe8e8f0, 12));
+            shortcutMode.setTextColor(sc ? Color.WHITE : Ui.MUTED);
+            loadEntries();
+            String hint = search.getText().toString();
+            filter(hint);
+        };
+
+        appMode.setOnClickListener(v -> { showShortcuts = false; updateMode.run(); });
+        shortcutMode.setOnClickListener(v -> { showShortcuts = true; updateMode.run(); });
+
+        modeRow.addView(appMode);
+        modeRow.addView(shortcutMode);
+        root.addView(modeRow);
         root.addView(search, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52)));
 
         ListView list = new ListView(this);
@@ -71,7 +112,7 @@ public final class AppPickerActivity extends Activity {
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
 
-        loadApps();
+        loadEntries();
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { filter(s.toString()); }
@@ -79,26 +120,47 @@ public final class AppPickerActivity extends Activity {
         });
         list.setOnItemClickListener((parent, view, position, id) -> {
             Entry entry = filtered.get(position);
-            Intent result = new Intent().putExtra(EXTRA_COMPONENT, entry.component.flattenToString());
+            Intent result = new Intent()
+                    .putExtra(EXTRA_COMPONENT, entry.component.flattenToString())
+                    .putExtra(EXTRA_IS_SHORTCUT, entry.isShortcut);
             setResult(RESULT_OK, result);
             finish();
         });
     }
 
     @SuppressWarnings("deprecation")
-    private void loadApps() {
+    private void loadEntries() {
+        all.clear();
         PackageManager pm = getPackageManager();
-        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> results = pm.queryIntentActivities(query, 0);
-        Set<String> seen = new HashSet<>();
-        for (ResolveInfo result : results) {
-            if (result.activityInfo == null || getPackageName().equals(result.activityInfo.packageName)) continue;
-            ComponentName component = new ComponentName(result.activityInfo.packageName, result.activityInfo.name);
-            if (!seen.add(component.flattenToString())) continue;
-            CharSequence labelValue = result.loadLabel(pm);
-            String label = labelValue == null ? result.activityInfo.packageName : labelValue.toString();
-            Drawable icon = result.loadIcon(pm);
-            all.add(new Entry(component, label, icon));
+        if (showShortcuts) {
+            // 显示所有 exported activity
+            Intent query = new Intent(Intent.ACTION_MAIN);
+            List<ResolveInfo> results = pm.queryIntentActivities(query, PackageManager.GET_ACTIVITIES);
+            Set<String> seen = new HashSet<>();
+            for (ResolveInfo result : results) {
+                if (result.activityInfo == null || getPackageName().equals(result.activityInfo.packageName)) continue;
+                ComponentName component = new ComponentName(result.activityInfo.packageName, result.activityInfo.name);
+                String key = component.flattenToString();
+                if (!seen.add(key)) continue;
+                CharSequence labelValue = result.loadLabel(pm);
+                String label = labelValue == null ? result.activityInfo.name : labelValue.toString();
+                Drawable icon = result.loadIcon(pm);
+                String parentApp = result.activityInfo.packageName;
+                all.add(new Entry(component, label, icon, true, parentApp));
+            }
+        } else {
+            Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> results = pm.queryIntentActivities(query, 0);
+            Set<String> seen = new HashSet<>();
+            for (ResolveInfo result : results) {
+                if (result.activityInfo == null || getPackageName().equals(result.activityInfo.packageName)) continue;
+                ComponentName component = new ComponentName(result.activityInfo.packageName, result.activityInfo.name);
+                if (!seen.add(component.flattenToString())) continue;
+                CharSequence labelValue = result.loadLabel(pm);
+                String label = labelValue == null ? result.activityInfo.packageName : labelValue.toString();
+                Drawable icon = result.loadIcon(pm);
+                all.add(new Entry(component, label, icon, false, null));
+            }
         }
         Collator collator = Collator.getInstance(Locale.CHINA);
         all.sort(Comparator.comparing(entry -> entry.label, collator));
@@ -142,12 +204,16 @@ public final class AppPickerActivity extends Activity {
             label.setText(entry.label);
             label.setTextColor(Ui.TEXT);
             label.setTextSize(16);
-            TextView packageName = new TextView(AppPickerActivity.this);
-            packageName.setText(entry.component.getPackageName());
-            packageName.setTextColor(Ui.MUTED);
-            packageName.setTextSize(12);
+            TextView extra = new TextView(AppPickerActivity.this);
+            if (entry.isShortcut && entry.parentApp != null) {
+                extra.setText(entry.parentApp + " · 快捷方式");
+            } else {
+                extra.setText(entry.component.getPackageName());
+            }
+            extra.setTextColor(Ui.MUTED);
+            extra.setTextSize(12);
             text.addView(label);
-            text.addView(packageName);
+            text.addView(extra);
             row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             return row;
         }
@@ -157,10 +223,14 @@ public final class AppPickerActivity extends Activity {
         final ComponentName component;
         final String label;
         final Drawable icon;
-        Entry(ComponentName component, String label, Drawable icon) {
+        final boolean isShortcut;
+        final String parentApp;
+        Entry(ComponentName component, String label, Drawable icon, boolean isShortcut, String parentApp) {
             this.component = component;
             this.label = label;
             this.icon = icon;
+            this.isShortcut = isShortcut;
+            this.parentApp = parentApp;
         }
     }
 }
