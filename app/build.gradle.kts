@@ -13,8 +13,8 @@ android {
         applicationId = "com.oxohang.fanfreeform"
         minSdk = 30
         targetSdk = 34
-        versionCode = 39
-        versionName = "0.5.0-stable.8"
+        versionCode = 54
+        versionName = "0.5.0-stable.8.15"
     }
 
     buildTypes {
@@ -46,7 +46,7 @@ val archiveDebugApk by tasks.registering {
         val stamp = LocalDateTime.now().format(
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
         )
-        val archiveDir = rootProject.layout.projectDirectory.dir("releases").asFile
+        val archiveDir = rootProject.layout.projectDirectory.dir("release-archive").asFile
         archiveDir.mkdirs()
         copy {
             from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))

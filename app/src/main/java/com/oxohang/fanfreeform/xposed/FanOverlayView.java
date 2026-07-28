@@ -9,6 +9,7 @@ import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.TextPaint;
 import android.view.View;
@@ -35,9 +36,26 @@ final class FanOverlayView extends View {
     private float pointerY;
     private boolean showBackdrop = true;
     private boolean sideListLayout;
+    private boolean sideFanListLayout;
+    private boolean sideRingListLayout;
     private float sideListTop;
     private float sideRowHeight;
+    private float sideListCenterX;
+    private float sideFanRadius;
     private boolean showSideNames;
+    private boolean animationsEnabled;
+    private int animationSpeed = 100;
+    private int revealAmount = 42;
+    private int rotationDegrees = 24;
+    private int selectionScalePercent = 18;
+    private boolean showSelectionRing = true;
+    private long revealStartedAt;
+    private int animatedSelection = -1;
+    private long selectionStartedAt;
+    private int confirmationSelection = -1;
+    private long confirmationStartedAt;
+    private boolean dismissing;
+    private long dismissalStartedAt;
 
     FanOverlayView(Context context) {
         super(context);
@@ -62,42 +80,172 @@ final class FanOverlayView extends View {
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
-                   float radius, float iconDiameter, boolean showBackdrop) {
+                   float radius, float iconDiameter, boolean showSelectedName,
+                   boolean showBackdrop,
+                   boolean animationsEnabled, int animationSpeed,
+                   int revealAmount, int rotationDegrees,
+                   int selectionScalePercent, boolean showSelectionRing) {
         this.targets = targets;
         this.corner = corner;
         this.fanRadius = radius;
         this.iconDiameter = iconDiameter;
         this.showBackdrop = showBackdrop;
         this.sideListLayout = false;
+        this.sideFanListLayout = false;
+        this.sideRingListLayout = false;
         this.sideListTop = 0f;
         this.sideRowHeight = 0f;
-        this.showSideNames = false;
+        this.sideListCenterX = 0f;
+        this.showSideNames = showSelectedName;
+        this.animationsEnabled = animationsEnabled;
+        this.animationSpeed = Math.max(75, Math.min(160, animationSpeed));
+        this.revealAmount = Math.max(15, Math.min(130, revealAmount));
+        this.rotationDegrees = Math.max(0, Math.min(90, rotationDegrees));
+        this.selectionScalePercent = Math.max(5, Math.min(40,
+                selectionScalePercent));
+        this.showSelectionRing = showSelectionRing;
+        this.revealStartedAt = SystemClock.uptimeMillis();
+        this.animatedSelection = -1;
+        this.confirmationSelection = -1;
+        this.dismissing = false;
         selected = -1;
         updateBackdropShader();
         invalidate();
     }
 
     void configureSideList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
-                           float listTop, float rowHeight, float iconDiameter,
-                           boolean showNames, boolean showBackdrop) {
+                           float centerX, float listTop, float rowHeight, float iconDiameter,
+                           boolean showNames, boolean showBackdrop,
+                           boolean animationsEnabled, int animationSpeed,
+                           int revealAmount, int rotationDegrees,
+                           int selectionScalePercent, boolean showSelectionRing) {
         this.targets = targets;
         this.corner = side;
         this.fanRadius = 0f;
         this.iconDiameter = iconDiameter;
         this.showBackdrop = showBackdrop;
         this.sideListLayout = true;
+        this.sideFanListLayout = false;
+        this.sideRingListLayout = false;
         this.sideListTop = listTop;
         this.sideRowHeight = rowHeight;
+        this.sideListCenterX = centerX;
         this.showSideNames = showNames;
+        this.animationsEnabled = animationsEnabled;
+        this.animationSpeed = Math.max(75, Math.min(160, animationSpeed));
+        this.revealAmount = Math.max(15, Math.min(130, revealAmount));
+        this.rotationDegrees = Math.max(0, Math.min(90, rotationDegrees));
+        this.selectionScalePercent = Math.max(5, Math.min(40,
+                selectionScalePercent));
+        this.showSelectionRing = showSelectionRing;
+        this.revealStartedAt = SystemClock.uptimeMillis();
+        this.animatedSelection = -1;
+        this.confirmationSelection = -1;
+        this.dismissing = false;
+        selected = -1;
+        invalidate();
+    }
+
+    void configureSideFanList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
+                              float apexX, float centerY, float radius, float iconDiameter,
+                              boolean showNames, boolean showBackdrop,
+                              boolean animationsEnabled, int animationSpeed,
+                              int revealAmount, int rotationDegrees,
+                              int selectionScalePercent, boolean showSelectionRing) {
+        this.targets = targets;
+        this.corner = side;
+        this.fanRadius = 0f;
+        this.iconDiameter = iconDiameter;
+        this.showBackdrop = showBackdrop;
+        this.sideListLayout = true;
+        this.sideFanListLayout = true;
+        this.sideRingListLayout = false;
+        this.sideListCenterX = apexX;
+        this.sideListTop = centerY;
+        this.sideRowHeight = 0f;
+        this.sideFanRadius = radius;
+        this.showSideNames = showNames;
+        this.animationsEnabled = animationsEnabled;
+        this.animationSpeed = Math.max(75, Math.min(160, animationSpeed));
+        this.revealAmount = Math.max(15, Math.min(130, revealAmount));
+        this.rotationDegrees = Math.max(0, Math.min(90, rotationDegrees));
+        this.selectionScalePercent = Math.max(5, Math.min(40,
+                selectionScalePercent));
+        this.showSelectionRing = showSelectionRing;
+        this.revealStartedAt = SystemClock.uptimeMillis();
+        this.animatedSelection = -1;
+        this.confirmationSelection = -1;
+        this.dismissing = false;
+        selected = -1;
+        invalidate();
+    }
+
+    void configureSideRingList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
+                               float centerX, float centerY, float radius,
+                               float iconDiameter, boolean showNames,
+                               boolean showBackdrop, boolean animationsEnabled,
+                               int animationSpeed, int revealAmount,
+                               int rotationDegrees, int selectionScalePercent,
+                               boolean showSelectionRing) {
+        this.targets = targets;
+        this.corner = side;
+        this.fanRadius = 0f;
+        this.iconDiameter = iconDiameter;
+        this.showBackdrop = showBackdrop;
+        this.sideListLayout = true;
+        this.sideFanListLayout = false;
+        this.sideRingListLayout = true;
+        this.sideListCenterX = centerX;
+        this.sideListTop = centerY;
+        this.sideRowHeight = 0f;
+        this.sideFanRadius = radius;
+        this.showSideNames = showNames;
+        this.animationsEnabled = animationsEnabled;
+        this.animationSpeed = Math.max(75, Math.min(160, animationSpeed));
+        this.revealAmount = Math.max(15, Math.min(130, revealAmount));
+        this.rotationDegrees = Math.max(0, Math.min(90, rotationDegrees));
+        this.selectionScalePercent = Math.max(5, Math.min(40,
+                selectionScalePercent));
+        this.showSelectionRing = showSelectionRing;
+        this.revealStartedAt = SystemClock.uptimeMillis();
+        this.animatedSelection = -1;
+        this.confirmationSelection = -1;
+        this.dismissing = false;
         selected = -1;
         invalidate();
     }
 
     void updateSelection(int selected, float x, float y) {
+        if (this.selected != selected && selected >= 0) {
+            animatedSelection = selected;
+            selectionStartedAt = SystemClock.uptimeMillis();
+        }
         this.selected = selected;
         pointerX = x;
         pointerY = y;
         invalidate();
+    }
+
+    void playConfirmation(int selected) {
+        confirmationSelection = selected;
+        confirmationStartedAt = SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    long confirmationDurationMs() {
+        return animationsEnabled ? duration(150L) : 1L;
+    }
+
+    boolean playDismissal() {
+        if (!animationsEnabled || (sideListLayout && !sideRingListLayout)) return false;
+        dismissing = true;
+        dismissalStartedAt = SystemClock.uptimeMillis();
+        invalidate();
+        return true;
+    }
+
+    long dismissalDurationMs() {
+        return animationsEnabled ? duration(150L) : 1L;
     }
 
     @Override
@@ -113,21 +261,43 @@ final class FanOverlayView extends View {
         float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
         if (showBackdrop) canvas.drawCircle(originX, drawOriginY, radius + dp(100), backdrop);
 
+        long now = SystemClock.uptimeMillis();
+        float revealProgress = animationsEnabled
+                ? progress(revealStartedAt, duration(170L), now) : 1f;
+        float reveal = animationsEnabled ? easeOutBack(revealProgress) : 1f;
+        boolean keepAnimating = revealProgress < 1f;
+        float dismissalProgress = dismissing
+                ? easeOut(progress(dismissalStartedAt, dismissalDurationMs(), now)) : 0f;
+        if (dismissing && dismissalProgress < 1f) keepAnimating = true;
+        float startFactor = 1f - revealAmount / 100f;
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
                     getWidth(), getHeight(), radius);
-            float x = center.x;
-            float y = center.y;
+            float iconOriginX = corner == GestureGeometry.Corner.LEFT ? 0f : getWidth();
+            float iconOriginY = getHeight();
+            float revealFactor = startFactor + (1f - startFactor) * reveal;
+            revealFactor *= 1f - 0.32f * dismissalProgress;
+            float x = iconOriginX + (center.x - iconOriginX) * revealFactor;
+            float y = iconOriginY + (center.y - iconOriginY) * revealFactor;
             boolean active = i == selected;
-            float diameter = iconDiameter * (active ? 1.08f : 1f);
+            float pop = selectionPop(i, now);
+            if (pop > 1f || revealRotationActive(i, now)) keepAnimating = true;
+            float diameter = iconDiameter * (active ? selectionScale() : 1f)
+                    * (0.78f + 0.22f * reveal) * pop
+                    * (1f - 0.22f * dismissalProgress);
             float iconRadius = diameter / 2f;
+            int save = canvas.save();
+            canvas.rotate(revealRotation(i, now), x, y);
             canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
             drawCircularIcon(canvas, targets.get(i).icon, x, y, diameter);
             canvas.drawCircle(x, y, iconRadius - dp(0.5f), iconStrokePaint);
-            if (active) canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
+            if (active && showSelectionRing) {
+                canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
+            }
+            canvas.restoreToCount(save);
         }
 
-        if (selected >= 0 && selected < targets.size()) {
+        if (showSideNames && selected >= 0 && selected < targets.size()) {
             String label = targets.get(selected).label;
             float padding = dp(14);
             float width = textPaint.measureText(label) + padding * 2;
@@ -138,41 +308,75 @@ final class FanOverlayView extends View {
                     centerY + dp(12), dp(17), dp(17), pillPaint);
             canvas.drawText(label, centerX, centerY, textPaint);
         }
+        if (keepAnimating) postInvalidateOnAnimation();
     }
 
     private void drawSideList(Canvas canvas) {
-        float edgeMargin = dp(14);
         float railPadding = dp(8);
-        float railLeft = corner == GestureGeometry.Corner.LEFT
-                ? edgeMargin - railPadding
-                : getWidth() - edgeMargin - iconDiameter - railPadding;
-        float railRight = corner == GestureGeometry.Corner.LEFT
-                ? edgeMargin + iconDiameter + railPadding
-                : getWidth() - edgeMargin + railPadding;
+        float railLeft = sideListCenterX - iconDiameter / 2f - railPadding;
+        float railRight = sideListCenterX + iconDiameter / 2f + railPadding;
         float railTop = sideListTop + dp(2);
         float railBottom = sideListTop + targets.size() * sideRowHeight - dp(2);
-        if (showBackdrop) {
+        if (showBackdrop && !sideFanListLayout && !sideRingListLayout) {
             canvas.drawRoundRect(railLeft, railTop, railRight, railBottom,
                     dp(22), dp(22), railPaint);
         }
 
+        long now = SystemClock.uptimeMillis();
+        float revealProgress = animationsEnabled
+                ? progress(revealStartedAt, duration(170L), now) : 1f;
+        float reveal = animationsEnabled ? easeOutBack(revealProgress) : 1f;
+        boolean keepAnimating = revealProgress < 1f;
+        float dismissalProgress = dismissing && sideRingListLayout
+                ? easeOut(progress(dismissalStartedAt, dismissalDurationMs(), now)) : 0f;
+        if (dismissing && dismissalProgress < 1f) keepAnimating = true;
+        float startFactor = 1f - revealAmount / 100f;
+        int anchor = (targets.size() - 1) / 2;
+        float iconOriginX = sideRingListLayout ? sideListCenterX
+                : corner == GestureGeometry.Corner.LEFT ? 0f : getWidth();
+        float iconOriginY = sideRingListLayout ? sideListTop
+                : sideFanListLayout ? sideListTop
+                : sideListTop + (anchor + 0.5f) * sideRowHeight;
         for (int i = 0; i < targets.size(); i++) {
-            GestureGeometry.Point center = GestureGeometry.sideListIconCenter(
-                    corner, i, getWidth(), sideListTop, sideRowHeight,
-                    iconDiameter, edgeMargin);
+            GestureGeometry.Point center = sideRingListLayout
+                    ? GestureGeometry.sideRingIconCenter(i, targets.size(),
+                    sideListCenterX, sideListTop, sideFanRadius)
+                    : sideFanListLayout
+                    ? GestureGeometry.sideFanIconCenter(corner, i, targets.size(),
+                    getWidth(), sideListCenterX, sideListTop, sideFanRadius)
+                    : GestureGeometry.sideListIconCenter(
+                    i, sideListCenterX, sideListTop, sideRowHeight);
+            float revealFactor = startFactor + (1f - startFactor) * reveal;
+            revealFactor *= 1f - 0.38f * dismissalProgress;
+            float x = iconOriginX + (center.x - iconOriginX) * revealFactor;
+            float y = iconOriginY + (center.y - iconOriginY) * revealFactor;
             boolean active = i == selected;
-            float diameter = iconDiameter * (active ? 1.1f : 1f);
+            float pop = selectionPop(i, now);
+            if (selectionAnimationActive(i, now) || revealRotationActive(i, now)) {
+                keepAnimating = true;
+            }
+            float diameter = iconDiameter * (active ? selectionScale() : 1f)
+                    * (0.78f + 0.22f * reveal) * pop
+                    * (1f - 0.24f * dismissalProgress);
             float radius = diameter / 2f;
-            if (active) canvas.drawCircle(center.x, center.y, radius + dp(7), selectedFillPaint);
-            canvas.drawCircle(center.x, center.y, radius, iconShadowPaint);
-            drawCircularIcon(canvas, targets.get(i).icon, center.x, center.y, diameter);
-            canvas.drawCircle(center.x, center.y, radius - dp(0.5f), iconStrokePaint);
-            if (active) canvas.drawCircle(center.x, center.y, radius + dp(5), selectedPaint);
-            if (showSideNames || active) {
-                drawSideLabel(canvas, targets.get(i).label, center.x, center.y,
+            int save = canvas.save();
+            canvas.rotate(revealRotation(i, now), x, y);
+            if (active && showSelectionRing) {
+                canvas.drawCircle(x, y, radius + dp(7), selectedFillPaint);
+            }
+            canvas.drawCircle(x, y, radius, iconShadowPaint);
+            drawCircularIcon(canvas, targets.get(i).icon, x, y, diameter);
+            canvas.drawCircle(x, y, radius - dp(0.5f), iconStrokePaint);
+            if (active && showSelectionRing) {
+                canvas.drawCircle(x, y, radius + dp(5), selectedPaint);
+            }
+            canvas.restoreToCount(save);
+            if (showSideNames && active) {
+                drawSideLabel(canvas, targets.get(i).label, x, y,
                         diameter, active);
             }
         }
+        if (keepAnimating) postInvalidateOnAnimation();
     }
 
     private void drawSideLabel(Canvas canvas, String label, float iconX, float iconY,
@@ -187,7 +391,7 @@ final class FanOverlayView extends View {
         float boxHeight = dp(36);
         float left;
         float right;
-        if (corner == GestureGeometry.Corner.LEFT) {
+        if (iconX < getWidth() / 2f) {
             left = iconX + diameter / 2f + gap;
             right = Math.min(getWidth() - dp(10), left + boxWidth);
             left = right - boxWidth;
@@ -232,6 +436,71 @@ final class FanOverlayView extends View {
 
     private float dp(float value) {
         return value * getResources().getDisplayMetrics().density;
+    }
+
+    private float selectionPop(int index, long now) {
+        if (!animationsEnabled) return 1f;
+        if (index == confirmationSelection) {
+            float p = progress(confirmationStartedAt, duration(150L), now);
+            float amount = 0.18f;
+            return 1f + amount * (float) Math.sin(Math.PI * p);
+        }
+        if (index != animatedSelection) return 1f;
+        float p = progress(selectionStartedAt, duration(110L), now);
+        float amount = 0.10f;
+        return 1f + amount * (float) Math.sin(Math.PI * p);
+    }
+
+    private float selectionScale() {
+        return 1f + selectionScalePercent / 100f;
+    }
+
+    private boolean selectionAnimationActive(int index, long now) {
+        if (!animationsEnabled) return false;
+        if (index == confirmationSelection) {
+            return now < confirmationStartedAt + duration(150L);
+        }
+        return index == animatedSelection
+                && now < selectionStartedAt + duration(110L);
+    }
+
+    private boolean revealRotationActive(int index, long now) {
+        if (!animationsEnabled) return false;
+        long start = revealStartedAt + index * revealStaggerMs();
+        return now < start + duration(150L);
+    }
+
+    private float revealRotation(int index, long now) {
+        if (!animationsEnabled) return 0f;
+        long start = revealStartedAt + index * revealStaggerMs();
+        float p = easeOutBack(progress(start, duration(150L), now));
+        if (p >= 1f) return 0f;
+        float direction = corner == GestureGeometry.Corner.LEFT ? 1f : -1f;
+        return direction * rotationDegrees * (1f - p);
+    }
+
+    private long revealStaggerMs() {
+        return Math.max(8L, Math.round(12L * 100f / animationSpeed));
+    }
+
+    private long duration(long base) {
+        return Math.max(45L, Math.round(base * 100f / animationSpeed));
+    }
+
+    private static float progress(long startedAt, long duration, long now) {
+        if (startedAt <= 0L) return 1f;
+        return Math.max(0f, Math.min(1f, (now - startedAt) / (float) Math.max(1L, duration)));
+    }
+
+    private static float easeOut(float value) {
+        float inverse = 1f - value;
+        return 1f - inverse * inverse;
+    }
+
+    private static float easeOutBack(float value) {
+        float shifted = value - 1f;
+        return 1f + 2.70158f * shifted * shifted * shifted
+                + 1.70158f * shifted * shifted;
     }
 
     @Override

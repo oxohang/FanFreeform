@@ -2,6 +2,8 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.app.Application;
+import android.app.Instrumentation;
 import android.view.MotionEvent;
 
 import java.lang.reflect.Method;
@@ -15,6 +17,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public final class FanFreeformHook implements IXposedHookLoadPackage {
     private static final String SYSTEM_UI = "com.android.systemui";
+    private static final String MIUI_HOME = "com.miui.home";
     private static final String EVENT_CONTROLLER =
             "com.android.wm.shell.multitasking.miuimultiwinswitch.miuiwindowdecor.MulWinSwitchEventController";
     private static final String EVENT_HANDLER = EVENT_CONTROLLER + "$EventHandler";
@@ -30,11 +33,223 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) {
+        if (MIUI_HOME.equals(loadPackageParam.packageName)) {
+            hookShortcutHost(loadPackageParam.classLoader);
+            return;
+        }
         if (!SYSTEM_UI.equals(loadPackageParam.packageName)) return;
         Log.i("Loading in SystemUI process=" + loadPackageParam.processName);
         hookFreeformController(loadPackageParam.classLoader);
         hookMiniAnimationTarget(loadPackageParam.classLoader);
+        hookShortcutEnterAnimation(loadPackageParam.classLoader);
         hookInputController(loadPackageParam.classLoader);
+        hookStatusBarTouchEntry(loadPackageParam.classLoader);
+        hookShadeExpansion(loadPackageParam.classLoader);
+        hookControlCenterExpansion(loadPackageParam.classLoader);
+        hookAuthoritativePanelState(loadPackageParam.classLoader);
+    }
+
+    private static void hookStatusBarTouchEntry(ClassLoader classLoader) {
+        hookSystemPanelTouchView(classLoader,
+                "com.android.systemui.statusbar.window.StatusBarWindowView",
+                "status bar");
+        hookSystemPanelTouchView(classLoader,
+                "com.android.systemui.shade.NotificationShadeWindowView",
+                "notification shade window");
+    }
+
+    private static void hookSystemPanelTouchView(ClassLoader classLoader,
+                                                 String className, String source) {
+        try {
+            Class<?> statusBarWindow = XposedHelpers.findClassIfExists(
+                    className, classLoader);
+            if (statusBarWindow == null) return;
+            XposedBridge.hookAllMethods(statusBarWindow, "dispatchTouchEvent",
+                    new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            if (runtime == null || param.args.length == 0
+                                    || !(param.args[0] instanceof MotionEvent)) return;
+                            MotionEvent event = (MotionEvent) param.args[0];
+                            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                                runtime.onSystemPanelTouchStarted(source);
+                            }
+                        }
+                    });
+            Log.i(source + " touch-entry hook installed");
+        } catch (Throwable error) {
+            Log.e(source + " touch-entry hook failed safely", error);
+        }
+    }
+
+    private static void hookShortcutHost(ClassLoader classLoader) {
+        XC_MethodHook installer = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (param.args.length == 0 || !(param.args[0] instanceof Context)) return;
+                ShortcutHostRuntime.install((Context) param.args[0]);
+            }
+        };
+        XposedBridge.hookAllMethods(Application.class, "attach", installer);
+        XposedBridge.hookAllMethods(Instrumentation.class, "callApplicationOnCreate",
+                new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        if (param.args.length == 0 || !(param.args[0] instanceof Application)) return;
+                        ShortcutHostRuntime.install((Application) param.args[0]);
+                    }
+                });
+        Log.i("Shortcut host hook installed in MiuiHome");
+    }
+
+    private static void hookShadeExpansion(ClassLoader classLoader) {
+        try {
+            Class<?> manager = XposedHelpers.findClassIfExists(
+                    "com.android.systemui.shade.ShadeExpansionStateManager", classLoader);
+            if (manager == null) return;
+            XposedBridge.hookAllMethods(manager, "onPanelExpansionChanged", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (runtime == null || param.args.length < 2
+                            || !(param.args[0] instanceof Number)
+                            || !(param.args[1] instanceof Boolean)) return;
+                    runtime.onShadeExpansionChanged(((Number) param.args[0]).floatValue(),
+                            (Boolean) param.args[1]);
+                }
+            });
+            Log.i("Notification shade expansion hook installed");
+        } catch (Throwable error) {
+            Log.e("Notification shade hook failed safely", error);
+        }
+    }
+
+    private static void hookControlCenterExpansion(ClassLoader classLoader) {
+        try {
+            Class<?> eventHandler = XposedHelpers.findClassIfExists(
+                    "com.miui.systemui.controlcenter.container.ControlCenterEventHandlerImpl",
+                    classLoader);
+            if (eventHandler != null) {
+                XposedBridge.hookAllMethods(eventHandler, "handleExpandEvent",
+                        new XC_MethodHook() {
+                            @Override protected void afterHookedMethod(MethodHookParam param) {
+                                if (runtime == null || param.args.length == 0
+                                        || !(param.args[0] instanceof MotionEvent)) return;
+                                MotionEvent event = (MotionEvent) param.args[0];
+                                if (event.getActionMasked() == MotionEvent.ACTION_DOWN
+                                        && Boolean.TRUE.equals(param.getResult())) {
+                                    runtime.onControlCenterExpansionChanged(true);
+                                }
+                            }
+                        });
+                Log.i("Control center touch-entry hook installed");
+            }
+            Class<?> controlCenter = XposedHelpers.findClassIfExists(
+                    "com.miui.systemui.controlcenter.ControlCenterImpl", classLoader);
+            if (controlCenter != null) {
+                XposedBridge.hookAllMethods(controlCenter, "expand", new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        if (runtime != null) runtime.onControlCenterExpansionChanged(true);
+                    }
+                });
+                XposedBridge.hookAllMethods(controlCenter, "switchShow", new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        if (runtime != null) runtime.onControlCenterExpansionChanged(true);
+                    }
+                });
+                XposedBridge.hookAllMethods(controlCenter, "collapse", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (runtime != null) runtime.onControlCenterExpansionChanged(false);
+                    }
+                });
+                XposedBridge.hookAllMethods(controlCenter, "switchHide", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (runtime != null) runtime.onControlCenterExpansionChanged(false);
+                    }
+                });
+            }
+            Class<?> panelInjector = XposedHelpers.findClassIfExists(
+                    "com.android.systemui.shade.NotificationPanelViewControllerInjector", classLoader);
+            if (panelInjector != null) {
+                XposedBridge.hookAllMethods(panelInjector, "onControlCenterAppearChanged",
+                        new XC_MethodHook() {
+                            @Override protected void afterHookedMethod(MethodHookParam param) {
+                                if (runtime == null || param.args.length == 0
+                                        || !(param.args[0] instanceof Boolean)) return;
+                                runtime.onControlCenterExpansionChanged((Boolean) param.args[0]);
+                            }
+                        });
+            }
+            Class<?> headerController = XposedHelpers.findClassIfExists(
+                    "com.android.systemui.controlcenter.shade.ControlCenterHeaderExpandController",
+                    classLoader);
+            if (headerController != null) {
+                XposedBridge.hookAllMethods(headerController, "onExpansionChanged",
+                        new XC_MethodHook() {
+                            @Override protected void afterHookedMethod(MethodHookParam param) {
+                                if (runtime == null || param.args.length == 0
+                                        || !(param.args[0] instanceof Number)) return;
+                                // This controller can continue reporting 0 while its panel is
+                                // visible, so only treat a positive progress as an enter signal.
+                                if (((Number) param.args[0]).floatValue() > 0.01f) {
+                                    runtime.onControlCenterExpansionChanged(true);
+                                }
+                            }
+                        });
+            }
+            Log.i("Control center expansion hooks installed");
+        } catch (Throwable error) {
+            Log.e("Control center expansion hooks failed safely", error);
+        }
+    }
+
+    private static void hookAuthoritativePanelState(ClassLoader classLoader) {
+        XC_MethodHook callback = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                FanRuntime active = runtime;
+                if (active == null) return;
+                try {
+                    Object observer = XposedHelpers.getObjectField(param.thisObject, "this$0");
+                    boolean notification = XposedHelpers.getBooleanField(
+                            observer, "mNotificationPanelExpand");
+                    boolean control = XposedHelpers.getBooleanField(
+                            observer, "mControlCenterExpand");
+                    active.onAuthoritativeSystemPanelState(notification, control);
+                } catch (Throwable error) {
+                    Log.e("Cannot read authoritative system panel state", error);
+                }
+            }
+        };
+        try {
+            Class<?> controlListener = XposedHelpers.findClassIfExists(
+                    "com.miui.systemui.controller.GestureObserver$3", classLoader);
+            Class<?> notificationListener = XposedHelpers.findClassIfExists(
+                    "com.miui.systemui.controller.GestureObserver$4", classLoader);
+            if (controlListener != null) {
+                XposedBridge.hookAllMethods(controlListener, "onExpandChanged", callback);
+            }
+            if (notificationListener != null) {
+                XposedBridge.hookAllMethods(notificationListener, "onPanelExpanded", callback);
+            }
+            Class<?> stateCommit = XposedHelpers.findClassIfExists(
+                    "com.miui.systemui.controller.GestureObserver$$ExternalSyntheticLambda2",
+                    classLoader);
+            if (stateCommit != null) {
+                XposedBridge.hookAllMethods(stateCommit, "run", new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        FanRuntime active = runtime;
+                        if (active == null) return;
+                        try {
+                            boolean control = XposedHelpers.getBooleanField(
+                                    param.thisObject, "f$1");
+                            boolean notification = XposedHelpers.getBooleanField(
+                                    param.thisObject, "f$2");
+                            active.onAuthoritativeSystemPanelState(notification, control);
+                        } catch (Throwable error) {
+                            Log.e("Cannot read committed system panel state", error);
+                        }
+                    }
+                });
+            }
+            Log.i("Authoritative system panel state hooks installed");
+        } catch (Throwable error) {
+            Log.e("Authoritative system panel state hooks failed safely", error);
+        }
     }
 
     private static void hookInputController(ClassLoader classLoader) {
@@ -167,6 +382,41 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Log.i("Freeform mini animation target hook installed");
         } catch (Throwable error) {
             Log.e("Freeform mini animation target hook failed safely", error);
+        }
+    }
+
+    private static void hookShortcutEnterAnimation(ClassLoader classLoader) {
+        try {
+            Class<?> animationClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_ANIMATION, classLoader);
+            if (animationClass == null) return;
+            XC_MethodHook hook = new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    FanRuntime active = runtime;
+                    if (active == null) return;
+                    Object change = null;
+                    Object taskInfo = null;
+                    for (Object argument : param.args) {
+                        if (argument == null) continue;
+                        String name = argument.getClass().getName();
+                        if (name.endsWith("TransitionInfo$Change")) {
+                            change = argument;
+                        } else if (name.endsWith("MiuiFreeformModeTaskInfo")) {
+                            taskInfo = argument;
+                        }
+                    }
+                    if (change != null && taskInfo != null) {
+                        active.prepareShortcutEnterAnimation(change, taskInfo);
+                    }
+                }
+            };
+            XposedBridge.hookAllMethods(animationClass,
+                    "startMoveToFrontAnimation", hook);
+            XposedBridge.hookAllMethods(animationClass,
+                    "startFullScreenToFreeformAnimation", hook);
+            Log.i("Shortcut enter animation alignment hooks installed");
+        } catch (Throwable error) {
+            Log.e("Shortcut enter animation alignment hooks failed safely", error);
         }
     }
 

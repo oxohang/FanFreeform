@@ -28,6 +28,8 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
@@ -38,7 +40,16 @@ import java.util.List;
 @SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_APP = 41;
-    private static final String[] ACTION_LABELS = {"无操作", "关闭", "挂起到右上角", "全屏"};
+    private static final int REQUEST_PICK_SHORTCUT = 42;
+    private static final String[] ACTION_LABELS = {
+            "无操作", "关闭", "挂起到右上角", "全屏"
+    };
+    private static final int[] ACTION_VALUES = {
+            ConfigContract.ACTION_NONE,
+            ConfigContract.ACTION_CLOSE,
+            ConfigContract.ACTION_PIN,
+            ConfigContract.ACTION_FULLSCREEN
+    };
 
     private ConfigStore store;
     private SharedPreferences prefs;
@@ -98,7 +109,7 @@ public final class MainActivity extends Activity {
         root.setPadding(Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 36));
         scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("随用随走", 30, Ui.TEXT, Typeface.BOLD);
+        TextView title = text("Hyper手势", 30, Ui.TEXT, Typeface.BOLD);
         root.addView(title);
         TextView subtitle = text("HyperOS 3 原生快捷小窗", 15, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 18));
@@ -154,20 +165,42 @@ public final class MainActivity extends Activity {
         LinearLayout appsHeader = row();
         LinearLayout appsTitleGroup = new LinearLayout(this);
         appsTitleGroup.setOrientation(LinearLayout.VERTICAL);
-        appsTitleGroup.addView(text("快捷应用", 18, Ui.TEXT, Typeface.BOLD));
+        appsTitleGroup.addView(text("快捷目标", 18, Ui.TEXT, Typeface.BOLD));
         appsHint = text("", 13, Ui.MUTED, Typeface.NORMAL);
         appsTitleGroup.addView(appsHint);
-        appsHeader.addView(appsTitleGroup, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button add = compactButton("添加");
-        add.setOnClickListener(view -> {
+        appsHeader.addView(appsTitleGroup, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        appsCard.addView(appsHeader);
+        LinearLayout addActions = new LinearLayout(this);
+        addActions.setOrientation(LinearLayout.HORIZONTAL);
+        addActions.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 4));
+        Button addApp = compactButton("添加应用");
+        addApp.setOnClickListener(view -> {
             if (targets.size() >= 8) {
-                Toast.makeText(this, "最多添加 8 个应用", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "最多添加 8 个快捷目标", Toast.LENGTH_SHORT).show();
                 return;
             }
-            startActivityForResult(new Intent(this, AppPickerActivity.class), REQUEST_PICK_APP);
+            Intent intent = new Intent(this, AppPickerActivity.class);
+            intent.putExtra(AppPickerActivity.EXTRA_MODE, AppPickerActivity.MODE_APPS);
+            startActivityForResult(intent, REQUEST_PICK_APP);
         });
-        appsHeader.addView(add);
-        appsCard.addView(appsHeader);
+        addActions.addView(addApp, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Button addShortcut = compactButton("添加快捷方式");
+        addShortcut.setOnClickListener(view -> {
+            if (targets.size() >= 8) {
+                Toast.makeText(this, "最多添加 8 个快捷目标", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent intent = new Intent(this, AppPickerActivity.class);
+            intent.putExtra(AppPickerActivity.EXTRA_MODE, AppPickerActivity.MODE_SHORTCUTS);
+            startActivityForResult(intent, REQUEST_PICK_SHORTCUT);
+        });
+        LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        shortcutParams.setMarginStart(Ui.dp(this, 10));
+        addActions.addView(addShortcut, shortcutParams);
+        appsCard.addView(addActions);
         appsContainer = new LinearLayout(this);
         appsContainer.setOrientation(LinearLayout.VERTICAL);
         appsCard.addView(appsContainer);
@@ -223,6 +256,21 @@ public final class MainActivity extends Activity {
         gestureCard.addView(gestureNote);
         updateGestureSummaries();
         root.addView(gestureCard, cardParams(14));
+
+        LinearLayout animationCard = card();
+        LinearLayout animationRow = row();
+        animationRow.setOnClickListener(view -> startActivity(
+                new Intent(this, AnimationSettingsActivity.class)));
+        LinearLayout animationText = new LinearLayout(this);
+        animationText.setOrientation(LinearLayout.VERTICAL);
+        animationText.addView(text("动画效果", 18, Ui.TEXT, Typeface.BOLD));
+        animationText.addView(text("底角扇形呼出与选择应用的轻量动效", 13,
+                Ui.MUTED, Typeface.NORMAL));
+        animationRow.addView(animationText, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        animationRow.addView(text("设置  ›", 14, Ui.ACCENT, Typeface.BOLD));
+        animationCard.addView(animationRow);
+        root.addView(animationCard, cardParams(14));
 
         LinearLayout windowCard = card();
         windowCard.addView(text("小窗初始大小与位置", 18, Ui.TEXT, Typeface.BOLD));
@@ -283,10 +331,26 @@ public final class MainActivity extends Activity {
                     ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT);
             int safeTop = prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                     ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT);
-            boolean names = prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
-                    ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES);
+            int reverseCancel = Math.max(ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
+                    Math.min(ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
+                            prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
+                                    ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT)));
+            boolean names = prefs.getBoolean(ConfigContract.KEY_SHOW_SELECTED_APP_NAME,
+                    prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
+                            ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME));
+            boolean follow = prefs.getBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER,
+                    ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER);
+            int layoutMode = prefs.getInt(ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                    prefs.getBoolean(ConfigContract.KEY_SIDE_FAN_LIST,
+                            ConfigContract.DEFAULT_SIDE_FAN_LIST)
+                            ? ConfigContract.SIDE_LAYOUT_FAN
+                            : ConfigContract.DEFAULT_SIDE_LAYOUT_MODE);
+            String layout = layoutMode == ConfigContract.SIDE_LAYOUT_RING ? "环形"
+                    : layoutMode == ConfigContract.SIDE_LAYOUT_FAN ? "扇形" : "纵向列表";
             sideGestureSummary.setText("长滑 " + trigger + "% · 顶部安全 "
-                    + safeTop + "% · 名称" + (names ? "常显" : "选中显示"));
+                    + safeTop + "% · 反向 " + reverseCancel + "% · "
+                    + layout + "·" + (follow ? "手指位置" : "贴边")
+                    + " · 选中名称" + (names ? "开" : "关"));
         }
         if (sideGestureSwitch != null) {
             boolean enabled = prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED,
@@ -307,12 +371,13 @@ public final class MainActivity extends Activity {
                 android.R.layout.simple_spinner_item, ACTION_LABELS);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
-        spinner.setSelection(Math.max(0, Math.min(ACTION_LABELS.length - 1,
-                prefs.getInt(key, defaultAction))), false);
+        spinner.setSelection(actionIndex(prefs.getInt(key, defaultAction)), false);
         spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
-                if (prefs.getInt(key, defaultAction) != position) store.putInt(key, position);
+                int action = ACTION_VALUES[Math.max(0, Math.min(ACTION_VALUES.length - 1,
+                        position))];
+                if (prefs.getInt(key, defaultAction) != action) store.putInt(key, action);
             }
 
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
@@ -321,11 +386,18 @@ public final class MainActivity extends Activity {
         return actionRow;
     }
 
+    private static int actionIndex(int action) {
+        for (int index = 0; index < ACTION_VALUES.length; index++) {
+            if (ACTION_VALUES[index] == action) return index;
+        }
+        return 0;
+    }
+
     private void renderApps() {
         appsContainer.removeAllViews();
         appsHint.setText(targets.size() + " / 8" + (targets.size() < 3 ? " · 至少选择 3 个" : " · 长按拖动排序"));
         if (targets.isEmpty()) {
-            TextView empty = text("尚未选择应用，点击右上角“添加”。", 14, Ui.MUTED, Typeface.NORMAL);
+            TextView empty = text("尚未选择目标，点击右上角添加应用或快捷方式。", 14, Ui.MUTED, Typeface.NORMAL);
             empty.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 6));
             appsContainer.addView(empty);
             return;
@@ -341,11 +413,21 @@ public final class MainActivity extends Activity {
             TextView label = text(target.packageName(), 16, Ui.TEXT, Typeface.BOLD);
             TextView packageName = text(target.packageName(), 12, Ui.MUTED, Typeface.NORMAL);
             try {
-                ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
-                Drawable drawable = info.loadIcon(pm);
-                icon.setImageDrawable(drawable);
-                CharSequence loaded = info.loadLabel(pm);
-                if (loaded != null) label.setText(loaded);
+                if (target.isShortcut()) {
+                    icon.setImageDrawable(pm.getApplicationIcon(target.packageName()));
+                    label.setText(target.shortcutLabel.isEmpty() ? target.shortcutId
+                            : target.shortcutLabel);
+                    packageName.setText(target.packageName() + " · 快捷方式");
+                } else {
+                    ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
+                    Drawable drawable = info.loadIcon(pm);
+                    icon.setImageDrawable(drawable);
+                    CharSequence loaded = info.loadLabel(pm);
+                    if (loaded != null) label.setText(loaded);
+                    if (target.userId != 0) {
+                        packageName.setText(target.packageName() + " · 双开");
+                    }
+                }
             } catch (Exception ignored) {
                 label.setText(target.packageName() + "（已卸载）");
             }
@@ -361,7 +443,7 @@ public final class MainActivity extends Activity {
             drag.setGravity(Gravity.CENTER);
             drag.setContentDescription("长按拖动排序");
             drag.setOnLongClickListener(view -> view.startDragAndDrop(
-                    ClipData.newPlainText("component", target.component),
+                    ClipData.newPlainText("target", target.toJson().toString()),
                     new View.DragShadowBuilder(row), target, 0));
             row.addView(drag, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)));
 
@@ -404,13 +486,21 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_PICK_APP || resultCode != RESULT_OK || data == null) return;
-        String flattened = data.getStringExtra(AppPickerActivity.EXTRA_COMPONENT);
-        ComponentName component = ComponentName.unflattenFromString(flattened == null ? "" : flattened);
-        if (component == null) return;
-        AppTarget target = new AppTarget(component.flattenToString());
+        if ((requestCode != REQUEST_PICK_APP && requestCode != REQUEST_PICK_SHORTCUT)
+                || resultCode != RESULT_OK || data == null) return;
+        AppTarget target = null;
+        String serialized = data.getStringExtra(AppPickerActivity.EXTRA_TARGET);
+        try {
+            if (serialized != null) target = AppTarget.fromJson(new JSONObject(serialized));
+        } catch (Exception ignored) { }
+        if (target == null) {
+            String flattened = data.getStringExtra(AppPickerActivity.EXTRA_COMPONENT);
+            ComponentName component = ComponentName.unflattenFromString(flattened == null ? "" : flattened);
+            if (component != null) target = new AppTarget(component.flattenToString());
+        }
+        if (target == null) return;
         if (targets.contains(target)) {
-            Toast.makeText(this, "该应用已经在列表中", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "该目标已经在列表中", Toast.LENGTH_SHORT).show();
             return;
         }
         if (targets.size() >= 8) return;

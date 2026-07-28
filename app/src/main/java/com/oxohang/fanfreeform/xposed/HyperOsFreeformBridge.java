@@ -52,6 +52,7 @@ final class HyperOsFreeformBridge {
     private volatile int trackedTaskId = -1;
     private volatile int externalTrackedTaskId = -1;
     private volatile String pendingPackage;
+    private volatile int pendingUserId;
     private volatile long pendingSince;
     private volatile Rect pendingLaunchVisualBounds;
     private volatile long launchInputProtectionUntil;
@@ -61,6 +62,15 @@ final class HyperOsFreeformBridge {
     private volatile Intent pendingLaunchIntent;
     private volatile Bundle pendingLaunchOptions;
     private volatile boolean pendingResizeRetry;
+    private volatile boolean pendingShortcutLaunch;
+    private volatile String recentShortcutPackage;
+    private volatile int recentShortcutUserId;
+    private volatile long recentShortcutUntil;
+    private volatile Rect recentShortcutLaunchBounds;
+    private volatile int lastShortcutAlignedTaskId = -1;
+    private volatile long lastShortcutAlignmentAt;
+    private volatile int lastShortcutPreparedTaskId = -1;
+    private volatile long lastShortcutPreparedAt;
     private volatile GestureConfig latestConfig = GestureConfig.defaults();
     private volatile RuntimeTarget queuedLaunchTarget;
     private volatile GestureConfig queuedLaunchConfig;
@@ -102,7 +112,8 @@ final class HyperOsFreeformBridge {
         if (taskId < 0 || info == null || controller == null
                 || !booleanCall(info, "isNormalState", false)
                 || booleanCall(info, "isMiniState", false) || isPinned(info)
-                || target.component.getPackageName().equals(packageName(info))) {
+                || (target.packageName.equals(packageName(info))
+                && target.userId == userId(info))) {
             return false;
         }
         long generation;
@@ -120,13 +131,13 @@ final class HyperOsFreeformBridge {
         mainHandler.postDelayed(() -> runQueuedLaunchAfterSuspend(taskId, generation,
                 "suspend timeout"), 700L);
         Log.i("Queued second freeform until current task is suspended current=" + taskId
-                + " target=" + target.component.getPackageName());
+                + " target=" + target.packageName);
         return true;
     }
 
     private boolean launchNow(RuntimeTarget target, GestureConfig config,
                               Runnable onLaunchArmed) {
-        String packageName = target.component.getPackageName();
+        String packageName = target.packageName;
         try {
             Class<?> manager = XposedHelpers.findClass("miui.app.MiuiFreeFormManager", classLoader);
             Object result = XposedHelpers.callStaticMethod(manager, "getActivityOptions",
@@ -142,19 +153,50 @@ final class HyperOsFreeformBridge {
             float scale = readFreeformScale(options);
             Rect launchBounds = customLaunchBounds(config, scale);
             options.setLaunchBounds(launchBounds);
+            if (target.isShortcut()) {
+                try {
+                    XposedHelpers.callMethod(options, "setForceLaunchNewTask");
+                    Log.i("Shortcut dispatcher isolated in a new task package="
+                            + packageName);
+                } catch (Throwable error) {
+                    Log.e("Cannot isolate shortcut dispatcher task; continuing safely",
+                            error);
+                }
+            }
 
-            Intent intent = new Intent(Intent.ACTION_MAIN)
+            Intent intent = target.isShortcut()
+                    ? new Intent(Intent.ACTION_MAIN).setPackage(packageName)
+                    : new Intent(Intent.ACTION_MAIN)
                     .addCategory(Intent.CATEGORY_LAUNCHER)
                     .setComponent(target.component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            ActivityManager.RunningTaskInfo existing = findRunningTask(packageName);
-            if (existing != null) forceTaskResizable(existing.taskId);
+            ActivityManager.RunningTaskInfo existing = target.isShortcut() ? null
+                    : findRunningTask(packageName, target.userId);
+            if (existing != null) {
+                forceTaskResizable(existing.taskId);
+            }
             Bundle launchOptions = options.toBundle();
-            beginPendingMatch(packageName, visualBounds(launchBounds, scale),
-                    intent, launchOptions);
+            beginPendingMatch(packageName, target.userId,
+                    visualBounds(launchBounds, scale), launchBounds,
+                    intent, launchOptions, target.isShortcut());
             notifyLaunchArmed(onLaunchArmed);
-            context.startActivity(intent, launchOptions);
-            Log.i("Launching or reusing " + target.component.flattenToShortString()
+            if (target.isShortcut()) {
+                dispatchShortcut(target, launchOptions);
+            } else if (target.userId != 0) {
+                Intent request = new Intent(ShortcutHostRuntime.ACTION_START_ACTIVITY)
+                        .setPackage(ShortcutHostRuntime.MIUI_HOME)
+                        .putExtra(ShortcutHostRuntime.EXTRA_COMPONENT,
+                                target.component.flattenToString())
+                        .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, target.userId)
+                        .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, launchOptions);
+                context.sendBroadcast(request);
+            } else {
+                context.startActivity(intent, launchOptions);
+            }
+            Log.i("Preparing or launching " + (target.isShortcut()
+                    ? packageName + "/" + target.shortcutId
+                    : target.component.flattenToShortString()
+                    + (target.userId == 0 ? "" : " user=" + target.userId))
                     + " in freeform without home reorder bounds=" + launchBounds
                     + " scale=" + scale);
             scheduleScans();
@@ -163,6 +205,104 @@ final class HyperOsFreeformBridge {
             clearPendingMatch();
             Log.e("Native freeform launch failed", error);
             return false;
+        }
+    }
+
+    private void dispatchShortcut(RuntimeTarget target, Bundle launchOptions) {
+        refreshPendingLaunchTimestamp();
+        Intent request = new Intent(ShortcutHostRuntime.ACTION_START_SHORTCUT)
+                .setPackage(ShortcutHostRuntime.MIUI_HOME)
+                .putExtra(ShortcutHostRuntime.EXTRA_PACKAGE, target.packageName)
+                .putExtra(ShortcutHostRuntime.EXTRA_SHORTCUT_ID, target.shortcutId)
+                .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, launchOptions);
+        context.sendBroadcast(request);
+        Log.i("Shortcut dispatched in isolated task " + target.packageName
+                + "/" + target.shortcutId);
+    }
+
+    void prepareShortcutEnterAnimation(Object change, Object taskInfo) {
+        if (change == null || taskInfo == null) return;
+        ActivityManager.RunningTaskInfo running;
+        try {
+            Object value = XposedHelpers.callMethod(taskInfo, "getTaskInfo");
+            if (!(value instanceof ActivityManager.RunningTaskInfo)) return;
+            running = (ActivityManager.RunningTaskInfo) value;
+        } catch (Throwable ignored) {
+            return;
+        }
+        Rect configuredBounds;
+        long now = SystemClock.elapsedRealtime();
+        synchronized (taskLock) {
+            if (recentShortcutPackage == null || now > recentShortcutUntil
+                    || !recentShortcutPackage.equals(packageName(running))
+                    || recentShortcutUserId != taskUserId(running)) {
+                return;
+            }
+            if (lastShortcutPreparedTaskId == running.taskId
+                    && now - lastShortcutPreparedAt < 700L) {
+                return;
+            }
+            configuredBounds = recentShortcutLaunchBounds == null ? null
+                    : new Rect(recentShortcutLaunchBounds);
+            if (configuredBounds == null || configuredBounds.isEmpty()) return;
+            lastShortcutPreparedTaskId = running.taskId;
+            lastShortcutPreparedAt = now;
+        }
+        try {
+            setRectResult(change, "getStartAbsBounds", configuredBounds);
+            setRectResult(change, "getEndAbsBounds", configuredBounds);
+
+            Object configuration = XposedHelpers.getObjectField(running,
+                    "configuration");
+            Object windowConfiguration = XposedHelpers.getObjectField(
+                    configuration, "windowConfiguration");
+            XposedHelpers.callMethod(windowConfiguration, "setBounds",
+                    new Rect(configuredBounds));
+
+            Object internalTaskBounds = XposedHelpers.getObjectField(taskInfo,
+                    "mTaskBounds");
+            if (internalTaskBounds instanceof Rect) {
+                ((Rect) internalTaskBounds).set(configuredBounds);
+            }
+            float scale = numberCall(taskInfo, "getFreeformScale", 0.7f);
+            Object baseTarget = XposedHelpers.callMethod(taskInfo,
+                    "getBaseAnimTarget");
+            XposedHelpers.callMethod(baseTarget, "setBaseAnimTargetParam",
+                    new Rect(configuredBounds), scale, scale, 0f);
+
+            Object owner = controller;
+            if (owner != null) {
+                Object organizer = XposedHelpers.getObjectField(owner,
+                        "mRootTaskDisplayAreaOrganizer");
+                Object token = XposedHelpers.getObjectField(running, "token");
+                Class<?> transactionClass = XposedHelpers.findClass(
+                        "android.window.WindowContainerTransaction", null);
+                Object transaction = transactionClass.getDeclaredConstructor().newInstance();
+                XposedHelpers.callMethod(transaction, "setBounds", token,
+                        new Rect(configuredBounds));
+                XposedHelpers.callMethod(organizer, "applyTransaction", transaction);
+            }
+            Log.i("Shortcut enter animation prepared at configured bounds task="
+                    + running.taskId + " bounds=" + configuredBounds
+                    + " top=" + running.topActivity);
+        } catch (Throwable error) {
+            Log.e("Cannot prepare shortcut enter animation task=" + running.taskId,
+                    error);
+        }
+    }
+
+    private static void setRectResult(Object target, String method, Rect bounds) {
+        try {
+            Object result = XposedHelpers.callMethod(target, method);
+            if (result instanceof Rect) ((Rect) result).set(bounds);
+        } catch (Throwable ignored) { }
+    }
+
+    private void refreshPendingLaunchTimestamp() {
+        synchronized (taskLock) {
+            if (pendingPackage == null) return;
+            pendingSince = SystemClock.elapsedRealtime();
+            launchInputProtectionUntil = pendingSince + LAUNCH_INPUT_PROTECTION_MS;
         }
     }
 
@@ -180,6 +320,7 @@ final class HyperOsFreeformBridge {
         boolean pinned = isPinned(info);
         String actual = packageName(info);
         boolean retainTransition = false;
+        boolean alignShortcutTask = false;
         int dismissMatchedTaskId = -1;
         int deferredMatchedAction = ConfigContract.ACTION_NONE;
 
@@ -188,7 +329,12 @@ final class HyperOsFreeformBridge {
             String expected = pendingPackage;
             boolean inMatchWindow = expected != null
                     && SystemClock.elapsedRealtime() - pendingSince <= MATCH_WINDOW_MS;
-            boolean matchesPending = inMatchWindow && expected.equals(actual) && !pinned;
+            boolean matchesPending = inMatchWindow && expected.equals(actual)
+                    && pendingUserId == userId(info) && !pinned;
+            boolean matchesRecentShortcut = normal && recentShortcutPackage != null
+                    && SystemClock.elapsedRealtime() <= recentShortcutUntil
+                    && recentShortcutPackage.equals(actual)
+                    && recentShortcutUserId == userId(info);
             if (matchesPending && pendingLaunchDismissRequested && (normal || mini)) {
                 tasks.put(taskId, actual, normal
                         ? FreeformTaskRegistry.State.NORMAL
@@ -224,6 +370,7 @@ final class HyperOsFreeformBridge {
                         finishPendingMatchLocked();
                         Log.i("Fan-selected task remains in native mini state task=" + taskId);
                     } else if (normal) {
+                        alignShortcutTask = pendingShortcutLaunch || matchesRecentShortcut;
                         tasks.put(taskId, actual, FreeformTaskRegistry.State.NORMAL);
                         trackedTaskId = taskId;
                         externalTrackedTaskId = -1;
@@ -234,6 +381,7 @@ final class HyperOsFreeformBridge {
                                 + " tracked=" + trackedTaskId + " ownedCount=" + tasks.size());
                     }
                 }
+                if (matchesRecentShortcut) alignShortcutTask = true;
                 if (record == null && !matchesPending) {
                     if (normal && !mini && !pinned) {
                         if (externalTrackedTaskId != taskId) {
@@ -254,6 +402,7 @@ final class HyperOsFreeformBridge {
             Log.i("Startup outside tap closed matched task=" + dismissMatchedTaskId);
             return;
         }
+        if (alignShortcutTask) alignShortcutTaskToConfiguredBounds(taskId);
         if (deferredMatchedAction != ConfigContract.ACTION_NONE) {
             performDeferredLaunchAction(deferredMatchedAction);
             return;
@@ -426,6 +575,21 @@ final class HyperOsFreeformBridge {
         return new Rect(bounds);
     }
 
+    boolean abandonStalePendingLaunch(long minimumAgeMs) {
+        String failedPackage;
+        long age;
+        synchronized (taskLock) {
+            if (pendingPackage == null) return false;
+            age = SystemClock.elapsedRealtime() - pendingSince;
+            if (age < Math.max(0L, minimumAgeMs)) return false;
+            failedPackage = pendingPackage;
+            clearPendingMatchLocked();
+        }
+        Log.i("Freeform launch did not materialize; clearing input protection package="
+                + failedPackage + " age=" + age + "ms");
+        return true;
+    }
+
     boolean dismissTrackedOrPendingLaunch() {
         int taskId = -1;
         synchronized (taskLock) {
@@ -536,7 +700,7 @@ final class HyperOsFreeformBridge {
             queuedAfterSuspendTaskId = -1;
         }
         Log.i("Starting queued second freeform reason=" + reason
-                + " target=" + target.component.getPackageName());
+                + " target=" + target.packageName);
         launchNow(target, config, callback);
     }
 
@@ -796,10 +960,12 @@ final class HyperOsFreeformBridge {
         }
     }
 
-    private void beginPendingMatch(String packageName, Rect visualBounds,
-                                   Intent intent, Bundle options) {
+    private void beginPendingMatch(String packageName, int userId, Rect visualBounds,
+                                   Rect launchBounds, Intent intent, Bundle options,
+                                   boolean shortcutLaunch) {
         synchronized (taskLock) {
             pendingPackage = packageName;
+            pendingUserId = userId;
             pendingSince = SystemClock.elapsedRealtime();
             pendingLaunchVisualBounds = visualBounds == null ? null : new Rect(visualBounds);
             launchInputProtectionUntil = pendingSince + LAUNCH_INPUT_PROTECTION_MS;
@@ -809,6 +975,14 @@ final class HyperOsFreeformBridge {
             pendingLaunchIntent = new Intent(intent);
             pendingLaunchOptions = new Bundle(options);
             pendingResizeRetry = false;
+            pendingShortcutLaunch = shortcutLaunch;
+            if (shortcutLaunch) {
+                recentShortcutPackage = packageName;
+                recentShortcutUserId = userId;
+                recentShortcutUntil = pendingSince + 2200L;
+                recentShortcutLaunchBounds = launchBounds == null
+                        ? null : new Rect(launchBounds);
+            }
         }
     }
 
@@ -836,12 +1010,14 @@ final class HyperOsFreeformBridge {
 
     private void finishPendingMatchLocked() {
         pendingPackage = null;
+        pendingUserId = 0;
         pendingSince = 0L;
         pendingLaunchDismissRequested = false;
         pendingLaunchDeferredAction = ConfigContract.ACTION_NONE;
         pendingLaunchIntent = null;
         pendingLaunchOptions = null;
         pendingResizeRetry = false;
+        pendingShortcutLaunch = false;
     }
 
     private void scheduleScans() {
@@ -882,9 +1058,11 @@ final class HyperOsFreeformBridge {
 
     private void retryNonResizableTaskIfNeeded() {
         String expected = pendingPackage;
-        if (expected == null || pendingResizeRetry) return;
-        ActivityManager.RunningTaskInfo running = findRunningTask(expected);
+        if (expected == null || pendingResizeRetry || pendingShortcutLaunch) return;
+        int expectedUserId = pendingUserId;
+        ActivityManager.RunningTaskInfo running = findRunningTask(expected, expectedUserId);
         if (running == null || intCall(running, "getWindowingMode", 1) == 5) return;
+        if (expectedUserId != 0) return;
         Intent intent = pendingLaunchIntent;
         Bundle options = pendingLaunchOptions;
         if (intent == null || options == null || !forceTaskResizable(running.taskId)) return;
@@ -898,18 +1076,85 @@ final class HyperOsFreeformBridge {
         }
     }
 
+    private void alignShortcutTaskToConfiguredBounds(int taskId) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastShortcutAlignedTaskId == taskId && now - lastShortcutAlignmentAt < 700L) {
+            return;
+        }
+        lastShortcutAlignedTaskId = taskId;
+        lastShortcutAlignmentAt = now;
+        resizeShortcutTask(taskId);
+        mainHandler.postDelayed(() -> resizeShortcutTask(taskId), 120L);
+        mainHandler.postDelayed(() -> resizeShortcutTask(taskId), 320L);
+    }
+
+    private void resizeShortcutTask(int taskId) {
+        Object info = taskInfo(taskId);
+        if (info == null || !booleanCall(info, "isNormalState", false)) return;
+        try {
+            float transientScale = numberCall(info, "getFreeformScale", 1f);
+            Rect savedBounds = recentShortcutLaunchBounds;
+            // A reused shortcut task reports scale=1 during its transition even though the
+            // ActivityOptions were created with HyperOS' actual freeform scale (normally 0.7).
+            // Reuse the exact pre-launch logical bounds instead of recalculating from that
+            // transient task value. This is identical to the bounds used by normal app launches.
+            Rect configuredBounds = savedBounds == null
+                    ? customLaunchBounds(latestConfig, 0.7f) : new Rect(savedBounds);
+            Object running = XposedHelpers.callMethod(info, "getTaskInfo");
+            if (running instanceof ActivityManager.RunningTaskInfo
+                    && taskMatchesBounds((ActivityManager.RunningTaskInfo) running,
+                    configuredBounds)) {
+                Log.i("Shortcut freeform bounds verified task=" + taskId
+                        + " bounds=" + taskBounds((ActivityManager.RunningTaskInfo) running));
+                return;
+            }
+            Class<?> activityTaskManager = XposedHelpers.findClass(
+                    "android.app.ActivityTaskManager", null);
+            Object service = XposedHelpers.callStaticMethod(activityTaskManager, "getService");
+            XposedHelpers.callMethod(service, "resizeTask", taskId, configuredBounds, 0);
+            Log.i("Shortcut freeform aligned to configured bounds task=" + taskId
+                    + " bounds=" + configuredBounds
+                    + " transientScale=" + transientScale);
+        } catch (Throwable error) {
+            Log.e("Cannot align shortcut freeform task=" + taskId, error);
+        }
+    }
+
     @SuppressWarnings("deprecation")
-    private ActivityManager.RunningTaskInfo findRunningTask(String packageName) {
+    private ActivityManager.RunningTaskInfo findRunningTask(String packageName, int userId) {
         try {
             ActivityManager manager = context.getSystemService(ActivityManager.class);
             if (manager == null) return null;
             for (ActivityManager.RunningTaskInfo running : manager.getRunningTasks(100)) {
-                if (packageName.equals(packageName(running))) return running;
+                if (packageName.equals(packageName(running))
+                        && taskUserId(running) == userId) return running;
             }
         } catch (Throwable error) {
             Log.e("Cannot inspect running tasks for " + packageName, error);
         }
         return null;
+    }
+
+    private static boolean taskMatchesBounds(ActivityManager.RunningTaskInfo task,
+                                             Rect expected) {
+        Rect actual = taskBounds(task);
+        return actual != null && expected != null
+                && Math.abs(actual.left - expected.left) <= 2
+                && Math.abs(actual.top - expected.top) <= 2
+                && Math.abs(actual.right - expected.right) <= 2
+                && Math.abs(actual.bottom - expected.bottom) <= 2;
+    }
+
+    private static Rect taskBounds(ActivityManager.RunningTaskInfo task) {
+        try {
+            Object configuration = XposedHelpers.getObjectField(task, "configuration");
+            Object windowConfiguration = XposedHelpers.getObjectField(
+                    configuration, "windowConfiguration");
+            Object bounds = XposedHelpers.callMethod(windowConfiguration, "getBounds");
+            return bounds instanceof Rect ? new Rect((Rect) bounds) : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private boolean forceTaskResizable(int taskId) {
@@ -960,6 +1205,27 @@ final class HyperOsFreeformBridge {
             }
         } catch (Throwable ignored) {}
         return "";
+    }
+
+    private int userId(Object info) {
+        try {
+            Object task = XposedHelpers.callMethod(info, "getTaskInfo");
+            if (task instanceof ActivityManager.RunningTaskInfo) {
+                return taskUserId(task);
+            }
+            Object value = XposedHelpers.getObjectField(task, "userId");
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static int taskUserId(Object task) {
+        try {
+            return XposedHelpers.getIntField(task, "userId");
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
     private static String packageName(ActivityManager.RunningTaskInfo running) {

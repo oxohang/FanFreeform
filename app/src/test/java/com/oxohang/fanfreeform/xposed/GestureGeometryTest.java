@@ -180,10 +180,75 @@ public class GestureGeometryTest {
     }
 
     @Test
+    public void sideFanPlacesMiddleAppAtFingerAndMirrorsSelection() {
+        GestureGeometry.Point left = GestureGeometry.sideFanIconCenter(
+                GestureGeometry.Corner.LEFT, 2, 6, 1200, 420, 1300, 420);
+        GestureGeometry.Point right = GestureGeometry.sideFanIconCenter(
+                GestureGeometry.Corner.RIGHT, 2, 6, 1200, 780, 1300, 420);
+        assertEquals(420f, left.x, 0.01f);
+        assertEquals(1300f, left.y, 0.01f);
+        assertEquals(1200f, left.x + right.x, 0.01f);
+        assertEquals(2, GestureGeometry.sideFanSelection(
+                GestureGeometry.Corner.LEFT, left.x, left.y, 1200,
+                6, 420, 1300, 420, 90, 8));
+        assertEquals(2, GestureGeometry.sideFanSelection(
+                GestureGeometry.Corner.RIGHT, right.x, right.y, 1200,
+                6, 780, 1300, 420, 90, 8));
+    }
+
+    @Test
+    public void sideFanCenterKeepsEveryIconInsideSafeBand() {
+        float center = GestureGeometry.sideFanCenterY(
+                560, 8, 420, 90, 520, 2136);
+        for (int index = 0; index < 8; index++) {
+            GestureGeometry.Point point = GestureGeometry.sideFanIconCenter(
+                    GestureGeometry.Corner.LEFT, index, 8, 1200, 420, center, 420);
+            assertTrue(point.y - 53 >= 520);
+            assertTrue(point.y + 53 <= 2136);
+        }
+    }
+
+    @Test
+    public void sideRingMovesInwardAndKeepsEveryIconVisible() {
+        float diameter = 120f;
+        float radius = GestureGeometry.sideRingRadius(8, diameter, 24f);
+        GestureGeometry.Point center = GestureGeometry.sideRingCenter(
+                40, 700, radius, diameter, 20, 520, 1180, 2136);
+        assertTrue(center.x > 40);
+        for (int index = 0; index < 8; index++) {
+            GestureGeometry.Point icon = GestureGeometry.sideRingIconCenter(
+                    index, 8, center.x, center.y, radius);
+            assertTrue(icon.x - diameter / 2f >= 20f);
+            assertTrue(icon.x + diameter / 2f <= 1180f);
+            assertTrue(icon.y - diameter / 2f >= 520f);
+            assertTrue(icon.y + diameter / 2f <= 2136f);
+            assertEquals(index, GestureGeometry.sideRingSelection(
+                    icon.x, icon.y, 8, center.x, center.y, radius,
+                    diameter, 8f));
+        }
+        assertEquals(-1, GestureGeometry.sideRingSelection(
+                center.x, center.y, 8, center.x, center.y, radius,
+                diameter, 8f));
+    }
+
+    @Test
+    public void sideRingSizeScalesRadiusWithoutChangingIconsAndClampsToScreen() {
+        float automatic = 180f;
+        assertEquals(108f, GestureGeometry.scaledSideRingRadius(
+                automatic, 60, 400f), 0.01f);
+        assertEquals(180f, GestureGeometry.scaledSideRingRadius(
+                automatic, 100, 400f), 0.01f);
+        assertEquals(324f, GestureGeometry.scaledSideRingRadius(
+                automatic, 180, 400f), 0.01f);
+        assertEquals(250f, GestureGeometry.scaledSideRingRadius(
+                automatic, 180, 250f), 0.01f);
+    }
+
+    @Test
     public void followFingerListAppearsAheadOfSwipeAndListExitIsExplicit() {
-        assertEquals(620f, GestureGeometry.sideListCenterX(
+        assertEquals(460f, GestureGeometry.sideListCenterX(
                 GestureGeometry.Corner.LEFT, 460, 1200, 120, 40, true), 0.01f);
-        assertEquals(580f, GestureGeometry.sideListCenterX(
+        assertEquals(740f, GestureGeometry.sideListCenterX(
                 GestureGeometry.Corner.RIGHT, 740, 1200, 120, 40, true), 0.01f);
         assertEquals(100f, GestureGeometry.sideListCenterX(
                 GestureGeometry.Corner.LEFT, 460, 1200, 120, 40, false), 0.01f);

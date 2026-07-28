@@ -9,6 +9,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
@@ -66,14 +68,14 @@ public final class GestureSettingsActivity extends Activity {
         back.setOnClickListener(view -> finish());
         header.addView(back, new LinearLayout.LayoutParams(
                 Ui.dp(this, 44), Ui.dp(this, 52)));
-        TextView title = text(sideMode ? "侧滑列表" : "底角斜滑",
+        TextView title = text(sideMode ? "侧滑选择" : "底角斜滑",
                 26, Ui.TEXT, Typeface.BOLD);
         header.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header);
 
         TextView subtitle = text(sideMode
-                        ? "短滑保留 HyperOS 返回，长滑呼出纵向应用列表"
+                        ? "短滑保留 HyperOS 返回，长滑呼出所选应用布局"
                         : "贴住左右物理底角，向屏幕内侧斜上方滑动",
                 14, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
@@ -106,6 +108,8 @@ public final class GestureSettingsActivity extends Activity {
         card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
                 34, 64, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
                         ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
+        card.addView(Ui.divider(this));
+        card.addView(selectedNameRow());
         TextView note = text("底角区域始终从屏幕物理边缘开始，不再为侧滑手势向内避让。",
                 13, Ui.MUTED, Typeface.NORMAL);
         note.setPadding(0, Ui.dp(this, 10), 0, 0);
@@ -114,14 +118,22 @@ public final class GestureSettingsActivity extends Activity {
 
     private void buildSideSettings(LinearLayout card) {
         card.addView(text("侧滑参数", 18, Ui.TEXT, Typeface.BOLD));
+        card.addView(sideLayoutModeRow());
+        card.addView(Ui.divider(this));
         card.addView(slider("长滑触发距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
                 18, 50, prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT), value -> value + "%"));
-        card.addView(slider("列表图标大小", ConfigContract.KEY_SIDE_ICON_SIZE_DP,
+        card.addView(slider("侧滑图标大小", ConfigContract.KEY_SIDE_ICON_SIZE_DP,
                 34, 64, prefs.getInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP,
                         prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
                                 ConfigContract.DEFAULT_SIDE_ICON_SIZE_DP)),
                 value -> value + "dp"));
+        card.addView(slider("环形大小", ConfigContract.KEY_SIDE_RING_SIZE_PERCENT,
+                ConfigContract.MIN_SIDE_RING_SIZE_PERCENT,
+                ConfigContract.MAX_SIDE_RING_SIZE_PERCENT,
+                prefs.getInt(ConfigContract.KEY_SIDE_RING_SIZE_PERCENT,
+                        ConfigContract.DEFAULT_SIDE_RING_SIZE_PERCENT),
+                value -> value + "%"));
         card.addView(slider("顶部安全距离", ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 8, 35, prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT),
@@ -133,29 +145,61 @@ public final class GestureSettingsActivity extends Activity {
                         ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT),
                 value -> value + "%"));
         card.addView(Ui.divider(this));
-        card.addView(booleanRow("跟随手指显示", "列表在长滑达到阈值时显示于手指前方",
+        card.addView(booleanRow("跟随手指显示", "列表在长滑达到阈值时以手指位置为中心",
                 ConfigContract.KEY_SIDE_FOLLOW_FINGER,
                 ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
         card.addView(Ui.divider(this));
-        LinearLayout namesRow = row();
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.addView(text("显示应用名称", 16, Ui.TEXT, Typeface.BOLD));
-        labels.addView(text("关闭后只在选中图标时浮现名称",
-                13, Ui.MUTED, Typeface.NORMAL));
-        namesRow.addView(labels, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch names = new Switch(this);
-        names.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
-                ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES));
-        names.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES, checked));
-        namesRow.addView(names);
-        card.addView(namesRow);
+        card.addView(selectedNameRow());
         TextView note = text("侧滑区域从顶部安全距离以下开始，止于底角热区上方并保留间隔。",
                 13, Ui.MUTED, Typeface.NORMAL);
         note.setPadding(0, Ui.dp(this, 8), 0, 0);
         card.addView(note);
+    }
+
+    private View selectedNameRow() {
+        return booleanRow("显示选中应用名称",
+                "统一用于底角扇形和侧滑的所有布局",
+                ConfigContract.KEY_SHOW_SELECTED_APP_NAME,
+                ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME);
+    }
+
+    private View sideLayoutModeRow() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 10));
+        section.addView(text("选择布局", 16, Ui.TEXT, Typeface.BOLD));
+        section.addView(text("纵向列表、完整环形和扇形只能选择一种",
+                13, Ui.MUTED, Typeface.NORMAL));
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.VERTICAL);
+        int[] modes = {ConfigContract.SIDE_LAYOUT_LIST,
+                ConfigContract.SIDE_LAYOUT_RING, ConfigContract.SIDE_LAYOUT_FAN};
+        String[] labels = {"纵向列表", "环形", "扇形"};
+        int selectedMode = prefs.getInt(ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                prefs.getBoolean(ConfigContract.KEY_SIDE_FAN_LIST,
+                        ConfigContract.DEFAULT_SIDE_FAN_LIST)
+                        ? ConfigContract.SIDE_LAYOUT_FAN
+                        : ConfigContract.DEFAULT_SIDE_LAYOUT_MODE);
+        for (int index = 0; index < modes.length; index++) {
+            RadioButton option = new RadioButton(this);
+            option.setId(View.generateViewId());
+            option.setTag(modes[index]);
+            option.setText(labels[index]);
+            option.setTextSize(15);
+            option.setTextColor(Ui.TEXT);
+            option.setChecked(selectedMode == modes[index]);
+            group.addView(option, new RadioGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)));
+        }
+        group.setOnCheckedChangeListener((radioGroup, checkedId) -> {
+            View checked = radioGroup.findViewById(checkedId);
+            if (checked != null && checked.getTag() instanceof Integer) {
+                store.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                        (Integer) checked.getTag());
+            }
+        });
+        section.addView(group);
+        return section;
     }
 
     private View booleanRow(String title, String subtitle, String key, boolean defaultValue) {

@@ -24,10 +24,38 @@ public final class ConfigProvider extends ContentProvider {
         if ("get".equals(method)) {
             ConfigStore.seedDefaultsIfNeeded(context, prefs);
             ConfigStore.migrateUnifiedActionsIfNeeded(prefs);
+            ConfigStore.migrateSideLayoutModeIfNeeded(prefs);
+            ConfigStore.migrateSelectedAppNameIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
             out.putBoolean(ConfigContract.KEY_FAN_SHADOW, prefs.getBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW));
+            out.putBoolean(ConfigContract.KEY_FAN_ANIMATIONS_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_FAN_ANIMATIONS_ENABLED,
+                    ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED));
+            out.putInt(ConfigContract.KEY_FAN_ANIMATION_SPEED, Math.max(
+                    ConfigContract.MIN_FAN_ANIMATION_SPEED, Math.min(
+                            ConfigContract.MAX_FAN_ANIMATION_SPEED, prefs.getInt(
+                                    ConfigContract.KEY_FAN_ANIMATION_SPEED,
+                                    ConfigContract.DEFAULT_FAN_ANIMATION_SPEED))));
+            out.putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT, Math.max(
+                    ConfigContract.MIN_FAN_REVEAL_AMOUNT, Math.min(
+                            ConfigContract.MAX_FAN_REVEAL_AMOUNT, prefs.getInt(
+                                    ConfigContract.KEY_FAN_REVEAL_AMOUNT,
+                                    ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT))));
+            out.putInt(ConfigContract.KEY_FAN_ROTATION_DEGREES, Math.max(
+                    ConfigContract.MIN_FAN_ROTATION_DEGREES, Math.min(
+                            ConfigContract.MAX_FAN_ROTATION_DEGREES, prefs.getInt(
+                                    ConfigContract.KEY_FAN_ROTATION_DEGREES,
+                                    ConfigContract.DEFAULT_FAN_ROTATION_DEGREES))));
+            out.putInt(ConfigContract.KEY_FAN_SELECTION_SCALE_PERCENT, Math.max(
+                    ConfigContract.MIN_FAN_SELECTION_SCALE_PERCENT, Math.min(
+                            ConfigContract.MAX_FAN_SELECTION_SCALE_PERCENT, prefs.getInt(
+                                    ConfigContract.KEY_FAN_SELECTION_SCALE_PERCENT,
+                                    ConfigContract.DEFAULT_FAN_SELECTION_SCALE_PERCENT))));
+            out.putBoolean(ConfigContract.KEY_FAN_SELECTION_RING, prefs.getBoolean(
+                    ConfigContract.KEY_FAN_SELECTION_RING,
+                    ConfigContract.DEFAULT_FAN_SELECTION_RING));
             out.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
             out.putInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT));
             out.putInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP, prefs.getInt(
@@ -37,12 +65,25 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT, prefs.getInt(
                     ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                     ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT));
-            out.putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES, prefs.getBoolean(
-                    ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
-                    ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES));
+            out.putBoolean(ConfigContract.KEY_SHOW_SELECTED_APP_NAME, prefs.getBoolean(
+                    ConfigContract.KEY_SHOW_SELECTED_APP_NAME,
+                    ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME));
             out.putBoolean(ConfigContract.KEY_SIDE_FOLLOW_FINGER, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_FOLLOW_FINGER,
                     ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
+            out.putBoolean(ConfigContract.KEY_SIDE_FAN_LIST, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_FAN_LIST,
+                    ConfigContract.DEFAULT_SIDE_FAN_LIST));
+            out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, Math.max(
+                    ConfigContract.SIDE_LAYOUT_LIST, Math.min(
+                            ConfigContract.SIDE_LAYOUT_FAN, prefs.getInt(
+                                    ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE))));
+            out.putInt(ConfigContract.KEY_SIDE_RING_SIZE_PERCENT, Math.max(
+                    ConfigContract.MIN_SIDE_RING_SIZE_PERCENT, Math.min(
+                            ConfigContract.MAX_SIDE_RING_SIZE_PERCENT, prefs.getInt(
+                                    ConfigContract.KEY_SIDE_RING_SIZE_PERCENT,
+                                    ConfigContract.DEFAULT_SIDE_RING_SIZE_PERCENT))));
             out.putBoolean(ConfigContract.KEY_SIDE_WHEEL_MODE, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_WHEEL_MODE,
                     ConfigContract.DEFAULT_SIDE_WHEEL_MODE));
@@ -73,6 +114,22 @@ public final class ConfigProvider extends ContentProvider {
             context.getContentResolver().notifyChange(ConfigContract.URI, null);
             return Bundle.EMPTY;
         }
+        if ("report_shortcuts".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_SHORTCUT_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            }
+            return Bundle.EMPTY;
+        }
+        if ("report_activities".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_ACTIVITY_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            }
+            return Bundle.EMPTY;
+        }
         return super.call(method, arg, extras);
     }
 
@@ -93,7 +150,8 @@ public final class ConfigProvider extends ContentProvider {
         String[] packages = context.getPackageManager().getPackagesForUid(uid);
         if (packages != null) {
             for (String packageName : packages) {
-                if ("com.android.systemui".equals(packageName)) {
+                if ("com.android.systemui".equals(packageName)
+                        || "com.miui.home".equals(packageName)) {
                     return;
                 }
             }
