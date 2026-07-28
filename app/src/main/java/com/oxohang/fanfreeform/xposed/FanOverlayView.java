@@ -1,8 +1,5 @@
 package com.oxohang.fanfreeform.xposed;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -15,7 +12,6 @@ import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.text.TextPaint;
 import android.view.View;
-import android.view.animation.DecelerateInterpolator;
 
 import java.util.Collections;
 import java.util.List;
@@ -41,14 +37,7 @@ final class FanOverlayView extends View {
     private boolean sideListLayout;
     private float sideListTop;
     private float sideRowHeight;
-    private float sideListCenterX;
     private boolean showSideNames;
-
-    // 启动动画状态
-    private int launchAnimIndex = -1;
-    private float launchAnimScale = 1f;
-    private float launchAnimRotation = 0f;
-    private ValueAnimator launchAnimator;
 
     FanOverlayView(Context context) {
         super(context);
@@ -82,7 +71,6 @@ final class FanOverlayView extends View {
         this.sideListLayout = false;
         this.sideListTop = 0f;
         this.sideRowHeight = 0f;
-        this.sideListCenterX = 0f;
         this.showSideNames = false;
         selected = -1;
         updateBackdropShader();
@@ -90,7 +78,7 @@ final class FanOverlayView extends View {
     }
 
     void configureSideList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
-                           float centerX, float listTop, float rowHeight, float iconDiameter,
+                           float listTop, float rowHeight, float iconDiameter,
                            boolean showNames, boolean showBackdrop) {
         this.targets = targets;
         this.corner = side;
@@ -100,65 +88,16 @@ final class FanOverlayView extends View {
         this.sideListLayout = true;
         this.sideListTop = listTop;
         this.sideRowHeight = rowHeight;
-        this.sideListCenterX = centerX;
         this.showSideNames = showNames;
         selected = -1;
         invalidate();
     }
 
     void updateSelection(int selected, float x, float y) {
-        cancelLaunchAnimation();
         this.selected = selected;
         pointerX = x;
         pointerY = y;
         invalidate();
-    }
-
-    /**
-     * 启动选中图标的弹出-旋转-归位动画。
-     * 动画结束后自动清除状态并回调 onComplete。
-     */
-    void startLaunchAnimation(int index, Runnable onComplete) {
-        cancelLaunchAnimation();
-        launchAnimIndex = index;
-        launchAnimScale = 1f;
-        launchAnimRotation = 0f;
-        launchAnimator = ValueAnimator.ofFloat(0f, 1f);
-        launchAnimator.setDuration(300L);
-        launchAnimator.setInterpolator(new DecelerateInterpolator());
-        launchAnimator.addUpdateListener(anim -> {
-            float progress = (float) anim.getAnimatedValue();
-            if (progress < 0.5f) {
-                float t = progress / 0.5f; // 0 → 1
-                launchAnimScale = 1f + 0.35f * t;
-                launchAnimRotation = 18f * t;
-            } else {
-                float t = (progress - 0.5f) / 0.5f; // 0 → 1
-                launchAnimScale = 1.35f - 0.35f * t;
-                launchAnimRotation = 18f * (1f - t);
-            }
-            postInvalidateOnAnimation();
-        });
-        launchAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(Animator animation) {
-                launchAnimIndex = -1;
-                launchAnimScale = 1f;
-                launchAnimRotation = 0f;
-                launchAnimator = null;
-                if (onComplete != null) onComplete.run();
-            }
-        });
-        launchAnimator.start();
-    }
-
-    void cancelLaunchAnimation() {
-        if (launchAnimator != null) {
-            launchAnimator.cancel();
-            launchAnimator = null;
-        }
-        launchAnimIndex = -1;
-        launchAnimScale = 1f;
-        launchAnimRotation = 0f;
     }
 
     @Override
@@ -180,26 +119,12 @@ final class FanOverlayView extends View {
             float x = center.x;
             float y = center.y;
             boolean active = i == selected;
-            boolean launching = i == launchAnimIndex;
             float diameter = iconDiameter * (active ? 1.08f : 1f);
             float iconRadius = diameter / 2f;
-
-            if (launching) {
-                canvas.save();
-                canvas.rotate(launchAnimRotation, x, y);
-                canvas.scale(launchAnimScale, launchAnimScale, x, y);
-            }
-
             canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
             drawCircularIcon(canvas, targets.get(i).icon, x, y, diameter);
             canvas.drawCircle(x, y, iconRadius - dp(0.5f), iconStrokePaint);
-            if (!launching && active) {
-                canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
-            }
-
-            if (launching) {
-                canvas.restore();
-            }
+            if (active) canvas.drawCircle(x, y, iconRadius + dp(6), selectedPaint);
         }
 
         if (selected >= 0 && selected < targets.size()) {
@@ -216,9 +141,14 @@ final class FanOverlayView extends View {
     }
 
     private void drawSideList(Canvas canvas) {
+        float edgeMargin = dp(14);
         float railPadding = dp(8);
-        float railLeft = sideListCenterX - iconDiameter / 2f - railPadding;
-        float railRight = sideListCenterX + iconDiameter / 2f + railPadding;
+        float railLeft = corner == GestureGeometry.Corner.LEFT
+                ? edgeMargin - railPadding
+                : getWidth() - edgeMargin - iconDiameter - railPadding;
+        float railRight = corner == GestureGeometry.Corner.LEFT
+                ? edgeMargin + iconDiameter + railPadding
+                : getWidth() - edgeMargin + railPadding;
         float railTop = sideListTop + dp(2);
         float railBottom = sideListTop + targets.size() * sideRowHeight - dp(2);
         if (showBackdrop) {
@@ -228,7 +158,8 @@ final class FanOverlayView extends View {
 
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.sideListIconCenter(
-                    i, sideListCenterX, sideListTop, sideRowHeight);
+                    corner, i, getWidth(), sideListTop, sideRowHeight,
+                    iconDiameter, edgeMargin);
             boolean active = i == selected;
             float diameter = iconDiameter * (active ? 1.1f : 1f);
             float radius = diameter / 2f;
