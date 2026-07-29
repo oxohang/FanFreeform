@@ -2,10 +2,12 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentCallbacks;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
@@ -34,12 +36,14 @@ import java.util.List;
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanRuntime {
-    private enum State { IDLE, ARMED, SIDE_ARMED, CLAIMED, ACTIVE, CANCELLED }
+    private enum State { IDLE, ARMED, SIDE_ARMED, CLAIMED, ACTIVE, HONEYCOMB, CANCELLED }
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Handler configHandler;
     private final FanOverlayController overlay;
+    private final HoneycombOverlayController honeycombOverlay;
+    private final FullscreenAppLauncher fullscreenLauncher;
     private final FanTriggerCapture triggerCapture;
     private final OutsideTouchCapture outsideCapture;
     private final HyperOsFreeformBridge freeform;
@@ -47,12 +51,16 @@ final class FanRuntime {
     private final GestureArbitrator gestureArbitrator = new GestureArbitrator();
     private final SideGestureArbitrator sideGestureArbitrator = new SideGestureArbitrator();
     private final GestureReplayGuard gestureReplayGuard = new GestureReplayGuard();
+    private final HoneycombGestureState honeycombGestureState = new HoneycombGestureState();
     private final float density;
     private final float directionDecisionDistance;
     private final float sideDirectionSlop;
     private final float sideVerticalFloor;
     private volatile GestureConfig config = GestureConfig.defaults();
     private volatile List<RuntimeTarget> targets = Collections.emptyList();
+    private volatile List<RuntimeTarget> honeycombTargets = Collections.emptyList();
+    private volatile List<RuntimeTarget> sideTargets = Collections.emptyList();
+    private List<RuntimeTarget> activeTargets = Collections.emptyList();
     private State state = State.IDLE;
     private volatile int configRetryCount;
     private volatile boolean configRetryScheduled;
@@ -99,6 +107,7 @@ final class FanRuntime {
     private long authoritativePanelStateVersion;
     private volatile long systemPanelTouchBlockUntil;
     private int lastHapticSelection = -1;
+    private float activeHoneycombReturnThreshold;
 
     FanRuntime(Context context, ClassLoader classLoader) {
         this.context = context;
@@ -111,6 +120,8 @@ final class FanRuntime {
         sideDirectionSlop = viewConfiguration.getScaledTouchSlop();
         sideVerticalFloor = 24 * density;
         overlay = new FanOverlayController(context, mainHandler);
+        honeycombOverlay = new HoneycombOverlayController(context, mainHandler);
+        fullscreenLauncher = new FullscreenAppLauncher(context);
         triggerCapture = new FanTriggerCapture(context, mainHandler);
         outsideCapture = new OutsideTouchCapture(context, mainHandler,
                 this::onCapturedOutsideTouch);
@@ -134,6 +145,8 @@ final class FanRuntime {
                     if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                         wheelSessionActive = false;
                         mainHandler.post(overlay::removeNow);
+                        mainHandler.post(honeycombOverlay::removeNow);
+                        resetFan(false);
                         outsideCapture.remove();
                     }
                     if (Intent.ACTION_SCREEN_ON.equals(action)) {
@@ -156,6 +169,20 @@ final class FanRuntime {
         } catch (Throwable error) {
             Log.e("Cannot register user-unlocked configuration reload", error);
         }
+        context.registerComponentCallbacks(new ComponentCallbacks() {
+            @Override public void onConfigurationChanged(Configuration newConfig) {
+                mainHandler.post(() -> {
+                    overlay.removeNow();
+                    honeycombOverlay.removeNow();
+                    resetFan(false);
+                    refreshTriggerCapture();
+                    refreshOutsideCapture();
+                    Log.i("Display orientation changed landscape=" + isLandscape());
+                });
+            }
+
+            @Override public void onLowMemory() { }
+        });
     }
 
     void setFreeformController(Object controller) {
@@ -281,11 +308,13 @@ final class FanRuntime {
         long until = android.os.SystemClock.uptimeMillis() + 1800L;
         systemPanelTouchBlockUntil = until;
         outsideCapture.remove();
+        honeycombOverlay.setPaused(true);
         outsideGestures.clearAll();
         mainHandler.postDelayed(() -> {
             if (systemPanelTouchBlockUntil != until) return;
             systemPanelTouchBlockUntil = 0L;
             if (!shadeExpanded && !controlCenterExpanded) {
+                honeycombOverlay.setPaused(false);
                 refreshOutsideCapture();
                 mainHandler.postDelayed(this::refreshOutsideCapture, 160L);
             }
@@ -296,9 +325,11 @@ final class FanRuntime {
     private void applySystemPanelCaptureState(String source) {
         if (shadeExpanded || controlCenterExpanded) {
             outsideCapture.remove();
+            honeycombOverlay.setPaused(true);
             outsideGestures.clearAll();
             Log.i("Outside capture paused while " + source + " is expanded");
         } else {
+            honeycombOverlay.setPaused(false);
             refreshOutsideCapture();
             mainHandler.postDelayed(this::refreshOutsideCapture, 90L);
             mainHandler.postDelayed(this::refreshOutsideCapture, 260L);
@@ -332,6 +363,34 @@ final class FanRuntime {
         float y = event.getY();
 
         if (triggerCapture.isInjectedEvent(event)) return;
+        if (state == State.HONEYCOMB) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                float distance = GestureGeometry.distance(downX, downY, x, y);
+                if (honeycombGestureState.shouldExit(distance,
+                        activeHoneycombReturnThreshold)) {
+                    honeycombOverlay.removeNow();
+                    state = State.ACTIVE;
+                    float selectionRadius = selectionRadius(width, height);
+                    float iconDiameter = iconDiameter(selectionRadius);
+                    overlay.show(targets, corner, selectionRadius, iconDiameter,
+                            config.showSelectedAppName, config.fanShadow,
+                            config.fanAnimationsEnabled, config.fanAnimationSpeed,
+                            config.fanRevealAmount, config.fanRotationDegrees,
+                            config.fanSelectionScalePercent, config.fanSelectionRing,
+                            config.fanFixedSevenRows);
+                    updateSelection(x, y, width, height, selectionRadius, iconDiameter);
+                    Log.i("Honeycomb retreated through hysteresis; fan restored");
+                    return;
+                }
+                honeycombOverlay.externalMove(x, y);
+            }
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                honeycombOverlay.externalUp(x, y, action == MotionEvent.ACTION_CANCEL);
+                resetFan(false);
+            }
+            return;
+        }
+        if (honeycombOverlay.isVisible()) return;
         if (wheelSessionActive || overlay.isWheelVisible()) return;
         if (action == MotionEvent.ACTION_DOWN && y <= statusBarGestureHeight()) {
             systemPanelInputDownTime = event.getDownTime();
@@ -384,22 +443,29 @@ final class FanRuntime {
         if (action == MotionEvent.ACTION_DOWN) {
             requestOnDemandConfigReload();
             resetFan();
+            boolean landscape = width > height;
             float hotWidth = width * config.hotWidthPercent / 100f;
             float hotHeight = height * config.hotHeightPercent / 100f;
             Insets systemSides = systemSideGestureInsets();
-            GestureGeometry.Corner downCorner = GestureGeometry.cornerAt(
-                    x, y, width, height, hotWidth, hotHeight);
+            GestureGeometry.Corner downCorner = config.bottomEnabledFor(landscape)
+                    ? GestureGeometry.cornerAt(x, y, width, height, hotWidth, hotHeight)
+                    : null;
             float sideSafeTop = sideSafeTop(height);
             float sideSafeBottom = sideSafeBottom(height, hotHeight);
             GestureGeometry.Corner systemEdgeSide = downCorner == null
                     ? GestureGeometry.sideAt(x, width, systemSides.left, systemSides.right)
                     : null;
-            GestureGeometry.Corner listSide = config.sideGestureEnabled && downCorner == null
+            boolean sideSourceAvailable = config.sideLayoutMode
+                    == ConfigContract.SIDE_LAYOUT_HONEYCOMB
+                    ? config.honeycombEnabledFor(landscape) && !honeycombTargets.isEmpty()
+                    : !sideTargets.isEmpty();
+            GestureGeometry.Corner listSide = config.sideEnabledFor(landscape)
+                    && sideSourceAvailable && downCorner == null
                     ? GestureGeometry.sideAt(x, y, width, systemSides.left,
                     systemSides.right, sideSafeTop, sideSafeBottom, 96 * density)
                     : null;
             GestureGeometry.Corner downSide = listSide;
-            if (!triggerCapture.isCapturing() && canStart()) {
+            if (!triggerCapture.isCapturing() && canStartBottom()) {
                 triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent,
                         0, 0);
             }
@@ -429,7 +495,7 @@ final class FanRuntime {
                 imeDismissTap = true;
                 if (systemEdgeSide == null) pilfer(inputMonitor);
             }
-            if (outsideTracked && systemEdgeSide != null && canStart()) {
+            if (outsideTracked && systemEdgeSide != null && canStartSide()) {
                 Insets reserves = sideGestureReserves();
                 outsideGestures.onDown(x, y, tracked, width,
                         reserves.left, reserves.right, event.getEventTime());
@@ -441,7 +507,7 @@ final class FanRuntime {
                         + " list=" + sideListAllowed);
                 return;
             }
-            if (downSide != null && canStart()) {
+            if (downSide != null && canStartSide()) {
                 if (outsideTracked) {
                     Insets reserves = sideGestureReserves();
                     outsideGestures.onDown(x, y, tracked, width,
@@ -458,7 +524,7 @@ final class FanRuntime {
             }
             if (tracked != null) {
                 if (!outsideTracked) return;
-                if (downCorner != null && canStart()) {
+                if (downCorner != null && canStartBottom()) {
                     Insets reserves = sideGestureReserves();
                     outsideGestures.onDown(x, y, tracked, width,
                             reserves.left, reserves.right, event.getEventTime());
@@ -478,7 +544,7 @@ final class FanRuntime {
                 }
                 return;
             }
-            if (downCorner != null && canStart()) {
+            if (downCorner != null && canStartBottom()) {
                 if (triggerCapture.isCapturing()) {
                     pilfer(inputMonitor);
                     Log.i("Fan input claimed on down through corner capture window");
@@ -504,7 +570,9 @@ final class FanRuntime {
             float threshold = width * config.sideTriggerPercent / 100f;
             SideGestureArbitrator.Decision decision = sideGestureArbitrator.update(
                     corner, downX, downY, x, y, threshold,
-                    sideDirectionSlop, sideVerticalFloor);
+                    sideDirectionSlop, sideVerticalFloor,
+                    config.sideDirectionHorizontal, config.sideDirectionUp,
+                    config.sideDirectionDown);
             if (decision == SideGestureArbitrator.Decision.PENDING) return;
             if (decision == SideGestureArbitrator.Decision.CANCELLED) {
                 state = State.CANCELLED;
@@ -560,6 +628,7 @@ final class FanRuntime {
             if (activeSideList) {
                 updateSideListSelection(x, y);
             } else {
+                if (activateHoneycombIfReady(x, y, width, height)) return;
                 float selectionRadius = selectionRadius(width, height);
                 updateSelection(x, y, width, height, selectionRadius,
                         iconDiameter(selectionRadius));
@@ -585,13 +654,13 @@ final class FanRuntime {
                     updateSelection(x, y, width, height, selectionRadius,
                             iconDiameter(selectionRadius));
                 }
-                if (selected >= 0 && selected < targets.size()) {
+                if (selected >= 0 && selected < activeTargets.size()) {
                     if (activeSideList && config.sideWheelMode) {
                         showPersistentWheel();
                         resetFan(false);
                         return;
                     } else {
-                        RuntimeTarget target = targets.get(selected);
+                        RuntimeTarget target = activeTargets.get(selected);
                         overlay.confirmAndHide(selected);
                         freeform.launch(target, config, this::refreshOutsideCapture);
                         refreshOutsideCaptureAfterLaunch();
@@ -644,30 +713,105 @@ final class FanRuntime {
                     config.fanAnimationsEnabled, config.fanAnimationSpeed,
                     config.fanRevealAmount, config.fanRotationDegrees,
                     config.fanSelectionScalePercent,
-                    config.fanSelectionRing);
+                    config.fanSelectionRing, config.fanFixedSevenRows);
             updateSelection(x, y, width, height, selectionRadius, iconDiameter);
         }
+    }
+
+    private boolean activateHoneycombIfReady(float x, float y, int width, int height) {
+        if (!config.honeycombEnabledFor(isLandscape())
+                || honeycombTargets.isEmpty() || activeSideList) return false;
+        float selectionRadius = selectionRadius(width, height);
+        float iconDiameter = iconDiameter(selectionRadius);
+        float configured = config.honeycombTriggerDp * density;
+        float threshold = Math.max(configured, selectionRadius + iconDiameter * 0.62f);
+        float distance = GestureGeometry.distance(downX, downY, x, y);
+        if (!honeycombGestureState.shouldEnter(distance, threshold)) return false;
+        GestureGeometry.Corner launchCorner = corner;
+        overlay.hide();
+        selected = -1;
+        outsideCapture.remove();
+        outsideGestures.clearAll();
+        boolean shown = honeycombOverlay.show(honeycombTargets, launchCorner, x, y, config,
+                new HoneycombOverlayController.Listener() {
+                    @Override public void onLaunch(RuntimeTarget target) {
+                        launchHoneycombTarget(target);
+                    }
+
+                    @Override public void onClosed() {
+                        refreshOutsideCapture();
+                    }
+                });
+        if (!shown) {
+            honeycombGestureState.reset();
+            return false;
+        }
+        activeHoneycombReturnThreshold = Math.min(width, height)
+                * config.triggerPercent / 100f;
+        state = State.HONEYCOMB;
+        honeycombOverlay.externalMove(x, y);
+        if (config.haptic) vibrateTick();
+        Log.i("Honeycomb activated targets=" + honeycombTargets.size()
+                + " mode=" + config.honeycombMode + " distance=" + Math.round(distance)
+                + " threshold=" + Math.round(threshold));
+        return true;
+    }
+
+    private void launchHoneycombTarget(RuntimeTarget target) {
+        outsideCapture.remove();
+        outsideGestures.clearAll();
+        boolean closingFreeform = freeform.dismissTracked();
+        Runnable launch = () -> {
+            boolean launched = fullscreenLauncher.launch(target);
+            if (!launched) Log.i("Honeycomb fullscreen target was unavailable");
+        };
+        if (closingFreeform) mainHandler.postDelayed(launch, 220L);
+        else launch.run();
     }
 
     private void activateSideList(float x, float y, int width, int height) {
         state = State.ACTIVE;
         activeSideList = true;
+        if (config.sideLayoutMode == ConfigContract.SIDE_LAYOUT_HONEYCOMB) {
+            outsideCapture.remove();
+            outsideGestures.clearAll();
+            activeHoneycombReturnThreshold = 0f;
+            boolean shown = honeycombOverlay.show(activeTargets, corner, x, y, config,
+                    new HoneycombOverlayController.Listener() {
+                        @Override public void onLaunch(RuntimeTarget target) {
+                            if (config.sideHoneycombFullscreen) launchHoneycombTarget(target);
+                            else {
+                                freeform.launch(target, config,
+                                        FanRuntime.this::refreshOutsideCapture);
+                                refreshOutsideCaptureAfterLaunch();
+                            }
+                        }
+                        @Override public void onClosed() { refreshOutsideCapture(); }
+                    });
+            if (shown) {
+                state = State.HONEYCOMB;
+                honeycombOverlay.externalMove(x, y);
+                if (config.haptic) vibrateTick();
+            } else state = State.CANCELLED;
+            return;
+        }
         activeSideFanList = config.sideFanList;
         activeSideRingList = config.sideRingList;
         float hotHeight = height * config.hotHeightPercent / 100f;
         float safeTop = sideSafeTop(height);
         float safeBottom = sideSafeBottom(height, hotHeight);
-        float availablePerItem = (safeBottom - safeTop) / Math.max(1, targets.size());
+        float availablePerItem = (safeBottom - safeTop) / Math.max(1, activeTargets.size());
         sideIconDiameter = Math.min(config.sideIconSizeDp * density,
                 Math.max(28 * density, availablePerItem - 4 * density));
         sideRowHeight = Math.min(sideIconDiameter + 10 * density, availablePerItem);
-        int anchor = (targets.size() - 1) / 2;
-        sideListTop = GestureGeometry.sideListTopForAnchor(y, targets.size(), anchor,
+        int anchor = (activeTargets.size() - 1) / 2;
+        sideListTop = GestureGeometry.sideListTopForAnchor(y, activeTargets.size(), anchor,
                 sideRowHeight, safeTop, safeBottom);
         sideListCenterX = GestureGeometry.sideListCenterX(corner, x, width,
                 sideIconDiameter, 14 * density, config.sideFollowFinger);
-        sideListHitWidth = Math.max(sideIconDiameter + 32 * density, 72 * density);
-        sideListActivationX = x;
+        sideListHitWidth = Math.max(sideIconDiameter + 56 * density, 96 * density);
+        sideListActivationX = GestureGeometry.sideListOuterBoundary(
+                corner, sideListCenterX, sideListHitWidth);
         // The list stays available while the finger explores the screen. Only returning
         // to the physical edge dismisses it, with the fade spanning that whole distance.
         sideReverseCancelDistance = Math.max(1f, corner == GestureGeometry.Corner.LEFT
@@ -675,6 +819,7 @@ final class FanRuntime {
         sideListEntered = false;
         selected = -1;
         lastHapticSelection = -1;
+        activeHoneycombReturnThreshold = 0f;
         if (activeSideRingList) {
             float safeLeft = 12 * density;
             float safeRight = width - 12 * density;
@@ -686,7 +831,7 @@ final class FanRuntime {
             sideIconDiameter = Math.min(config.sideIconSizeDp * density,
                     Math.max(minimumIcon, maxOuter / 2f));
             float automaticRadius = GestureGeometry.sideRingRadius(
-                    targets.size(), sideIconDiameter, gap);
+                    activeTargets.size(), sideIconDiameter, gap);
             sideRingRadius = GestureGeometry.scaledSideRingRadius(
                     automaticRadius, config.sideRingSizePercent,
                     maxOuter - sideIconDiameter / 2f);
@@ -697,7 +842,7 @@ final class FanRuntime {
             sideRingCenterY = center.y;
             sideListCenterX = center.x;
             sideListTop = center.y;
-            overlay.showSideRingList(targets, corner,
+            overlay.showSideRingList(activeTargets, corner,
                     sideRingCenterX, sideRingCenterY, sideRingRadius,
                     sideIconDiameter, config.showSelectedAppName,
                     config.fanShadow, config.fanAnimationsEnabled,
@@ -708,16 +853,16 @@ final class FanRuntime {
             sideListCenterX = x;
             sideFanRadius = Math.max(sideIconDiameter * 1.35f,
                     corner == GestureGeometry.Corner.LEFT ? x : width - x);
-            sideFanCenterY = GestureGeometry.sideFanCenterY(y, targets.size(),
+            sideFanCenterY = GestureGeometry.sideFanCenterY(y, activeTargets.size(),
                     sideFanRadius, sideIconDiameter, safeTop, safeBottom);
-            overlay.showSideFanList(targets, corner, sideListCenterX, sideFanCenterY,
+            overlay.showSideFanList(activeTargets, corner, sideListCenterX, sideFanCenterY,
                     sideFanRadius, sideIconDiameter, config.showSelectedAppName,
                     config.fanShadow, config.fanAnimationsEnabled,
                     config.fanAnimationSpeed, config.fanRevealAmount,
                     config.fanRotationDegrees, config.fanSelectionScalePercent,
                     config.fanSelectionRing);
         } else {
-            overlay.showSideList(targets, corner, sideListCenterX, sideListTop,
+            overlay.showSideList(activeTargets, corner, sideListCenterX, sideListTop,
                     sideRowHeight, sideIconDiameter, config.showSelectedAppName,
                     config.fanShadow, config.fanAnimationsEnabled,
                     config.fanAnimationSpeed, config.fanRevealAmount,
@@ -739,6 +884,7 @@ final class FanRuntime {
         gestureArbitrator.reset();
         gestureReplayGuard.begin(downTime, eventTime);
         state = State.ARMED;
+        activeTargets = targets;
         this.corner = corner;
         downX = x;
         downY = y;
@@ -750,6 +896,8 @@ final class FanRuntime {
         sideGestureArbitrator.reset();
         gestureReplayGuard.begin(downTime, eventTime);
         state = State.SIDE_ARMED;
+        activeTargets = config.sideLayoutMode == ConfigContract.SIDE_LAYOUT_HONEYCOMB
+                ? honeycombTargets : sideTargets;
         corner = side;
         downX = x;
         downY = y;
@@ -757,8 +905,8 @@ final class FanRuntime {
 
     private void updateSelection(float x, float y, int width, int height,
                                  float radius, float iconDiameter) {
-        int next = GestureGeometry.selection(corner, x, y, width, height, targets.size(),
-                radius, iconDiameter, 6 * density);
+        int next = GestureGeometry.selection(corner, x, y, width, height, activeTargets.size(),
+                radius, iconDiameter, 6 * density, config.fanFixedSevenRows);
         if (config.haptic && next >= 0 && next != lastHapticSelection) {
             vibrateTick();
         }
@@ -770,7 +918,7 @@ final class FanRuntime {
     private void updateSideListSelection(float x, float y) {
         if (activeSideRingList) {
             overlay.setOpacity(1f);
-            int next = GestureGeometry.sideRingSelection(x, y, targets.size(),
+            int next = GestureGeometry.sideRingSelection(x, y, activeTargets.size(),
                     sideRingCenterX, sideRingCenterY, sideRingRadius,
                     sideIconDiameter, 10 * density);
             selected = next;
@@ -785,7 +933,7 @@ final class FanRuntime {
             overlay.setOpacity(1f);
             int width = displayBounds().width();
             int next = GestureGeometry.sideFanSelection(corner, x, y, width,
-                    targets.size(), sideListCenterX, sideFanCenterY, sideFanRadius,
+                    activeTargets.size(), sideListCenterX, sideFanCenterY, sideFanRadius,
                     sideIconDiameter, 10 * density);
             selected = next;
             if (config.haptic && next >= 0 && next != lastHapticSelection) {
@@ -813,7 +961,7 @@ final class FanRuntime {
         }
         overlay.setOpacity(1f);
         boolean inside = GestureGeometry.insideSideList(x, y, sideListCenterX,
-                sideListHitWidth, targets.size(), sideListTop, sideRowHeight);
+                sideListHitWidth, activeTargets.size(), sideListTop, sideRowHeight);
         if (!inside) {
             selected = -1;
             overlay.update(-1, x, y);
@@ -821,7 +969,7 @@ final class FanRuntime {
         }
         sideListEntered = true;
         int next = GestureGeometry.sideListSelection(
-                y, targets.size(), sideListTop, sideRowHeight);
+                y, activeTargets.size(), sideListTop, sideRowHeight);
         selected = next;
         if (config.haptic && next >= 0 && next != lastHapticSelection) {
             vibrateTick();
@@ -833,7 +981,7 @@ final class FanRuntime {
     private void showPersistentWheel() {
         int initialSelection = selected;
         float wheelCenterY = sideListTop + (initialSelection + 0.5f) * sideRowHeight;
-        List<RuntimeTarget> wheelTargets = targets;
+        List<RuntimeTarget> wheelTargets = activeTargets;
         GestureGeometry.Corner wheelSide = corner;
         wheelSessionActive = true;
         overlay.showWheel(wheelTargets, wheelSide, sideListCenterX, wheelCenterY,
@@ -864,13 +1012,14 @@ final class FanRuntime {
 
     private float selectionRadius(int width, int height) {
         float configured = Math.min(width, height) * config.selectionRadiusPercent / 100f;
-        return GestureGeometry.effectiveRadius(targets.size(), configured,
-                28 * density, 6 * density);
+        return GestureGeometry.effectiveRadius(activeTargets.size(), configured,
+                28 * density, 6 * density, config.fanFixedSevenRows);
     }
 
     private float iconDiameter(float radius) {
-        return GestureGeometry.effectiveIconDiameter(targets.size(), radius,
-                config.iconSizeDp * density, 28 * density, 6 * density);
+        return GestureGeometry.effectiveIconDiameter(activeTargets.size(), radius,
+                config.iconSizeDp * density, 28 * density, 6 * density,
+                config.fanFixedSevenRows);
     }
 
     private void resetFan() {
@@ -879,9 +1028,11 @@ final class FanRuntime {
 
     private void resetFan(boolean hideOverlay) {
         if (hideOverlay && state == State.ACTIVE) overlay.hide();
+        if (hideOverlay && state == State.HONEYCOMB) honeycombOverlay.removeNow();
         gestureArbitrator.reset();
         sideGestureArbitrator.reset();
         gestureReplayGuard.reset();
+        honeycombGestureState.reset();
         state = State.IDLE;
         corner = null;
         selected = -1;
@@ -911,16 +1062,33 @@ final class FanRuntime {
         lastHapticSelection = -1;
     }
 
-    private boolean canStart() {
-        if (!config.ready() || targets.size() < 3
+    private boolean runtimeReady() {
+        if (!config.enabled
                 || (context.getDisplay() != null && context.getDisplay().getDisplayId() != 0)) return false;
         PowerManager power = context.getSystemService(PowerManager.class);
         KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
         return (power == null || power.isInteractive()) && (keyguard == null || !keyguard.isKeyguardLocked());
     }
 
+    private boolean canStartBottom() {
+        return runtimeReady() && targets.size() >= 3
+                && config.bottomEnabledFor(isLandscape());
+    }
+
+    private boolean canStartSide() {
+        if (!runtimeReady() || !config.sideEnabledFor(isLandscape())) return false;
+        return config.sideLayoutMode == ConfigContract.SIDE_LAYOUT_HONEYCOMB
+                ? config.honeycombEnabledFor(isLandscape()) && !honeycombTargets.isEmpty()
+                : !sideTargets.isEmpty();
+    }
+
+    private boolean isLandscape() {
+        Rect display = displayBounds();
+        return display.width() > display.height();
+    }
+
     private void refreshTriggerCapture() {
-        triggerCapture.update(canStart(), config.hotWidthPercent, config.hotHeightPercent,
+        triggerCapture.update(canStartBottom(), config.hotWidthPercent, config.hotHeightPercent,
                 0, 0);
     }
 
@@ -940,13 +1108,12 @@ final class FanRuntime {
     }
 
     private void refreshOutsideCapture() {
-        if (shadeExpanded || controlCenterExpanded
+        if (honeycombOverlay.isVisible() || shadeExpanded || controlCenterExpanded
                 || android.os.SystemClock.uptimeMillis() < systemPanelTouchBlockUntil) {
             outsideCapture.remove();
             return;
         }
         Rect pending = freeform.pendingLaunchBounds();
-        Rect tracked = freeform.trackedBounds();
         List<Rect> visibleWindows = freeform.visibleFreeformBounds();
         if (pending != null && !visibleWindows.contains(pending)) {
             visibleWindows.add(pending);
@@ -1232,6 +1399,8 @@ final class FanRuntime {
             Bundle bundle = context.getContentResolver().call(ConfigContract.URI, "get", null, null);
             GestureConfig next = GestureConfig.from(bundle);
             ArrayList<RuntimeTarget> resolved = new ArrayList<>();
+            ArrayList<RuntimeTarget> resolvedHoneycomb = new ArrayList<>();
+            ArrayList<RuntimeTarget> resolvedSide = new ArrayList<>();
             PackageManager packageManager = context.getPackageManager();
             for (GestureConfig.TargetSpec target : next.targets) {
                 try {
@@ -1255,7 +1424,46 @@ final class FanRuntime {
                     Log.e("Configured target is unavailable", error);
                 }
             }
+            for (GestureConfig.TargetSpec target : next.honeycombTargets) {
+                try {
+                    ComponentName component = ComponentName.unflattenFromString(target.component);
+                    if (component == null) continue;
+                    ActivityInfo info = packageManager.getActivityInfo(component, 0);
+                    CharSequence label = info.loadLabel(packageManager);
+                    resolvedHoneycomb.add(new RuntimeTarget(component,
+                            label == null ? component.getPackageName() : label.toString(),
+                            info.loadIcon(packageManager), target.userId));
+                } catch (Throwable error) {
+                    Log.e("Configured honeycomb target is unavailable", error);
+                }
+            }
+            for (GestureConfig.TargetSpec target : next.sideTargets) {
+                try {
+                    ComponentName component = ComponentName.unflattenFromString(target.component);
+                    if (component == null) continue;
+                    ActivityInfo info = packageManager.getActivityInfo(component, 0);
+                    CharSequence label = info.loadLabel(packageManager);
+                    resolvedSide.add(new RuntimeTarget(component,
+                            label == null ? component.getPackageName() : label.toString(),
+                            info.loadIcon(packageManager), target.userId));
+                } catch (Throwable error) {
+                    Log.e("Configured side target is unavailable", error);
+                }
+            }
+            if (resolved.size() > next.fanMaxTargets) {
+                resolved.subList(next.fanMaxTargets, resolved.size()).clear();
+            }
+            if (resolvedHoneycomb.size() > next.honeycombMaxTargets) {
+                resolvedHoneycomb.subList(next.honeycombMaxTargets,
+                        resolvedHoneycomb.size()).clear();
+            }
+            if (resolvedSide.size() > next.sideMaxTargets) {
+                resolvedSide.subList(next.sideMaxTargets, resolvedSide.size()).clear();
+            }
             List<RuntimeTarget> nextTargets = Collections.unmodifiableList(resolved);
+            List<RuntimeTarget> nextHoneycombTargets = Collections.unmodifiableList(
+                    resolvedHoneycomb);
+            List<RuntimeTarget> nextSideTargets = Collections.unmodifiableList(resolvedSide);
             configRetryCount = 0;
             configRetryScheduled = false;
             mainHandler.post(() -> {
@@ -1264,8 +1472,15 @@ final class FanRuntime {
                     overlay.removeNow();
                 }
                 config = next;
+                outsideGestures.setDoubleTapTimeout(next.outsideTapWindowMs);
                 targets = nextTargets;
+                honeycombTargets = nextHoneycombTargets;
+                sideTargets = nextSideTargets;
+                if (activeTargets.isEmpty()) activeTargets = nextTargets;
                 freeform.updateConfig(next);
+                if (!next.honeycombEnabled && honeycombOverlay.isVisible()) {
+                    honeycombOverlay.dismiss();
+                }
                 if (!next.enabled || nextTargets.size() < 3) resetFan();
                 refreshTriggerCapture();
                 refreshOutsideCapture();
@@ -1283,7 +1498,12 @@ final class FanRuntime {
                         + next.sideReverseCancelPercent + "% animation="
                         + next.fanAnimationsEnabled + "@" + next.fanAnimationSpeed
                         + "% reveal=" + next.fanRevealAmount + "% rotation="
-                        + next.fanRotationDegrees + "deg ring=" + next.fanSelectionRing);
+                        + next.fanRotationDegrees + "deg ring=" + next.fanSelectionRing
+                        + " honeycomb=" + next.honeycombEnabled + "/"
+                        + nextHoneycombTargets.size() + " mode=" + next.honeycombMode
+                        + " trigger=" + next.honeycombTriggerDp + "dp returnToFan="
+                        + next.triggerPercent + "% outsideTap="
+                        + next.outsideTapWindowMs + "ms");
             });
         } catch (Throwable error) {
             Log.e("Cannot read module configuration", error);

@@ -50,21 +50,84 @@ final class GestureGeometry {
 
     static Point iconCenter(Corner corner, int index, int itemCount, int width, int height,
                             float radius) {
-        double degrees = itemCount <= 1 ? 47.0 : 12.0 + (70.0 * index / (itemCount - 1));
+        return iconCenter(corner, index, itemCount, width, height, radius, false);
+    }
+
+    static Point iconCenter(Corner corner, int index, int itemCount, int width, int height,
+                            float radius, boolean fixedSevenRows) {
+        int rows = fanRowCount(itemCount, fixedSevenRows);
+        int[] counts = fanRowCounts(itemCount, fixedSevenRows);
+        int row = 0;
+        int start = 0;
+        while (row < counts.length - 1 && index >= start + counts[row]) {
+            start += counts[row];
+            row++;
+        }
+        int rowCount = Math.max(1, counts[row]);
+        int rowIndex = Math.max(0, index - start);
+        double inset = rows > 1 && (row & 1) == 1 ? 3.5 : 0.0;
+        double degrees = rowCount <= 1 ? 47.0
+                : 12.0 + inset + ((70.0 - inset * 2.0) * rowIndex / (rowCount - 1));
         double radians = Math.toRadians(degrees);
-        float horizontal = (float) (radius * Math.cos(radians));
-        float vertical = (float) (radius * Math.sin(radians));
+        float rowRadius = rows == 1 ? radius
+                : radius * (0.68f + 0.20f * row);
+        float horizontal = (float) (rowRadius * Math.cos(radians));
+        float vertical = (float) (rowRadius * Math.sin(radians));
         return new Point(corner == Corner.LEFT ? horizontal : width - horizontal,
                 height - vertical);
     }
 
+    static int fanRowCount(int itemCount) {
+        return fanRowCount(itemCount, false);
+    }
+
+    static int fanRowCount(int itemCount, boolean fixedSevenRows) {
+        if (fixedSevenRows) {
+            return Math.max(1, (Math.max(1, itemCount) + 6) / 7);
+        }
+        return Math.max(1, Math.min(3, (Math.max(1, itemCount) + 7) / 8));
+    }
+
+    static int[] fanRowCounts(int itemCount) {
+        return fanRowCounts(itemCount, false);
+    }
+
+    static int[] fanRowCounts(int itemCount, boolean fixedSevenRows) {
+        int safeCount = Math.max(0, itemCount);
+        int rows = fanRowCount(safeCount, fixedSevenRows);
+        int[] counts = new int[rows];
+        if (safeCount == 0) return counts;
+        if (fixedSevenRows) {
+            int remaining = safeCount;
+            for (int row = 0; row < rows; row++) {
+                counts[row] = Math.min(7, remaining);
+                remaining -= counts[row];
+            }
+            return counts;
+        }
+        int base = safeCount / rows;
+        int remainder = safeCount % rows;
+        for (int row = 0; row < rows; row++) {
+            counts[row] = base + (row >= rows - remainder ? 1 : 0);
+        }
+        return counts;
+    }
+
     static int selection(Corner corner, float x, float y, int width, int height,
                          int itemCount, float radius, float iconDiameter, float tolerance) {
+        return selection(corner, x, y, width, height, itemCount, radius,
+                iconDiameter, tolerance, false);
+    }
+
+    static int selection(Corner corner, float x, float y, int width, int height,
+                         int itemCount, float radius, float iconDiameter, float tolerance,
+                         boolean fixedSevenRows) {
         if (itemCount <= 0) return -1;
         float hitRadius = iconDiameter / 2f + tolerance;
         float hitRadiusSquared = hitRadius * hitRadius;
         for (int index = 0; index < itemCount; index++) {
-            Point center = iconCenter(corner, index, itemCount, width, height, radius);
+            Point center = iconCenter(corner, index, itemCount, width, height, radius,
+                    fixedSevenRows);
             if (squaredDistance(x, y, center.x, center.y) <= hitRadiusSquared) {
                 return index;
             }
@@ -274,6 +337,11 @@ final class GestureGeometry {
                 : Math.max(0f, pointerX - activationX);
     }
 
+    static float sideListOuterBoundary(Corner side, float centerX, float hitWidth) {
+        float half = Math.max(0f, hitWidth) / 2f;
+        return side == Corner.LEFT ? centerX - half : centerX + half;
+    }
+
     static float sideListOpacity(float reverseDistance, float cancelDistance) {
         if (cancelDistance <= 0f) return 0f;
         float progress = Math.max(0f, Math.min(1f, reverseDistance / cancelDistance));
@@ -299,18 +367,49 @@ final class GestureGeometry {
 
     static float effectiveRadius(int itemCount, float configuredRadius,
                                  float minimumDiameter, float gap) {
-        if (itemCount <= 1) return configuredRadius;
-        double stepRadians = Math.toRadians(70.0 / (itemCount - 1));
-        float required = (float) ((minimumDiameter + gap) / (2.0 * Math.sin(stepRadians / 2.0)));
-        return Math.max(configuredRadius, required);
+        return effectiveRadius(itemCount, configuredRadius, minimumDiameter, gap, false);
+    }
+
+    static float effectiveRadius(int itemCount, float configuredRadius,
+                                 float minimumDiameter, float gap,
+                                 boolean fixedSevenRows) {
+        int[] counts = fanRowCounts(itemCount, fixedSevenRows);
+        float requiredRadius = configuredRadius;
+        for (int row = 0; row < counts.length; row++) {
+            if (counts[row] <= 1) continue;
+            double inset = counts.length > 1 && (row & 1) == 1 ? 3.5 : 0.0;
+            double span = 58.0 - inset * 2.0;
+            double stepRadians = Math.toRadians(span / (counts[row] - 1));
+            float rowFactor = counts.length == 1 ? 1f : 0.68f + 0.20f * row;
+            float required = (float) ((minimumDiameter + gap)
+                    / (2.0 * Math.sin(stepRadians / 2.0) * rowFactor));
+            requiredRadius = Math.max(requiredRadius, required);
+        }
+        return requiredRadius;
     }
 
     static float effectiveIconDiameter(int itemCount, float radius,
                                        float configuredDiameter, float minimumDiameter, float gap) {
-        if (itemCount <= 1) return configuredDiameter;
-        double stepRadians = Math.toRadians(70.0 / (itemCount - 1));
-        float centerDistance = (float) (2.0 * radius * Math.sin(stepRadians / 2.0));
-        return Math.max(minimumDiameter, Math.min(configuredDiameter, centerDistance - gap));
+        return effectiveIconDiameter(itemCount, radius, configuredDiameter,
+                minimumDiameter, gap, false);
+    }
+
+    static float effectiveIconDiameter(int itemCount, float radius,
+                                       float configuredDiameter, float minimumDiameter, float gap,
+                                       boolean fixedSevenRows) {
+        int[] counts = fanRowCounts(itemCount, fixedSevenRows);
+        float available = configuredDiameter;
+        for (int row = 0; row < counts.length; row++) {
+            if (counts[row] <= 1) continue;
+            double inset = counts.length > 1 && (row & 1) == 1 ? 3.5 : 0.0;
+            double span = 58.0 - inset * 2.0;
+            double stepRadians = Math.toRadians(span / (counts[row] - 1));
+            float rowRadius = counts.length == 1 ? radius
+                    : radius * (0.68f + 0.20f * row);
+            float centerDistance = (float) (2.0 * rowRadius * Math.sin(stepRadians / 2.0));
+            available = Math.min(available, centerDistance - gap);
+        }
+        return Math.max(minimumDiameter, available);
     }
 
     static OutsideRegion outsideRegion(float x, float y, int left, int top, int right, int bottom) {

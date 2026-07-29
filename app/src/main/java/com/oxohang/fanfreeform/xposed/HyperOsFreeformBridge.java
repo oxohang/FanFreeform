@@ -1271,15 +1271,18 @@ final class HyperOsFreeformBridge {
                 display.right - insets.right - edge,
                 display.bottom - insets.bottom - edge);
         if (safe.width() <= 0 || safe.height() <= 0) safe.set(display);
+        boolean landscape = display.width() > display.height();
 
         int visualWidth = Math.max(1,
-                Math.round(safe.width() * config.widthPercent / 100f));
+                Math.round(safe.width() * config.windowWidthPercent(landscape) / 100f));
         int visualHeight = Math.max(1,
-                Math.round(safe.height() * config.heightPercent / 100f));
+                Math.round(safe.height() * config.windowHeightPercent(landscape) / 100f));
         int visualLeft = safe.left
-                + Math.round((safe.width() - visualWidth) * config.positionX / 100f);
+                + Math.round((safe.width() - visualWidth)
+                * config.windowPositionX(landscape) / 100f);
         int visualTop = safe.top
-                + Math.round((safe.height() - visualHeight) * config.positionY / 100f);
+                + Math.round((safe.height() - visualHeight)
+                * config.windowPositionY(landscape) / 100f);
         int logicalWidth = Math.round(visualWidth / scale);
         int logicalHeight = Math.round(visualHeight / scale);
         return new Rect(visualLeft, visualTop,

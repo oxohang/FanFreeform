@@ -2,6 +2,7 @@ package com.oxohang.fanfreeform.xposed;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -93,6 +94,71 @@ public class GestureGeometryTest {
         assertTrue(radius > 140);
         assertTrue(diameter >= 28);
         assertTrue(diameter <= 46);
+    }
+
+    @Test
+    public void crowdedFanUsesUpToThreeSelectableRows() {
+        assertEquals(1, GestureGeometry.fanRowCount(8));
+        assertEquals(2, GestureGeometry.fanRowCount(9));
+        assertEquals(3, GestureGeometry.fanRowCount(24));
+        for (int index = 0; index < 24; index++) {
+            GestureGeometry.Point point = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.LEFT, index, 24, 1200, 2608, 696);
+            assertEquals(index, GestureGeometry.selection(GestureGeometry.Corner.LEFT,
+                    point.x, point.y, 1200, 2608, 24, 696, 42, 3));
+        }
+    }
+
+    @Test
+    public void fanAllocatesMoreIconsToTheRoomierOuterRows() {
+        assertArrayEquals(new int[] {6, 7}, GestureGeometry.fanRowCounts(13));
+        assertArrayEquals(new int[] {7, 7}, GestureGeometry.fanRowCounts(14));
+        assertArrayEquals(new int[] {7, 8}, GestureGeometry.fanRowCounts(15));
+        assertArrayEquals(new int[] {5, 6, 6}, GestureGeometry.fanRowCounts(17));
+        assertArrayEquals(new int[] {8, 8, 8}, GestureGeometry.fanRowCounts(24));
+        for (int count = 9; count <= 24; count++) {
+            int total = 0;
+            int previous = 0;
+            for (int rowCount : GestureGeometry.fanRowCounts(count)) {
+                assertTrue(rowCount >= previous);
+                assertTrue(rowCount - previous <= 1 || previous == 0);
+                previous = rowCount;
+                total += rowCount;
+            }
+            assertEquals(count, total);
+        }
+    }
+
+    @Test
+    public void fixedSevenModeFillsEachRowBeforeStartingTheNext() {
+        assertArrayEquals(new int[] {7}, GestureGeometry.fanRowCounts(7, true));
+        assertArrayEquals(new int[] {7, 1}, GestureGeometry.fanRowCounts(8, true));
+        assertArrayEquals(new int[] {7, 6}, GestureGeometry.fanRowCounts(13, true));
+        assertArrayEquals(new int[] {7, 7}, GestureGeometry.fanRowCounts(14, true));
+        assertArrayEquals(new int[] {7, 7, 1},
+                GestureGeometry.fanRowCounts(15, true));
+        assertArrayEquals(new int[] {7, 7, 7},
+                GestureGeometry.fanRowCounts(21, true));
+        assertArrayEquals(new int[] {7, 7, 7, 1},
+                GestureGeometry.fanRowCounts(22, true));
+        assertArrayEquals(new int[] {7, 7, 7, 3},
+                GestureGeometry.fanRowCounts(24, true));
+        assertEquals(4, GestureGeometry.fanRowCount(24, true));
+    }
+
+    @Test
+    public void fixedSevenModeUsesTheSameCentersForDrawingAndHitTesting() {
+        float radius = GestureGeometry.effectiveRadius(24, 580f, 28f, 6f, true);
+        float diameter = GestureGeometry.effectiveIconDiameter(
+                24, radius, 46f, 28f, 6f, true);
+        for (int index = 0; index < 24; index++) {
+            GestureGeometry.Point point = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.RIGHT, index, 24, 1200, 2608,
+                    radius, true);
+            assertEquals(index, GestureGeometry.selection(
+                    GestureGeometry.Corner.RIGHT, point.x, point.y,
+                    1200, 2608, 24, radius, diameter, 3f, true));
+        }
     }
 
     @Test
@@ -272,6 +338,12 @@ public class GestureGeometryTest {
 
     @Test
     public void sideReverseFadeMirrorsAndClamps() {
+        assertEquals(352f, GestureGeometry.sideListOuterBoundary(
+                GestureGeometry.Corner.LEFT, 400, 96), 0.01f);
+        assertEquals(848f, GestureGeometry.sideListOuterBoundary(
+                GestureGeometry.Corner.RIGHT, 800, 96), 0.01f);
+        assertEquals(0f, GestureGeometry.sideReverseDistance(
+                GestureGeometry.Corner.LEFT, 352, 360), 0.01f);
         assertEquals(40f, GestureGeometry.sideReverseDistance(
                 GestureGeometry.Corner.LEFT, 400, 360), 0.01f);
         assertEquals(40f, GestureGeometry.sideReverseDistance(

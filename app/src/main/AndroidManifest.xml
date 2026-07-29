@@ -25,6 +25,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.TargetManagerActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.GestureSettingsActivity"
             android:exported="false" />
 
@@ -33,7 +37,20 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.HoneycombSettingsActivity"
+            android:exported="false" />
+
+        <activity android:name=".ui.GeneralSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.WindowSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.OutsideSettingsActivity" android:exported="false" />
+        <activity android:name=".ui.MiscSettingsActivity" android:exported="false" />
+
+        <activity
             android:name=".ui.MainActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.DashboardActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

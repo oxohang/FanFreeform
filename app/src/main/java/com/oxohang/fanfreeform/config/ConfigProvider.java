@@ -26,6 +26,7 @@ public final class ConfigProvider extends ContentProvider {
             ConfigStore.migrateUnifiedActionsIfNeeded(prefs);
             ConfigStore.migrateSideLayoutModeIfNeeded(prefs);
             ConfigStore.migrateSelectedAppNameIfNeeded(prefs);
+            ConfigStore.migrateIndependentSideTargetsIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
@@ -56,7 +57,22 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_FAN_SELECTION_RING, prefs.getBoolean(
                     ConfigContract.KEY_FAN_SELECTION_RING,
                     ConfigContract.DEFAULT_FAN_SELECTION_RING));
+            out.putBoolean(ConfigContract.KEY_FAN_FIXED_SEVEN_ROWS, prefs.getBoolean(
+                    ConfigContract.KEY_FAN_FIXED_SEVEN_ROWS,
+                    ConfigContract.DEFAULT_FAN_FIXED_SEVEN_ROWS));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_BOTTOM_PORTRAIT_ENABLED,
+                    ConfigContract.DEFAULT_BOTTOM_PORTRAIT_ENABLED));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_BOTTOM_LANDSCAPE_ENABLED,
+                    ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_ENABLED));
             out.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
+            out.putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_PORTRAIT_ENABLED,
+                    ConfigContract.DEFAULT_SIDE_PORTRAIT_ENABLED));
+            out.putBoolean(ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED,
+                    ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED));
             out.putInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT, ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT));
             out.putInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP, prefs.getInt(
                     ConfigContract.KEY_SIDE_ICON_SIZE_DP,
@@ -76,7 +92,7 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.DEFAULT_SIDE_FAN_LIST));
             out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, Math.max(
                     ConfigContract.SIDE_LAYOUT_LIST, Math.min(
-                            ConfigContract.SIDE_LAYOUT_FAN, prefs.getInt(
+                            ConfigContract.SIDE_LAYOUT_HONEYCOMB, prefs.getInt(
                                     ConfigContract.KEY_SIDE_LAYOUT_MODE,
                                     ConfigContract.DEFAULT_SIDE_LAYOUT_MODE))));
             out.putInt(ConfigContract.KEY_SIDE_RING_SIZE_PERCENT, Math.max(
@@ -101,9 +117,126 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT));
             out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
             out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT, prefs.getInt(
+                    ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
+                    ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT, prefs.getInt(
+                    ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT,
+                    ConfigContract.DEFAULT_LANDSCAPE_HEIGHT_PERCENT));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_X, prefs.getInt(
+                    ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_X));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y, prefs.getInt(
+                    ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y));
             out.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
+            out.putInt(ConfigContract.KEY_OUTSIDE_TAP_WINDOW_MS, clamp(prefs.getInt(
+                    ConfigContract.KEY_OUTSIDE_TAP_WINDOW_MS,
+                    ConfigContract.DEFAULT_OUTSIDE_TAP_WINDOW_MS),
+                    ConfigContract.MIN_OUTSIDE_TAP_WINDOW_MS,
+                    ConfigContract.MAX_OUTSIDE_TAP_WINDOW_MS));
             out.putString(ConfigContract.KEY_COMPONENTS, prefs.getString(ConfigContract.KEY_COMPONENTS, "[]"));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_ENABLED, prefs.getBoolean(
+                    ConfigContract.KEY_HONEYCOMB_ENABLED,
+                    ConfigContract.DEFAULT_HONEYCOMB_ENABLED));
+            out.putString(ConfigContract.KEY_HONEYCOMB_COMPONENTS, prefs.getString(
+                    ConfigContract.KEY_HONEYCOMB_COMPONENTS, "[]"));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_MODE, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_MODE,
+                    ConfigContract.DEFAULT_HONEYCOMB_MODE), 0, 1));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_TRIGGER_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP),
+                    ConfigContract.MIN_HONEYCOMB_TRIGGER_DP,
+                    ConfigContract.MAX_HONEYCOMB_TRIGGER_DP));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_ICON_SIZE_DP),
+                    ConfigContract.MIN_HONEYCOMB_ICON_SIZE_DP,
+                    ConfigContract.MAX_HONEYCOMB_ICON_SIZE_DP));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_SPACING_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_SPACING_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_SPACING_DP),
+                    ConfigContract.MIN_HONEYCOMB_SPACING_DP,
+                    ConfigContract.MAX_HONEYCOMB_SPACING_DP));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
+                    ConfigContract.DEFAULT_HONEYCOMB_ANIMATION_SPEED), 0, 4));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_INERTIA, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_INERTIA,
+                    ConfigContract.DEFAULT_HONEYCOMB_INERTIA), 0, 2));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_CENTER_SCALE, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_CENTER_SCALE,
+                    ConfigContract.DEFAULT_HONEYCOMB_CENTER_SCALE),
+                    ConfigContract.MIN_HONEYCOMB_CENTER_SCALE,
+                    ConfigContract.MAX_HONEYCOMB_CENTER_SCALE));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_EDGE_SCALE, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_EDGE_SCALE,
+                    ConfigContract.DEFAULT_HONEYCOMB_EDGE_SCALE),
+                    ConfigContract.MIN_HONEYCOMB_EDGE_SCALE,
+                    ConfigContract.MAX_HONEYCOMB_EDGE_SCALE));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
+                    ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE),
+                    ConfigContract.MIN_HONEYCOMB_SELECTION_SCALE,
+                    ConfigContract.MAX_HONEYCOMB_SELECTION_SCALE));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_SHOW_SELECTED_NAME,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_SHOW_SELECTED_NAME,
+                            ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_EMPTY_TAP_CLOSE,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_EMPTY_TAP_CLOSE,
+                            ConfigContract.DEFAULT_HONEYCOMB_EMPTY_TAP_CLOSE));
+            out.putInt(ConfigContract.KEY_FAN_MAX_TARGETS, clamp(prefs.getInt(
+                    ConfigContract.KEY_FAN_MAX_TARGETS,
+                    ConfigContract.DEFAULT_FAN_MAX_TARGETS), 3, 24));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
+                    ConfigContract.DEFAULT_HONEYCOMB_MAX_TARGETS), 1, 60));
+            out.putString(ConfigContract.KEY_SIDE_COMPONENTS, prefs.getString(
+                    ConfigContract.KEY_SIDE_COMPONENTS, "[]"));
+            out.putBoolean(ConfigContract.KEY_SIDE_FOLLOW_HONEYCOMB, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_FOLLOW_HONEYCOMB,
+                    ConfigContract.DEFAULT_SIDE_FOLLOW_HONEYCOMB));
+            out.putInt(ConfigContract.KEY_SIDE_MAX_TARGETS, clamp(prefs.getInt(
+                    ConfigContract.KEY_SIDE_MAX_TARGETS,
+                    ConfigContract.DEFAULT_SIDE_MAX_TARGETS), 1, 36));
+            out.putBoolean(ConfigContract.KEY_SIDE_DIRECTION_HORIZONTAL, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_DIRECTION_HORIZONTAL, true));
+            out.putBoolean(ConfigContract.KEY_SIDE_DIRECTION_UP, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_DIRECTION_UP, true));
+            out.putBoolean(ConfigContract.KEY_SIDE_DIRECTION_DOWN, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_DIRECTION_DOWN, true));
+            out.putBoolean(ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, prefs.getBoolean(
+                    ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, false));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER, prefs.getBoolean(
+                    ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER,
+                    ConfigContract.DEFAULT_HONEYCOMB_FOLLOW_FINGER));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_LANDSCAPE_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_LANDSCAPE_ENABLED,
+                            ConfigContract.DEFAULT_HONEYCOMB_LANDSCAPE_ENABLED));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_FIXED_X_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_FIXED_X_PERCENT,
+                    ConfigContract.DEFAULT_HONEYCOMB_FIXED_X_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_FIXED_Y_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_FIXED_Y_PERCENT,
+                    ConfigContract.DEFAULT_HONEYCOMB_FIXED_Y_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE, 0), 0, 1));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_BLUR_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_BLUR_DP, 36), 0, 60));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22), 0, 60));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),
+                    ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
+                    ConfigContract.MAX_HONEYCOMB_RETREAT_DP));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
+                    ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT),
+                    ConfigContract.MIN_HONEYCOMB_DISC_SIZE_PERCENT,
+                    ConfigContract.MAX_HONEYCOMB_DISC_SIZE_PERCENT));
             return out;
         }
         if ("report".equals(method) && extras != null) {
@@ -139,6 +272,10 @@ public final class ConfigProvider extends ContentProvider {
             throw new IllegalStateException("Provider context is unavailable");
         }
         return context;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void enforceCaller() {

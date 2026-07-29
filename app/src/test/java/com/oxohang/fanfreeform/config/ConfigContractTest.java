@@ -26,5 +26,34 @@ public final class ConfigContractTest {
         assertEquals(180, ConfigContract.MAX_SIDE_RING_SIZE_PERCENT);
         assertEquals(ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME,
                 ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES);
+        assertEquals(false, ConfigContract.DEFAULT_SIDE_FOLLOW_HONEYCOMB);
+    }
+
+    @Test
+    public void keepsHoneycombDiscSizingWithinTheScreen() {
+        assertEquals(50, ConfigContract.MIN_HONEYCOMB_DISC_SIZE_PERCENT);
+        assertEquals(88, ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT);
+        assertEquals(100, ConfigContract.MAX_HONEYCOMB_DISC_SIZE_PERCENT);
+        assertEquals(true, ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME);
+    }
+
+    @Test
+    public void newOrientationFeaturesUseConservativeDefaults() {
+        assertEquals(true, ConfigContract.DEFAULT_BOTTOM_PORTRAIT_ENABLED);
+        assertEquals(false, ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_ENABLED);
+        assertEquals(true, ConfigContract.DEFAULT_SIDE_PORTRAIT_ENABLED);
+        assertEquals(false, ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED);
+        assertEquals(false, ConfigContract.DEFAULT_HONEYCOMB_LANDSCAPE_ENABLED);
+        assertEquals(false, ConfigContract.DEFAULT_FAN_FIXED_SEVEN_ROWS);
+    }
+
+    @Test
+    public void landscapeWindowAndFixedHoneycombDefaultsMatchTheDesign() {
+        assertEquals(48, ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT);
+        assertEquals(78, ConfigContract.DEFAULT_LANDSCAPE_HEIGHT_PERCENT);
+        assertEquals(50, ConfigContract.DEFAULT_LANDSCAPE_POSITION_X);
+        assertEquals(50, ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y);
+        assertEquals(50, ConfigContract.DEFAULT_HONEYCOMB_FIXED_X_PERCENT);
+        assertEquals(58, ConfigContract.DEFAULT_HONEYCOMB_FIXED_Y_PERCENT);
     }
 }

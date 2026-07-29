@@ -3,6 +3,7 @@ package com.oxohang.fanfreeform.ui;
 import android.app.Activity;
 import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -15,6 +16,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Button;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
@@ -31,6 +33,7 @@ public final class GestureSettingsActivity extends Activity {
     private int hotWidthPercent;
     private int hotHeightPercent;
     private GesturePreviewView gesturePreview;
+    private TextView targetCountText;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -46,6 +49,11 @@ public final class GestureSettingsActivity extends Activity {
         getWindow().setNavigationBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         setContentView(buildContent());
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        updateTargetCount();
     }
 
     private View buildContent() {
@@ -90,6 +98,19 @@ public final class GestureSettingsActivity extends Activity {
 
     private void buildBottomSettings(LinearLayout card) {
         card.addView(text("底角触发范围", 18, Ui.TEXT, Typeface.BOLD));
+        card.addView(targetManagerRow("小窗应用", TargetManagerActivity.KIND_FAN));
+        card.addView(Ui.divider(this));
+        card.addView(booleanRow("竖屏启用", "竖屏时允许底角斜滑",
+                ConfigContract.KEY_BOTTOM_PORTRAIT_ENABLED,
+                ConfigContract.DEFAULT_BOTTOM_PORTRAIT_ENABLED));
+        card.addView(booleanRow("横屏启用", "横屏时允许底角斜滑",
+                ConfigContract.KEY_BOTTOM_LANDSCAPE_ENABLED,
+                ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_ENABLED));
+        card.addView(booleanRow("每排固定 7 个",
+                "关闭时使用智能排布；开启后按 7+1、7+2 逐排填充",
+                ConfigContract.KEY_FAN_FIXED_SEVEN_ROWS,
+                ConfigContract.DEFAULT_FAN_FIXED_SEVEN_ROWS));
+        card.addView(Ui.divider(this));
         gesturePreview = new GesturePreviewView(this);
         gesturePreview.update(hotWidthPercent, hotHeightPercent);
         card.addView(gesturePreview, new LinearLayout.LayoutParams(
@@ -107,7 +128,15 @@ public final class GestureSettingsActivity extends Activity {
                         ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
         card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
                 34, 64, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
-                        ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
+                ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
+        card.addView(slider("扇形目标上限", ConfigContract.KEY_FAN_MAX_TARGETS,
+                3, 24, prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS, 8),
+                value -> value + " 个"));
+        Button animation = new Button(this);
+        animation.setText("扇形呼出与选择动效");
+        animation.setOnClickListener(view -> startActivity(
+                new Intent(this, AnimationSettingsActivity.class)));
+        card.addView(animation);
         card.addView(Ui.divider(this));
         card.addView(selectedNameRow());
         TextView note = text("底角区域始终从屏幕物理边缘开始，不再为侧滑手势向内避让。",
@@ -118,6 +147,27 @@ public final class GestureSettingsActivity extends Activity {
 
     private void buildSideSettings(LinearLayout card) {
         card.addView(text("侧滑参数", 18, Ui.TEXT, Typeface.BOLD));
+        card.addView(booleanRow("启用侧滑手势", "短滑仍保留 HyperOS 原生返回",
+                ConfigContract.KEY_SIDE_GESTURE_ENABLED,
+                ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
+        card.addView(booleanRow("竖屏启用", "竖屏时允许侧滑选择",
+                ConfigContract.KEY_SIDE_PORTRAIT_ENABLED,
+                ConfigContract.DEFAULT_SIDE_PORTRAIT_ENABLED));
+        card.addView(booleanRow("横屏启用", "横屏时允许侧滑选择",
+                ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED,
+                ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED));
+        card.addView(Ui.divider(this));
+        card.addView(booleanRow("横向向内", "允许水平长滑",
+                ConfigContract.KEY_SIDE_DIRECTION_HORIZONTAL, true));
+        card.addView(booleanRow("斜向上", "允许向内斜上长滑",
+                ConfigContract.KEY_SIDE_DIRECTION_UP, true));
+        card.addView(booleanRow("斜向下", "允许向内斜下长滑",
+                ConfigContract.KEY_SIDE_DIRECTION_DOWN, true));
+        card.addView(Ui.divider(this));
+        card.addView(targetManagerRow("侧滑应用", TargetManagerActivity.KIND_SIDE));
+        card.addView(slider("侧滑应用上限", ConfigContract.KEY_SIDE_MAX_TARGETS,
+                1, 36, prefs.getInt(ConfigContract.KEY_SIDE_MAX_TARGETS, 12),
+                value -> value + " 个"));
         card.addView(sideLayoutModeRow());
         card.addView(Ui.divider(this));
         card.addView(slider("长滑触发距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
@@ -150,6 +200,10 @@ public final class GestureSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
         card.addView(Ui.divider(this));
         card.addView(selectedNameRow());
+        card.addView(Ui.divider(this));
+        card.addView(booleanRow("侧滑蜂窝全屏启动",
+                "关闭时整个侧滑蜂窝都以小窗启动",
+                ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, false));
         TextView note = text("侧滑区域从顶部安全距离以下开始，止于底角热区上方并保留间隔。",
                 13, Ui.MUTED, Typeface.NORMAL);
         note.setPadding(0, Ui.dp(this, 8), 0, 0);
@@ -163,18 +217,43 @@ public final class GestureSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME);
     }
 
+    private View targetManagerRow(String title, String kind) {
+        LinearLayout settingRow = row();
+        settingRow.setOnClickListener(view -> {
+            Intent intent = new Intent(this, TargetManagerActivity.class);
+            intent.putExtra(TargetManagerActivity.EXTRA_KIND, kind);
+            startActivity(intent);
+        });
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text(title, 16, Ui.TEXT, Typeface.BOLD));
+        targetCountText = text("已选 0 项", 13, Ui.MUTED, Typeface.NORMAL);
+        labels.addView(targetCountText);
+        settingRow.addView(labels, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        settingRow.addView(text("管理  ›", 14, Ui.ACCENT, Typeface.BOLD));
+        return settingRow;
+    }
+
+    private void updateTargetCount() {
+        if (targetCountText == null || store == null) return;
+        int count = sideMode ? store.getSideTargets().size() : store.getTargets().size();
+        targetCountText.setText("已选 " + count + " 项");
+    }
+
     private View sideLayoutModeRow() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         section.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 10));
         section.addView(text("选择布局", 16, Ui.TEXT, Typeface.BOLD));
-        section.addView(text("纵向列表、完整环形和扇形只能选择一种",
+        section.addView(text("纵向、环形、扇形共用侧滑应用；蜂窝使用独立蜂窝清单",
                 13, Ui.MUTED, Typeface.NORMAL));
         RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
         int[] modes = {ConfigContract.SIDE_LAYOUT_LIST,
-                ConfigContract.SIDE_LAYOUT_RING, ConfigContract.SIDE_LAYOUT_FAN};
-        String[] labels = {"纵向列表", "环形", "扇形"};
+                ConfigContract.SIDE_LAYOUT_RING, ConfigContract.SIDE_LAYOUT_FAN,
+                ConfigContract.SIDE_LAYOUT_HONEYCOMB};
+        String[] labels = {"纵向列表", "环形", "扇形", "蜂窝"};
         int selectedMode = prefs.getInt(ConfigContract.KEY_SIDE_LAYOUT_MODE,
                 prefs.getBoolean(ConfigContract.KEY_SIDE_FAN_LIST,
                         ConfigContract.DEFAULT_SIDE_FAN_LIST)

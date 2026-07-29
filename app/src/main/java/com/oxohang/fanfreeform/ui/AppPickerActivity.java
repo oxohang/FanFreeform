@@ -15,6 +15,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -31,26 +33,55 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.LinkedHashSet;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public final class AppPickerActivity extends Activity {
     public static final String EXTRA_COMPONENT = "component";
     public static final String EXTRA_TARGET = "target";
     public static final String EXTRA_MODE = "mode";
+    public static final String EXTRA_MULTI = "multi";
+    public static final String EXTRA_SELECTED = "selected";
+    public static final String EXTRA_MAX = "max";
+    public static final String EXTRA_TARGETS = "targets";
     public static final int MODE_APPS = 0;
     public static final int MODE_SHORTCUTS = 1;
+    public static final int MODE_APPS_AND_SHORTCUTS = 2;
     private final ArrayList<Entry> all = new ArrayList<>();
     private final ArrayList<Entry> filtered = new ArrayList<>();
     private AppAdapter adapter;
     private ConfigStore store;
     private String searchText = "";
     private int mode;
+    private boolean combinedMode;
     private TextView empty;
+    private TextView selectionCount;
+    private TextView titleText;
+    private EditText searchInput;
+    private Button appsTab;
+    private Button shortcutsTab;
+    private boolean multi;
+    private int maximum;
+    private final LinkedHashSet<AppTarget> selectedTargets = new LinkedHashSet<>();
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         store = new ConfigStore(this);
-        mode = getIntent().getIntExtra(EXTRA_MODE, MODE_APPS);
+        int requestedMode = getIntent().getIntExtra(EXTRA_MODE, MODE_APPS);
+        combinedMode = requestedMode == MODE_APPS_AND_SHORTCUTS;
+        mode = combinedMode ? MODE_APPS : requestedMode;
+        multi = getIntent().getBooleanExtra(EXTRA_MULTI, false);
+        maximum = Math.max(0, getIntent().getIntExtra(EXTRA_MAX, 60));
+        try {
+            JSONArray selected = new JSONArray(getIntent().getStringExtra(EXTRA_SELECTED));
+            for (int i = 0; i < selected.length(); i++) {
+                AppTarget target = AppTarget.fromJson(selected.optJSONObject(i));
+                if (target != null) selectedTargets.add(target);
+            }
+        } catch (Exception ignored) { }
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
 
@@ -60,13 +91,12 @@ public final class AppPickerActivity extends Activity {
         root.setBackgroundColor(0xfff4f5fa);
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(this);
-        title.setText(mode == MODE_SHORTCUTS ? "添加快捷方式" : "添加应用");
-        title.setTextColor(Ui.TEXT);
-        title.setTextSize(26);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 16));
-        titleRow.addView(title, new LinearLayout.LayoutParams(0,
+        titleText = new TextView(this);
+        titleText.setTextColor(Ui.TEXT);
+        titleText.setTextSize(26);
+        titleText.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleText.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 16));
+        titleRow.addView(titleText, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView refresh = new TextView(this);
         refresh.setText("刷新");
@@ -76,15 +106,66 @@ public final class AppPickerActivity extends Activity {
         refresh.setPadding(Ui.dp(this, 12), Ui.dp(this, 12), 0, Ui.dp(this, 16));
         refresh.setOnClickListener(view -> refreshCatalog());
         titleRow.addView(refresh);
+        if (multi) {
+            TextView save = new TextView(this);
+            save.setText("保存");
+            save.setTextColor(Ui.ACCENT);
+            save.setTextSize(15);
+            save.setTypeface(null, android.graphics.Typeface.BOLD);
+            save.setPadding(Ui.dp(this, 14), Ui.dp(this, 12), 0, Ui.dp(this, 16));
+            save.setOnClickListener(view -> finishMulti());
+            titleRow.addView(save);
+        }
         root.addView(titleRow);
 
-        EditText search = new EditText(this);
-        search.setHint(mode == MODE_SHORTCUTS ? "搜索快捷方式" : "搜索应用");
-        search.setSingleLine(true);
-        search.setTextSize(16);
-        search.setPadding(Ui.dp(this, 16), 0, Ui.dp(this, 16), 0);
-        search.setBackground(Ui.rounded(this, Color.WHITE, 16));
-        root.addView(search, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52)));
+        if (combinedMode) {
+            LinearLayout tabs = new LinearLayout(this);
+            tabs.setOrientation(LinearLayout.HORIZONTAL);
+            tabs.setPadding(0, 0, 0, Ui.dp(this, 10));
+            appsTab = compactButton("应用");
+            appsTab.setOnClickListener(view -> switchMode(MODE_APPS));
+            tabs.addView(appsTab, new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1));
+            shortcutsTab = compactButton("快捷方式");
+            shortcutsTab.setOnClickListener(view -> switchMode(MODE_SHORTCUTS));
+            LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(
+                    0, Ui.dp(this, 42), 1);
+            shortcutParams.leftMargin = Ui.dp(this, 8);
+            tabs.addView(shortcutsTab, shortcutParams);
+            root.addView(tabs);
+        }
+
+        searchInput = new EditText(this);
+        searchInput.setSingleLine(true);
+        searchInput.setTextSize(16);
+        searchInput.setPadding(Ui.dp(this, 16), 0, Ui.dp(this, 16), 0);
+        searchInput.setBackground(Ui.rounded(this, Color.WHITE, 16));
+        root.addView(searchInput, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52)));
+
+        if (multi) {
+            LinearLayout actions = new LinearLayout(this);
+            actions.setGravity(Gravity.CENTER_VERTICAL);
+            actions.setPadding(0, Ui.dp(this, 8), 0, 0);
+            selectionCount = new TextView(this);
+            selectionCount.setTextColor(Ui.MUTED);
+            selectionCount.setTextSize(13);
+            actions.addView(selectionCount, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            Button allButton = compactButton("全选结果");
+            allButton.setOnClickListener(view -> selectFiltered());
+            actions.addView(allButton);
+            Button inverse = compactButton("反选");
+            inverse.setOnClickListener(view -> invertFiltered());
+            actions.addView(inverse);
+            Button clear = compactButton("清空");
+            clear.setOnClickListener(view -> {
+                selectedTargets.clear();
+                selectionChanged();
+            });
+            actions.addView(clear);
+            root.addView(actions);
+            selectionChanged();
+        }
 
         empty = new TextView(this);
         empty.setTextColor(Ui.MUTED);
@@ -103,10 +184,11 @@ public final class AppPickerActivity extends Activity {
         list.setAdapter(adapter);
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+        updateModeUi();
         loadApps();
         if (mode == MODE_APPS && store.getActivityCatalog().isEmpty()) refreshCatalog();
         if (mode == MODE_SHORTCUTS && store.getShortcutCatalog().isEmpty()) refreshCatalog();
-        search.addTextChangedListener(new TextWatcher() {
+        searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 searchText = s.toString();
@@ -114,12 +196,49 @@ public final class AppPickerActivity extends Activity {
             }
             @Override public void afterTextChanged(Editable s) { }
         });
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            Entry entry = filtered.get(position);
-            Intent result = new Intent().putExtra(EXTRA_TARGET, entry.target.toJson().toString());
-            setResult(RESULT_OK, result);
-            finish();
-        });
+    }
+
+    private void toggle(AppTarget target) {
+        if (selectedTargets.remove(target)) {
+            selectionChanged();
+            return;
+        }
+        if (selectedTargets.size() >= maximum) {
+            android.widget.Toast.makeText(this, "已达到上限 " + maximum,
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        selectedTargets.add(target);
+        selectionChanged();
+    }
+
+    private void selectFiltered() {
+        for (Entry entry : filtered) {
+            if (selectedTargets.size() >= maximum) break;
+            selectedTargets.add(entry.target);
+        }
+        selectionChanged();
+    }
+
+    private void invertFiltered() {
+        for (Entry entry : filtered) {
+            if (selectedTargets.contains(entry.target)) selectedTargets.remove(entry.target);
+            else if (selectedTargets.size() < maximum) selectedTargets.add(entry.target);
+        }
+        selectionChanged();
+    }
+
+    private void selectionChanged() {
+        if (selectionCount != null) selectionCount.setText("已选 " + selectedTargets.size()
+                + " / " + maximum);
+        if (adapter != null) filter(searchText);
+    }
+
+    private void finishMulti() {
+        JSONArray array = new JSONArray();
+        for (AppTarget target : selectedTargets) array.put(target.toJson());
+        setResult(RESULT_OK, new Intent().putExtra(EXTRA_TARGETS, array.toString()));
+        finish();
     }
 
     @SuppressWarnings("deprecation")
@@ -172,6 +291,16 @@ public final class AppPickerActivity extends Activity {
             if (needle.isEmpty() || entry.label.toLowerCase(Locale.ROOT).contains(needle)
                     || entry.secondary.toLowerCase(Locale.ROOT).contains(needle)) filtered.add(entry);
         }
+        ArrayList<AppTarget> selectedOrder = new ArrayList<>(selectedTargets);
+        Collator collator = Collator.getInstance(Locale.CHINA);
+        filtered.sort((left, right) -> {
+            int leftSelected = selectedOrder.indexOf(left.target);
+            int rightSelected = selectedOrder.indexOf(right.target);
+            if (leftSelected >= 0 && rightSelected < 0) return -1;
+            if (leftSelected < 0 && rightSelected >= 0) return 1;
+            if (leftSelected >= 0) return Integer.compare(leftSelected, rightSelected);
+            return collator.compare(left.label, right.label);
+        });
         if (empty != null) {
             boolean show = filtered.isEmpty();
             empty.setVisibility(show ? View.VISIBLE : View.GONE);
@@ -194,6 +323,36 @@ public final class AppPickerActivity extends Activity {
         new Handler().postDelayed(this::loadApps, 900L);
     }
 
+    private void switchMode(int nextMode) {
+        if (!combinedMode || mode == nextMode) return;
+        mode = nextMode;
+        searchText = "";
+        if (searchInput != null) searchInput.setText("");
+        updateModeUi();
+        loadApps();
+        if (mode == MODE_APPS && store.getActivityCatalog().isEmpty()) refreshCatalog();
+        if (mode == MODE_SHORTCUTS && store.getShortcutCatalog().isEmpty()) refreshCatalog();
+    }
+
+    private void updateModeUi() {
+        if (titleText != null) {
+            titleText.setText(combinedMode ? "选择小窗应用"
+                    : mode == MODE_SHORTCUTS ? "添加快捷方式" : "添加应用");
+        }
+        if (searchInput != null) searchInput.setHint(
+                mode == MODE_SHORTCUTS ? "搜索快捷方式" : "搜索应用");
+        if (appsTab != null) {
+            appsTab.setTextColor(mode == MODE_APPS ? Color.WHITE : Ui.ACCENT);
+            appsTab.setBackground(Ui.rounded(this,
+                    mode == MODE_APPS ? Ui.ACCENT : 0xffeef0ff, 12));
+        }
+        if (shortcutsTab != null) {
+            shortcutsTab.setTextColor(mode == MODE_SHORTCUTS ? Color.WHITE : Ui.ACCENT);
+            shortcutsTab.setBackground(Ui.rounded(this,
+                    mode == MODE_SHORTCUTS ? Ui.ACCENT : 0xffeef0ff, 12));
+        }
+    }
+
     private final class AppAdapter extends BaseAdapter {
         @Override public int getCount() { return filtered.size(); }
         @Override public Entry getItem(int position) { return filtered.get(position); }
@@ -206,6 +365,9 @@ public final class AppPickerActivity extends Activity {
             row.setPadding(Ui.dp(AppPickerActivity.this, 14), Ui.dp(AppPickerActivity.this, 10), Ui.dp(AppPickerActivity.this, 14), Ui.dp(AppPickerActivity.this, 10));
             row.setBackground(Ui.rounded(AppPickerActivity.this, Color.WHITE, 16));
             Entry entry = getItem(position);
+            row.setClickable(true);
+            row.setFocusable(false);
+            row.setOnClickListener(view -> selectEntry(entry));
             ImageView icon = new ImageView(AppPickerActivity.this);
             icon.setImageDrawable(entry.icon);
             row.addView(icon, new LinearLayout.LayoutParams(Ui.dp(AppPickerActivity.this, 44), Ui.dp(AppPickerActivity.this, 44)));
@@ -223,8 +385,40 @@ public final class AppPickerActivity extends Activity {
             text.addView(label);
             text.addView(secondary);
             row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            if (multi) {
+                CheckBox check = new CheckBox(AppPickerActivity.this);
+                check.setChecked(selectedTargets.contains(entry.target));
+                check.setFocusable(false);
+                check.setFocusableInTouchMode(false);
+                check.setOnClickListener(view -> toggle(entry.target));
+                row.addView(check);
+            }
             return row;
         }
+    }
+
+    private void selectEntry(Entry entry) {
+        if (multi) {
+            toggle(entry.target);
+            return;
+        }
+        Intent result = new Intent().putExtra(EXTRA_TARGET,
+                entry.target.toJson().toString());
+        setResult(RESULT_OK, result);
+        finish();
+    }
+
+    private Button compactButton(String value) {
+        Button button = new Button(this);
+        button.setText(value);
+        button.setTextSize(12);
+        button.setTextColor(Ui.ACCENT);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 8), 0);
+        button.setBackground(Ui.rounded(this, 0xffeef0ff, 10));
+        return button;
     }
 
     private static final class Entry {

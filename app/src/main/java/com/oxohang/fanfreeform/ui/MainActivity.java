@@ -176,24 +176,18 @@ public final class MainActivity extends Activity {
         addActions.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 4));
         Button addApp = compactButton("添加应用");
         addApp.setOnClickListener(view -> {
-            if (targets.size() >= 8) {
-                Toast.makeText(this, "最多添加 8 个快捷目标", Toast.LENGTH_SHORT).show();
-                return;
-            }
             Intent intent = new Intent(this, AppPickerActivity.class);
             intent.putExtra(AppPickerActivity.EXTRA_MODE, AppPickerActivity.MODE_APPS);
+            configureMultiPicker(intent, false);
             startActivityForResult(intent, REQUEST_PICK_APP);
         });
         addActions.addView(addApp, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Button addShortcut = compactButton("添加快捷方式");
         addShortcut.setOnClickListener(view -> {
-            if (targets.size() >= 8) {
-                Toast.makeText(this, "最多添加 8 个快捷目标", Toast.LENGTH_SHORT).show();
-                return;
-            }
             Intent intent = new Intent(this, AppPickerActivity.class);
             intent.putExtra(AppPickerActivity.EXTRA_MODE, AppPickerActivity.MODE_SHORTCUTS);
+            configureMultiPicker(intent, true);
             startActivityForResult(intent, REQUEST_PICK_SHORTCUT);
         });
         LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(0,
@@ -257,6 +251,21 @@ public final class MainActivity extends Activity {
         updateGestureSummaries();
         root.addView(gestureCard, cardParams(14));
 
+        LinearLayout honeycombCard = card();
+        LinearLayout honeycombRow = row();
+        honeycombRow.setOnClickListener(view -> startActivity(
+                new Intent(this, HoneycombSettingsActivity.class)));
+        LinearLayout honeycombText = new LinearLayout(this);
+        honeycombText.setOrientation(LinearLayout.VERTICAL);
+        honeycombText.addView(text("蜂窝全屏应用", 18, Ui.TEXT, Typeface.BOLD));
+        honeycombText.addView(text("扇形后继续向内滑，进入 Apple Watch 风格应用总览",
+                13, Ui.MUTED, Typeface.NORMAL));
+        honeycombRow.addView(honeycombText, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        honeycombRow.addView(text("设置  ›", 14, Ui.ACCENT, Typeface.BOLD));
+        honeycombCard.addView(honeycombRow);
+        root.addView(honeycombCard, cardParams(14));
+
         LinearLayout animationCard = card();
         LinearLayout animationRow = row();
         animationRow.setOnClickListener(view -> startActivity(
@@ -309,6 +318,23 @@ public final class MainActivity extends Activity {
         resetParams.topMargin = Ui.dp(this, 18);
         root.addView(reset, resetParams);
         return scroll;
+    }
+
+    private void configureMultiPicker(Intent intent, boolean shortcuts) {
+        org.json.JSONArray selected = new org.json.JSONArray();
+        for (AppTarget target : targets) {
+            if (target.isShortcut() == shortcuts) selected.put(target.toJson());
+        }
+        intent.putExtra(AppPickerActivity.EXTRA_MULTI, true);
+        intent.putExtra(AppPickerActivity.EXTRA_SELECTED, selected.toString());
+        int otherTypeCount = 0;
+        for (AppTarget target : targets) {
+            if (target.isShortcut() != shortcuts) otherTypeCount++;
+        }
+        int totalLimit = prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS,
+                ConfigContract.DEFAULT_FAN_MAX_TARGETS);
+        intent.putExtra(AppPickerActivity.EXTRA_MAX, Math.max(0,
+                totalLimit - otherTypeCount));
     }
 
     private void openGestureSettings(String mode) {
@@ -488,6 +514,22 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if ((requestCode != REQUEST_PICK_APP && requestCode != REQUEST_PICK_SHORTCUT)
                 || resultCode != RESULT_OK || data == null) return;
+        String batch = data.getStringExtra(AppPickerActivity.EXTRA_TARGETS);
+        if (batch != null) {
+            boolean shortcuts = requestCode == REQUEST_PICK_SHORTCUT;
+            ArrayList<AppTarget> replacement = new ArrayList<>();
+            try {
+                org.json.JSONArray array = new org.json.JSONArray(batch);
+                for (int i = 0; i < array.length(); i++) {
+                    AppTarget item = AppTarget.fromJson(array.optJSONObject(i));
+                    if (item != null && item.isShortcut() == shortcuts) replacement.add(item);
+                }
+            } catch (Exception ignored) { }
+            targets.removeIf(item -> item.isShortcut() == shortcuts);
+            targets.addAll(replacement);
+            saveTargets();
+            return;
+        }
         AppTarget target = null;
         String serialized = data.getStringExtra(AppPickerActivity.EXTRA_TARGET);
         try {
@@ -503,7 +545,7 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "该目标已经在列表中", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (targets.size() >= 8) return;
+        if (targets.size() >= ConfigContract.MAX_FAN_MAX_TARGETS) return;
         targets.add(target);
         saveTargets();
     }

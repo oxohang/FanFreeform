@@ -35,11 +35,11 @@ final class FanOverlayController {
               boolean showBackdrop,
               boolean animationsEnabled, int animationSpeed,
               int revealAmount, int rotationDegrees, int selectionScalePercent,
-              boolean showSelectionRing) {
+              boolean showSelectionRing, boolean fixedSevenRows) {
         showInternal(targets, corner, radius, iconDiameter, showBackdrop,
                 false, false, false, 0f, 0f, 0f, 0f, showSelectedName,
                 animationsEnabled, animationSpeed, revealAmount, rotationDegrees,
-                selectionScalePercent, showSelectionRing);
+                selectionScalePercent, showSelectionRing, fixedSevenRows);
     }
 
     void showSideList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -51,7 +51,7 @@ final class FanOverlayController {
         showInternal(targets, side, 0f, iconDiameter, showBackdrop,
                 true, false, false, centerX, listTop, rowHeight, 0f, showNames,
                 animationsEnabled, animationSpeed, revealAmount, rotationDegrees,
-                selectionScalePercent, showSelectionRing);
+                selectionScalePercent, showSelectionRing, false);
     }
 
     void showSideFanList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -63,7 +63,7 @@ final class FanOverlayController {
         showInternal(targets, side, 0f, iconDiameter, showBackdrop,
                 true, true, false, apexX, centerY, 0f, radius, showNames,
                 animationsEnabled, animationSpeed, revealAmount, rotationDegrees,
-                selectionScalePercent, showSelectionRing);
+                selectionScalePercent, showSelectionRing, false);
     }
 
     void showSideRingList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -75,7 +75,7 @@ final class FanOverlayController {
         showInternal(targets, side, 0f, iconDiameter, showBackdrop,
                 true, false, true, centerX, centerY, 0f, radius, showNames,
                 animationsEnabled, animationSpeed, revealAmount, rotationDegrees,
-                selectionScalePercent, showSelectionRing);
+                selectionScalePercent, showSelectionRing, false);
     }
 
     private void showInternal(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
@@ -87,7 +87,7 @@ final class FanOverlayController {
                               boolean showNames, boolean animationsEnabled,
                               int animationSpeed, int revealAmount,
                               int rotationDegrees, int selectionScalePercent,
-                              boolean showSelectionRing) {
+                              boolean showSelectionRing, boolean fixedSevenRows) {
         runOnMain(() -> {
             removeNow();
             FanOverlayView fanView = new FanOverlayView(context);
@@ -111,7 +111,8 @@ final class FanOverlayController {
                 fanView.configure(targets, corner, radius, iconDiameter, showNames,
                         showBackdrop,
                         animationsEnabled, animationSpeed, revealAmount,
-                        rotationDegrees, selectionScalePercent, showSelectionRing);
+                        rotationDegrees, selectionScalePercent, showSelectionRing,
+                        fixedSevenRows);
             }
             view = fanView;
             view.setAlpha(0f);

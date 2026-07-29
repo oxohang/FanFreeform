@@ -5,7 +5,6 @@ import android.os.Handler;
 import android.view.ViewConfiguration;
 
 final class OutsideGestureRecognizer {
-    private static final long DOUBLE_TAP_WINDOW_MS = 180L;
 
     interface Listener {
         void onOutsideAction(boolean doubleTap);
@@ -18,7 +17,7 @@ final class OutsideGestureRecognizer {
     private final float sideSwipeDecisionDistance;
     private final float sideTapRetentionDistance;
     private final float doubleTapSlopSquared;
-    private final long doubleTapTimeout;
+    private long doubleTapTimeout;
     private final long tapTimeout;
 
     private boolean active;
@@ -45,9 +44,19 @@ final class OutsideGestureRecognizer {
         this.sideTapRetentionDistance = Math.max(touchSlop * 2f, 18f * density);
         this.sideTapSlopSquared = sideTapRetentionDistance * sideTapRetentionDistance;
         this.doubleTapSlopSquared = doubleTapSlop * doubleTapSlop;
-        this.doubleTapTimeout = Math.min(ViewConfiguration.getDoubleTapTimeout(),
-                DOUBLE_TAP_WINDOW_MS);
+        this.doubleTapTimeout = com.oxohang.fanfreeform.config.ConfigContract
+                .DEFAULT_OUTSIDE_TAP_WINDOW_MS;
         this.tapTimeout = ViewConfiguration.getLongPressTimeout();
+    }
+
+    void setDoubleTapTimeout(long timeoutMs) {
+        long resolved = Math.max(com.oxohang.fanfreeform.config.ConfigContract
+                        .MIN_OUTSIDE_TAP_WINDOW_MS,
+                Math.min(com.oxohang.fanfreeform.config.ConfigContract
+                                .MAX_OUTSIDE_TAP_WINDOW_MS, timeoutMs));
+        if (doubleTapTimeout == resolved) return;
+        if (pendingTap) dispatchPendingSingle();
+        doubleTapTimeout = resolved;
     }
 
     boolean onDown(float x, float y, Rect bounds, int displayWidth,

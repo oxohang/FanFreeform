@@ -13,6 +13,7 @@ import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.TextPaint;
 import android.view.View;
+import android.view.WindowInsets;
 
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +29,7 @@ final class FanOverlayView extends View {
     private final Paint railPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path iconClipPath = new Path();
     private float fanRadius;
+    private boolean fixedSevenRows;
     private float iconDiameter;
     private List<RuntimeTarget> targets = Collections.emptyList();
     private GestureGeometry.Corner corner = GestureGeometry.Corner.LEFT;
@@ -84,7 +86,8 @@ final class FanOverlayView extends View {
                    boolean showBackdrop,
                    boolean animationsEnabled, int animationSpeed,
                    int revealAmount, int rotationDegrees,
-                   int selectionScalePercent, boolean showSelectionRing) {
+                   int selectionScalePercent, boolean showSelectionRing,
+                   boolean fixedSevenRows) {
         this.targets = targets;
         this.corner = corner;
         this.fanRadius = radius;
@@ -104,6 +107,7 @@ final class FanOverlayView extends View {
         this.selectionScalePercent = Math.max(5, Math.min(40,
                 selectionScalePercent));
         this.showSelectionRing = showSelectionRing;
+        this.fixedSevenRows = fixedSevenRows;
         this.revealStartedAt = SystemClock.uptimeMillis();
         this.animatedSelection = -1;
         this.confirmationSelection = -1;
@@ -272,7 +276,7 @@ final class FanOverlayView extends View {
         float startFactor = 1f - revealAmount / 100f;
         for (int i = 0; i < targets.size(); i++) {
             GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
-                    getWidth(), getHeight(), radius);
+                    getWidth(), getHeight(), radius, fixedSevenRows);
             float iconOriginX = corner == GestureGeometry.Corner.LEFT ? 0f : getWidth();
             float iconOriginY = getHeight();
             float revealFactor = startFactor + (1f - startFactor) * reveal;
@@ -371,12 +375,42 @@ final class FanOverlayView extends View {
                 canvas.drawCircle(x, y, radius + dp(5), selectedPaint);
             }
             canvas.restoreToCount(save);
-            if (showSideNames && active) {
+            if (showSideNames && active && !sideRingListLayout) {
                 drawSideLabel(canvas, targets.get(i).label, x, y,
                         diameter, active);
             }
         }
+        if (showSideNames && sideRingListLayout
+                && selected >= 0 && selected < targets.size()) {
+            drawFixedRingLabel(canvas, targets.get(selected).label);
+        }
         if (keepAnimating) postInvalidateOnAnimation();
+    }
+
+    private void drawFixedRingLabel(Canvas canvas, String label) {
+        float maxTextWidth = Math.min(dp(190), getWidth() * 0.50f);
+        CharSequence fitted = TextUtils.ellipsize(label, textPaint,
+                maxTextWidth, TextUtils.TruncateAt.END);
+        float textWidth = textPaint.measureText(fitted, 0, fitted.length());
+        float padding = dp(13);
+        float boxHeight = dp(36);
+        float centerX = Math.max(textWidth / 2f + padding + dp(10),
+                Math.min(getWidth() - textWidth / 2f - padding - dp(10),
+                        sideListCenterX));
+        WindowInsets insets = getRootWindowInsets();
+        float safeTop = insets == null ? dp(24)
+                : insets.getInsets(WindowInsets.Type.statusBars()).top;
+        float centerY = Math.max(safeTop + boxHeight / 2f + dp(8),
+                sideListTop - sideFanRadius - iconDiameter / 2f - dp(22));
+        pillPaint.setColor(0xf020263f);
+        canvas.drawRoundRect(centerX - textWidth / 2f - padding,
+                centerY - boxHeight / 2f, centerX + textWidth / 2f + padding,
+                centerY + boxHeight / 2f, boxHeight / 2f, boxHeight / 2f,
+                pillPaint);
+        Paint.FontMetrics metrics = textPaint.getFontMetrics();
+        float baseline = centerY - (metrics.ascent + metrics.descent) / 2f;
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(fitted, 0, fitted.length(), centerX, baseline, textPaint);
     }
 
     private void drawSideLabel(Canvas canvas, String label, float iconX, float iconY,
