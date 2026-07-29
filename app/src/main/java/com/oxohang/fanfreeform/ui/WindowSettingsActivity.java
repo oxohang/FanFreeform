@@ -69,7 +69,8 @@ public final class WindowSettingsActivity extends Activity {
         landscapeCard.addView(landscapePreview,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,Ui.dp(this,190)));
         landscapeCard.addView(slider("宽度",ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
-                40,90,landscapeWidth,v->v+"%"));
+                ConfigContract.MIN_LANDSCAPE_WIDTH_PERCENT,
+                ConfigContract.MAX_LANDSCAPE_WIDTH_PERCENT,landscapeWidth,v->v+"%"));
         landscapeCard.addView(slider("高度",ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT,
                 35,85,landscapeHeight,v->v+"%"));
         landscapeCard.addView(slider("水平位置",ConfigContract.KEY_LANDSCAPE_POSITION_X,

@@ -42,13 +42,14 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_APP = 41;
     private static final int REQUEST_PICK_SHORTCUT = 42;
     private static final String[] ACTION_LABELS = {
-            "无操作", "关闭", "挂起到右上角", "全屏"
+            "无操作", "关闭", "挂起到右上角", "全屏", "小窗贴边"
     };
     private static final int[] ACTION_VALUES = {
             ConfigContract.ACTION_NONE,
             ConfigContract.ACTION_CLOSE,
             ConfigContract.ACTION_PIN,
-            ConfigContract.ACTION_FULLSCREEN
+            ConfigContract.ACTION_FULLSCREEN,
+            ConfigContract.ACTION_EDGE_PIN
     };
 
     private ConfigStore store;

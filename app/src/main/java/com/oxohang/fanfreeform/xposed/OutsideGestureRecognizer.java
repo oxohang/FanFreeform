@@ -27,6 +27,7 @@ final class OutsideGestureRecognizer {
     private float downX;
     private float downY;
     private long downTime;
+    private long lastAcceptedDownEventTime = Long.MIN_VALUE;
     private boolean pendingTap;
     private float pendingX;
     private float pendingY;
@@ -61,6 +62,15 @@ final class OutsideGestureRecognizer {
 
     boolean onDown(float x, float y, Rect bounds, int displayWidth,
                    float leftReserve, float rightReserve, long eventTime) {
+        // Side-edge touches are visible both to the global input monitor and to the
+        // transparent outside window. They carry the same event time. If the second
+        // callback is delivered after the first UP, treating it as a new DOWN turns one
+        // physical tap into a double tap. Accept each physical stream only once.
+        if (eventTime == lastAcceptedDownEventTime) {
+            Log.i("Ignored duplicate outside DOWN eventTime=" + eventTime);
+            return false;
+        }
+        lastAcceptedDownEventTime = eventTime;
         active = false;
         secondTap = false;
         sideGestureCandidate = false;

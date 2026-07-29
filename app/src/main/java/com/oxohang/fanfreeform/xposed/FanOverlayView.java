@@ -263,7 +263,8 @@ final class FanOverlayView extends View {
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
         float drawOriginY = getHeight();
         float radius = fanRadius > 0 ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
-        if (showBackdrop) canvas.drawCircle(originX, drawOriginY, radius + dp(100), backdrop);
+        if (showBackdrop) canvas.drawCircle(originX, drawOriginY,
+                backdropRadius(radius), backdrop);
 
         long now = SystemClock.uptimeMillis();
         float revealProgress = animationsEnabled
@@ -545,11 +546,26 @@ final class FanOverlayView extends View {
 
     private void updateBackdropShader() {
         if (getWidth() <= 0 || getHeight() <= 0) return;
-        if (fanRadius <= 0) fanRadius = Math.min(getWidth(), getHeight()) * 0.58f;
+        float radius = fanRadius > 0
+                ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
         float originX = corner == GestureGeometry.Corner.LEFT ? 0 : getWidth();
         float drawOriginY = getHeight();
-        backdrop.setShader(new RadialGradient(originX, drawOriginY, fanRadius + dp(100),
+        backdrop.setShader(new RadialGradient(originX, drawOriginY, backdropRadius(radius),
                 new int[]{0x99202742, 0x77202742, 0x00202742},
                 new float[]{0f, 0.72f, 1f}, Shader.TileMode.CLAMP));
+    }
+
+    private float backdropRadius(float radius) {
+        float originX = corner == GestureGeometry.Corner.LEFT ? 0f : getWidth();
+        float originY = getHeight();
+        float outermostCenter = 0f;
+        for (int index = 0; index < targets.size(); index++) {
+            GestureGeometry.Point center = GestureGeometry.iconCenter(corner, index,
+                    targets.size(), getWidth(), getHeight(), radius, fixedSevenRows);
+            outermostCenter = Math.max(outermostCenter,
+                    (float) Math.hypot(center.x - originX, center.y - originY));
+        }
+        if (outermostCenter <= 0f) outermostCenter = radius;
+        return outermostCenter + iconDiameter / 2f + dp(35);
     }
 }

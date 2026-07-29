@@ -18,11 +18,12 @@ import com.oxohang.fanfreeform.config.ConfigStore;
 
 public final class OutsideSettingsActivity extends Activity {
     private static final String[] LABELS = {
-            "无操作", "关闭小窗", "挂起到右上角", "全屏"
+            "无操作", "关闭小窗", "挂起到右上角", "全屏", "小窗贴边"
     };
     private static final int[] VALUES = {
             ConfigContract.ACTION_NONE, ConfigContract.ACTION_CLOSE,
-            ConfigContract.ACTION_PIN, ConfigContract.ACTION_FULLSCREEN
+            ConfigContract.ACTION_PIN, ConfigContract.ACTION_FULLSCREEN,
+            ConfigContract.ACTION_EDGE_PIN
     };
     private ConfigStore store;
 

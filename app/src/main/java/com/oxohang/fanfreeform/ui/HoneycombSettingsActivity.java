@@ -71,7 +71,8 @@ public final class HoneycombSettingsActivity extends Activity {
 
         LinearLayout enableCard = card();
         LinearLayout enableRow = row();
-        LinearLayout enableLabels = labels("启用蜂窝总览", "选中应用后关闭已有小窗，再全屏启动");
+        LinearLayout enableLabels = labels("启用蜂窝总览",
+                "启动方式由底角斜滑和侧滑页面分别设置");
         enableRow.addView(enableLabels, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Switch enabled = new Switch(this);
@@ -109,7 +110,7 @@ public final class HoneycombSettingsActivity extends Activity {
         modes.setOrientation(RadioGroup.VERTICAL);
         RadioButton browse = radio("浏览模式 · 松手保持，拖动、缩放、点击启动",
                 ConfigContract.HONEYCOMB_MODE_BROWSE);
-        RadioButton hold = radio("按住滑选 · 滑过图标，松手立即全屏启动",
+        RadioButton hold = radio("按住滑选 · 滑过图标，松手立即启动",
                 ConfigContract.HONEYCOMB_MODE_HOLD);
         modes.addView(browse);
         modes.addView(hold);

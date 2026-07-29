@@ -19,6 +19,36 @@ public final class ConfigStore {
     private static final String KEY_DOUBLE_PIN_MIGRATED = "double_pin_migrated_v1";
     private static final String KEY_SIDE_TARGETS_INDEPENDENT_MIGRATED =
             "side_targets_independent_migrated_v1";
+    private static final String[] DEFAULT_BOTTOM_PACKAGES = {
+            "com.ss.android.article.news", "tv.danmaku.bili", "com.twitter.android",
+            "nu.gpu.nagram", "com.tencent.mm", "com.ss.android.yumme.video",
+            "com.xingin.xhs", "com.xunmeng.pinduoduo", "com.miui.calculator",
+            "com.android.purebilibili", "com.tencent.androidqqmail",
+            "com.zhiliaoapp.musically", "com.trim.app"
+    };
+    private static final String[] DEFAULT_HONEYCOMB_PACKAGES = {
+            "com.miui.calculator", "tv.danmaku.bili", "com.trim.app",
+            "com.ss.android.ugc.aweme", "com.autonavi.minimap",
+            "com.ss.android.yumme.video", "com.ss.android.article.news",
+            "com.jingdong.app.mall", "com.coolapk.market", "com.luna.music",
+            "com.aliyun.tongyi", "com.bytedance.dreamina", "com.quark.clouddrive",
+            "com.xiaomi.smarthome", "com.xunmeng.pinduoduo", "com.taobao.taobao",
+            "com.tencent.tmgp.sgame", "com.netease.cloudmusic", "com.tencent.mm",
+            "com.tencent.weread", "com.taobao.idlefish", "com.miui.gallery",
+            "com.xingin.xhs", "com.max.xiaoheihe", "com.unionpay",
+            "com.cmbchina.ccd.pluto.cmbActivity", "com.eg.android.AlipayGphone",
+            "com.android.purebilibili", "com.openai.chatgpt", "com.android.chrome",
+            "com.anthropic.claude", "com.deepseek.chat", "com.alibaba.android.rimet",
+            "ai.x.grok", "nu.gpu.nagram", "com.tencent.mobileqq",
+            "com.tencent.androidqqmail", "com.android.vending",
+            "com.zhiliaoapp.musically", "com.netease.uuremote", "com.twitter.android",
+            "com.google.android.youtube", "com.larus.nova"
+    };
+    private static final String[] DEFAULT_SIDE_PACKAGES = {
+            "com.didjdk.adbhelper", "com.lemon.lv", "com.ccb.longjiLife",
+            "com.xhey.xcamera", "com.ss.android.article.news", "com.jingdong.app.mall",
+            "com.coolapk.market", "com.quark.clouddrive", "com.android.contacts"
+    };
     private final Context context;
     private final SharedPreferences preferences;
 
@@ -348,6 +378,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_EDGE_SCALE)
                 .putInt(ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
                         ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_SHOW_SELECTED_NAME,
+                        ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT)
                 .putBoolean(ConfigContract.KEY_HONEYCOMB_EMPTY_TAP_CLOSE,
@@ -368,6 +400,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_DIRECTION_DOWN)
                 .putBoolean(ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN,
                         ConfigContract.DEFAULT_SIDE_HONEYCOMB_FULLSCREEN)
+                .putBoolean(ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_FREEFORM)
                 .putBoolean(ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER,
                         ConfigContract.DEFAULT_HONEYCOMB_FOLLOW_FINGER)
                 .putBoolean(ConfigContract.KEY_HONEYCOMB_LANDSCAPE_ENABLED,
@@ -405,23 +439,33 @@ public final class ConfigStore {
                         new ComponentName(item.activityInfo.packageName, item.activityInfo.name));
             }
         }
-        String[] preferred = {
-                "com.miui.calculator", "com.miui.notes", "com.android.calendar",
-                "com.android.browser", "com.android.fileexplorer", "com.miui.weather2"
-        };
-        JSONArray array = new JSONArray();
-        for (String packageName : preferred) {
-            ComponentName component = byPackage.get(packageName);
-            if (component != null) array.put(component.flattenToString());
-        }
-        if (array.length() < 3) {
+        JSONArray bottom = installedTargets(byPackage, DEFAULT_BOTTOM_PACKAGES);
+        if (bottom.length() < 3) {
             for (ComponentName component : byPackage.values()) {
                 if (context.getPackageName().equals(component.getPackageName())) continue;
-                array.put(component.flattenToString());
-                if (array.length() >= 6) break;
+                bottom.put(new AppTarget(component.flattenToString()).toJson());
+                if (bottom.length() >= 6) break;
             }
         }
-        preferences.edit().putString(ConfigContract.KEY_COMPONENTS, array.toString()).commit();
+        preferences.edit()
+                .putString(ConfigContract.KEY_COMPONENTS, bottom.toString())
+                .putString(ConfigContract.KEY_HONEYCOMB_COMPONENTS,
+                        installedTargets(byPackage, DEFAULT_HONEYCOMB_PACKAGES).toString())
+                .putString(ConfigContract.KEY_SIDE_COMPONENTS,
+                        installedTargets(byPackage, DEFAULT_SIDE_PACKAGES).toString())
+                .commit();
+    }
+
+    private static JSONArray installedTargets(Map<String, ComponentName> byPackage,
+                                               String[] packages) {
+        JSONArray result = new JSONArray();
+        for (String packageName : packages) {
+            ComponentName component = byPackage.get(packageName);
+            if (component != null) {
+                result.put(new AppTarget(component.flattenToString()).toJson());
+            }
+        }
+        return result;
     }
 
     @SuppressLint("ApplySharedPref")

@@ -109,7 +109,11 @@ public final class ConfigProvider extends ContentProvider {
                                     prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
                                             ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT))));
             out.putInt(ConfigContract.KEY_TRIGGER_PERCENT, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT, ConfigContract.DEFAULT_TRIGGER_PERCENT));
-            out.putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT));
+            out.putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
+                    ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT),
+                    ConfigContract.MIN_SELECTION_RADIUS_PERCENT,
+                    ConfigContract.MAX_SELECTION_RADIUS_PERCENT));
             out.putInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT));
             out.putInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT));
             out.putInt(ConfigContract.KEY_ICON_SIZE_DP, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP, ConfigContract.DEFAULT_ICON_SIZE_DP));
@@ -117,9 +121,11 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HEIGHT_PERCENT, prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT));
             out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
             out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
-            out.putInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT, prefs.getInt(
+            out.putInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
-                    ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT));
+                    ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT),
+                    ConfigContract.MIN_LANDSCAPE_WIDTH_PERCENT,
+                    ConfigContract.MAX_LANDSCAPE_WIDTH_PERCENT));
             out.putInt(ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT, prefs.getInt(
                     ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT,
                     ConfigContract.DEFAULT_LANDSCAPE_HEIGHT_PERCENT));
@@ -209,6 +215,9 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.KEY_SIDE_DIRECTION_DOWN, true));
             out.putBoolean(ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, false));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM, prefs.getBoolean(
+                    ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM,
+                    ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_FREEFORM));
             out.putBoolean(ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER, prefs.getBoolean(
                     ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER,
                     ConfigContract.DEFAULT_HONEYCOMB_FOLLOW_FINGER));

@@ -106,6 +106,10 @@ public final class GestureSettingsActivity extends Activity {
         card.addView(booleanRow("横屏启用", "横屏时允许底角斜滑",
                 ConfigContract.KEY_BOTTOM_LANDSCAPE_ENABLED,
                 ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_ENABLED));
+        card.addView(booleanRow("二段蜂窝小窗启动",
+                "开启后从底角二段蜂窝选中的应用以小窗打开；关闭时全屏打开",
+                ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM,
+                ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_FREEFORM));
         card.addView(booleanRow("每排固定 7 个",
                 "关闭时使用智能排布；开启后按 7+1、7+2 逐排填充",
                 ConfigContract.KEY_FAN_FIXED_SEVEN_ROWS,
@@ -124,7 +128,9 @@ public final class GestureSettingsActivity extends Activity {
                 6, 24, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT,
                         ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));
         card.addView(slider("选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
-                35, 75, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
+                ConfigContract.MIN_SELECTION_RADIUS_PERCENT,
+                ConfigContract.MAX_SELECTION_RADIUS_PERCENT,
+                prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
                         ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
         card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
                 34, 64, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,

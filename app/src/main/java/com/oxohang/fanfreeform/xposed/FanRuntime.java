@@ -78,7 +78,6 @@ final class FanRuntime {
     private boolean sideListAllowed;
     private boolean imeDismissTap;
     private boolean capturedImeDismissTap;
-    private long capturedNativeEdgeDownTime = -1L;
     private long ignoredCaptureDownTime = -1L;
     private long systemPanelInputDownTime = -1L;
     private boolean activeSideList;
@@ -239,6 +238,15 @@ final class FanRuntime {
 
     void onShadeExpansionChanged(float fraction, boolean expanded) {
         boolean next = expanded || fraction > 0.01f;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (next && !SystemPanelArbitrator.acceptShadeExpansion(
+                shadeExpanded, now, systemPanelTouchBlockUntil)) {
+            // Heads-up notifications and Dynamic Island also animate the shade's
+            // expansion fraction. Without a real top-edge touch they must not remove
+            // the freeform guard or pause an active honeycomb session.
+            Log.i("Ignored notification-driven shade expansion fraction=" + fraction);
+            return;
+        }
         long version = ++shadeStateVersion;
         if (next) {
             if (!shadeExpanded) {
@@ -341,6 +349,18 @@ final class FanRuntime {
         freeform.adjustMiniTargetIfNeeded(animationType, info, target);
     }
 
+    void adjustEdgePinRestoreTarget(Object info, Object target, Object transaction) {
+        freeform.adjustEdgePinRestoreTarget(info, target, transaction);
+    }
+
+    boolean stabilizeLandscapeWindowShape(Object info) {
+        return freeform.stabilizeLandscapeWindowShape(info);
+    }
+
+    boolean suppressLandscapeShapeChange(int taskId, int orientation) {
+        return freeform.suppressLandscapeShapeChange(taskId, orientation);
+    }
+
     void prepareShortcutEnterAnimation(Object change, Object taskInfo) {
         freeform.prepareShortcutEnterAnimation(change, taskInfo);
     }
@@ -384,8 +404,17 @@ final class FanRuntime {
                 }
                 honeycombOverlay.externalMove(x, y);
             }
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                honeycombOverlay.externalUp(x, y, action == MotionEvent.ACTION_CANCEL);
+            if (action == MotionEvent.ACTION_CANCEL) {
+                // A heads-up notification can cancel the monitor's current stream even
+                // though the user never opened a system panel. Keep the honeycomb alive;
+                // its own full-screen view will accept the next touch immediately.
+                honeycombOverlay.externalCancel();
+                resetFan(false);
+                Log.i("Honeycomb input stream cancelled externally; overlay retained");
+                return;
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                honeycombOverlay.externalUp(x, y, false);
                 resetFan(false);
             }
             return;
@@ -735,7 +764,13 @@ final class FanRuntime {
         boolean shown = honeycombOverlay.show(honeycombTargets, launchCorner, x, y, config,
                 new HoneycombOverlayController.Listener() {
                     @Override public void onLaunch(RuntimeTarget target) {
-                        launchHoneycombTarget(target);
+                        if (config.bottomHoneycombFreeform) {
+                            freeform.launch(target, config,
+                                    FanRuntime.this::refreshOutsideCapture);
+                            refreshOutsideCaptureAfterLaunch();
+                        } else {
+                            launchHoneycombTarget(target);
+                        }
                     }
 
                     @Override public void onClosed() {
@@ -1273,19 +1308,24 @@ final class FanRuntime {
         int width = displayBounds().width();
         if (action == MotionEvent.ACTION_DOWN) {
             Insets systemSides = systemSideGestureInsets();
-            if (GestureGeometry.sideAt(x, width,
-                    systemSides.left, systemSides.right) != null) {
-                capturedNativeEdgeDownTime = downTime;
-                Log.i("Outside guard consumed redirected native-edge stream");
-                return;
-            }
-            ignoredCaptureDownTime = downTime;
+            boolean nativeSideEdge = GestureGeometry.sideAt(x, width,
+                    systemSides.left, systemSides.right) != null;
+            // The capture window owns this touch stream. A side-edge tap therefore
+            // still has to enter the outside-tap recognizer; consuming it here without
+            // arming the recognizer leaves an apparently dead strip on both sides.
+            // Keep the wider side tolerance so a real back swipe yields instead of
+            // being mistaken for a tap. The global input monitor continues handling
+            // that yielded swipe and preserves the system back gesture.
+            if (!nativeSideEdge) ignoredCaptureDownTime = downTime;
             capturedImeDismissTap = false;
             Rect ime = visibleImeBounds();
             boolean imeActive = imeVisible || ime != null;
+            float leftReserve = nativeSideEdge ? systemSides.left : 0f;
+            float rightReserve = nativeSideEdge ? systemSides.right : 0f;
             Rect pending = freeform.pendingLaunchBounds();
             if (pending != null) {
-                outsideGestures.onDown(x, y, pending, width, 0, 0, eventTime);
+                outsideGestures.onDown(x, y, pending, width,
+                        leftReserve, rightReserve, eventTime);
                 return;
             }
             Rect tracked = freeform.trackedBounds();
@@ -1298,12 +1338,10 @@ final class FanRuntime {
                 return;
             }
             capturedImeDismissTap = imeActive;
-            outsideGestures.onDown(x, y, tracked, width, 0, 0, eventTime);
-            return;
-        }
-        if (downTime == capturedNativeEdgeDownTime) {
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                capturedNativeEdgeDownTime = -1L;
+            outsideGestures.onDown(x, y, tracked, width,
+                    leftReserve, rightReserve, eventTime);
+            if (nativeSideEdge) {
+                Log.i("Outside side-edge tap armed through capture window");
             }
             return;
         }
@@ -1360,6 +1398,9 @@ final class FanRuntime {
                 break;
             case ConfigContract.ACTION_FULLSCREEN:
                 handled = freeform.fullscreenTrackedOrPendingLaunch();
+                break;
+            case ConfigContract.ACTION_EDGE_PIN:
+                handled = freeform.edgePinTrackedOrPendingLaunch();
                 break;
             default:
                 Log.i("Outside " + (doubleTap ? "double" : "single") + " tap: no action");
@@ -1501,6 +1542,7 @@ final class FanRuntime {
                         + next.fanRotationDegrees + "deg ring=" + next.fanSelectionRing
                         + " honeycomb=" + next.honeycombEnabled + "/"
                         + nextHoneycombTargets.size() + " mode=" + next.honeycombMode
+                        + " bottomFreeform=" + next.bottomHoneycombFreeform
                         + " trigger=" + next.honeycombTriggerDp + "dp returnToFan="
                         + next.triggerPercent + "% outsideTap="
                         + next.outsideTapWindowMs + "ms");

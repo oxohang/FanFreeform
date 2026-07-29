@@ -329,6 +329,18 @@ final class HoneycombOverlayView extends View {
         else playDismissal();
     }
 
+    void onExternalCancel() {
+        externalTracking = false;
+        pointerValid = false;
+        lastHoldPanFrameMs = 0L;
+        removeCallbacks(holdSelectionUpdate);
+        externalVelocityX = 0f;
+        externalVelocityY = 0f;
+        select(-1, false);
+        settlePan();
+        invalidate();
+    }
+
     void setInteractionPaused(boolean paused) {
         interactionPaused = paused;
         if (paused) {
@@ -645,7 +657,19 @@ final class HoneycombOverlayView extends View {
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
-        if (!browseMode || interactionPaused || closing) return true;
+        if (interactionPaused || closing) return true;
+        if (!browseMode) {
+            int holdAction = event.getActionMasked();
+            if (holdAction == MotionEvent.ACTION_DOWN
+                    || holdAction == MotionEvent.ACTION_MOVE) {
+                onExternalMove(event.getX(), event.getY());
+            } else if (holdAction == MotionEvent.ACTION_UP) {
+                onExternalUp(event.getX(), event.getY(), false);
+            } else if (holdAction == MotionEvent.ACTION_CANCEL) {
+                onExternalCancel();
+            }
+            return true;
+        }
         scaleDetector.onTouchEvent(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {

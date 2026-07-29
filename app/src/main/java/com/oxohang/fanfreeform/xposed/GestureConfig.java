@@ -74,6 +74,7 @@ final class GestureConfig {
     boolean sideDirectionUp = true;
     boolean sideDirectionDown = true;
     boolean sideHoneycombFullscreen;
+    boolean bottomHoneycombFreeform = ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_FREEFORM;
     boolean honeycombFollowFinger = true;
     boolean honeycombLandscapeEnabled = ConfigContract.DEFAULT_HONEYCOMB_LANDSCAPE_ENABLED;
     int honeycombFixedXPercent = ConfigContract.DEFAULT_HONEYCOMB_FIXED_X_PERCENT;
@@ -170,7 +171,9 @@ final class GestureConfig {
                 ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT);
         this.triggerPercent = clamp(triggerPercent, 6, 24);
-        this.selectionRadiusPercent = clamp(selectionRadiusPercent, 35, 75);
+        this.selectionRadiusPercent = clamp(selectionRadiusPercent,
+                ConfigContract.MIN_SELECTION_RADIUS_PERCENT,
+                ConfigContract.MAX_SELECTION_RADIUS_PERCENT);
         this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
         this.hotHeightPercent = clamp(hotHeightPercent, 3,
                 ConfigContract.MAX_HOT_HEIGHT_PERCENT);
@@ -372,7 +375,9 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED);
         result.landscapeWidthPercent = clamp(bundle.getInt(
                 ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
-                ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT), 40, 90);
+                ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT),
+                ConfigContract.MIN_LANDSCAPE_WIDTH_PERCENT,
+                ConfigContract.MAX_LANDSCAPE_WIDTH_PERCENT);
         result.landscapeHeightPercent = clamp(bundle.getInt(
                 ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT,
                 ConfigContract.DEFAULT_LANDSCAPE_HEIGHT_PERCENT), 35, 85);
@@ -396,6 +401,9 @@ final class GestureConfig {
         result.sideDirectionDown = bundle.getBoolean(ConfigContract.KEY_SIDE_DIRECTION_DOWN, true);
         result.sideHoneycombFullscreen = bundle.getBoolean(
                 ConfigContract.KEY_SIDE_HONEYCOMB_FULLSCREEN, false);
+        result.bottomHoneycombFreeform = bundle.getBoolean(
+                ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM,
+                ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_FREEFORM);
         result.honeycombFollowFinger = bundle.getBoolean(
                 ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER,
                 ConfigContract.DEFAULT_HONEYCOMB_FOLLOW_FINGER);
@@ -509,6 +517,7 @@ final class GestureConfig {
         return action == ConfigContract.ACTION_CLOSE
                 || action == ConfigContract.ACTION_PIN
                 || action == ConfigContract.ACTION_FULLSCREEN
+                || action == ConfigContract.ACTION_EDGE_PIN
                 ? action : ConfigContract.ACTION_NONE;
     }
 }

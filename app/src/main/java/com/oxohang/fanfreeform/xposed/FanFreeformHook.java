@@ -25,6 +25,8 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController";
     private static final String FREEFORM_ANIMATION =
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation";
+    private static final String FREEFORM_PIN_HANDLER =
+            "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModePinHandler";
 
     @SuppressLint("StaticFieldLeak")
     private static volatile FanRuntime runtime;
@@ -41,7 +43,9 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         Log.i("Loading in SystemUI process=" + loadPackageParam.processName);
         hookFreeformController(loadPackageParam.classLoader);
         hookMiniAnimationTarget(loadPackageParam.classLoader);
+        hookEdgePinRestoreTarget(loadPackageParam.classLoader);
         hookShortcutEnterAnimation(loadPackageParam.classLoader);
+        hookLandscapeWindowShape(loadPackageParam.classLoader);
         hookInputController(loadPackageParam.classLoader);
         hookStatusBarTouchEntry(loadPackageParam.classLoader);
         hookShadeExpansion(loadPackageParam.classLoader);
@@ -385,6 +389,47 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
     }
 
+    private static void hookEdgePinRestoreTarget(ClassLoader classLoader) {
+        try {
+            Class<?> pinHandlerClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_PIN_HANDLER, classLoader);
+            if (pinHandlerClass != null) {
+                XposedBridge.hookAllMethods(pinHandlerClass, "setUnPinAnimInfo",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                FanRuntime active = runtime;
+                                if (active == null || param.args.length < 5
+                                        || !(param.args[1] instanceof Number)) return;
+                                int animationType = ((Number) param.args[1]).intValue();
+                                if (animationType == 8 || animationType == 9) {
+                                    active.adjustEdgePinRestoreTarget(
+                                            param.args[0], param.args[4], null);
+                                }
+                            }
+                        });
+            }
+
+            Class<?> animationClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_ANIMATION, classLoader);
+            if (animationClass != null) {
+                XposedBridge.hookAllMethods(animationClass, "startUnpinShellTransition",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) {
+                                FanRuntime active = runtime;
+                                if (active == null || param.args.length < 3) return;
+                                active.adjustEdgePinRestoreTarget(
+                                        param.args[0], null, param.args[2]);
+                            }
+                        });
+            }
+            Log.i("Freeform edge-pin restore target hooks installed");
+        } catch (Throwable error) {
+            Log.e("Freeform edge-pin restore target hooks failed safely", error);
+        }
+    }
+
     private static void hookShortcutEnterAnimation(ClassLoader classLoader) {
         try {
             Class<?> animationClass = XposedHelpers.findClassIfExists(
@@ -417,6 +462,55 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Log.i("Shortcut enter animation alignment hooks installed");
         } catch (Throwable error) {
             Log.e("Shortcut enter animation alignment hooks failed safely", error);
+        }
+    }
+
+    private static void hookLandscapeWindowShape(ClassLoader classLoader) {
+        try {
+            Class<?> animationClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_ANIMATION, classLoader);
+            int orientationHookCount = 0;
+            if (animationClass != null) {
+                XC_MethodHook orientationHook = new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        FanRuntime active = runtime;
+                        if (active == null || param.args.length == 0) return;
+                        if (active.stabilizeLandscapeWindowShape(param.args[0])) {
+                            param.setResult(null);
+                        }
+                    }
+                };
+                orientationHookCount += XposedBridge.hookAllMethods(animationClass,
+                        "adjustFreeformOrientationIfNeed", orientationHook).size();
+                orientationHookCount += XposedBridge.hookAllMethods(animationClass,
+                        "lambda$startFreeformOrientationChangeShellTransition$4",
+                        orientationHook).size();
+            }
+            int requestHookCount = 0;
+            Class<?> controllerClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_CONTROLLER, classLoader);
+            if (controllerClass != null) {
+                requestHookCount = XposedBridge.hookAllMethods(controllerClass,
+                        "setRequestedOrientation", new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) {
+                                FanRuntime active = runtime;
+                                if (active == null || param.args.length < 2
+                                        || !(param.args[0] instanceof Number)
+                                        || !(param.args[1] instanceof Number)) return;
+                                int taskId = ((Number) param.args[0]).intValue();
+                                int orientation = ((Number) param.args[1]).intValue();
+                                if (active.suppressLandscapeShapeChange(taskId, orientation)) {
+                                    param.setResult(null);
+                                }
+                            }
+                        }).size();
+            }
+            Log.i("Configured landscape freeform shape hooks installed orientation="
+                    + orientationHookCount + " requested=" + requestHookCount);
+        } catch (Throwable error) {
+            Log.e("Configured landscape freeform shape hooks failed safely", error);
         }
     }
 

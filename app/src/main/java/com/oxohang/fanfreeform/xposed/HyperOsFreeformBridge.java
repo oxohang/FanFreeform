@@ -47,6 +47,7 @@ final class HyperOsFreeformBridge {
     private final FreeformTaskRegistry tasks = new FreeformTaskRegistry();
     private final LinkedHashSet<Integer> visibleFreeformTaskIds = new LinkedHashSet<>();
     private final LinkedHashSet<Integer> normalFreeformTaskIds = new LinkedHashSet<>();
+    private final LinkedHashSet<Integer> edgePinnedTaskIds = new LinkedHashSet<>();
 
     private volatile Object controller;
     private volatile int trackedTaskId = -1;
@@ -67,6 +68,10 @@ final class HyperOsFreeformBridge {
     private volatile int recentShortcutUserId;
     private volatile long recentShortcutUntil;
     private volatile Rect recentShortcutLaunchBounds;
+    private volatile String recentLandscapeLaunchPackage;
+    private volatile int recentLandscapeLaunchUserId;
+    private volatile long recentLandscapeLaunchUntil;
+    private volatile Rect recentLandscapeLaunchBounds;
     private volatile int lastShortcutAlignedTaskId = -1;
     private volatile long lastShortcutAlignmentAt;
     private volatile int lastShortcutPreparedTaskId = -1;
@@ -231,19 +236,29 @@ final class HyperOsFreeformBridge {
             return;
         }
         Rect configuredBounds;
+        boolean landscapeLaunch;
         long now = SystemClock.elapsedRealtime();
         synchronized (taskLock) {
-            if (recentShortcutPackage == null || now > recentShortcutUntil
-                    || !recentShortcutPackage.equals(packageName(running))
-                    || recentShortcutUserId != taskUserId(running)) {
+            String actualPackage = packageName(running);
+            int actualUserId = taskUserId(running);
+            boolean shortcutLaunch = recentShortcutPackage != null
+                    && now <= recentShortcutUntil
+                    && recentShortcutPackage.equals(actualPackage)
+                    && recentShortcutUserId == actualUserId;
+            landscapeLaunch = recentLandscapeLaunchPackage != null
+                    && now <= recentLandscapeLaunchUntil
+                    && recentLandscapeLaunchPackage.equals(actualPackage)
+                    && recentLandscapeLaunchUserId == actualUserId;
+            if (!shortcutLaunch && !landscapeLaunch) {
                 return;
             }
             if (lastShortcutPreparedTaskId == running.taskId
                     && now - lastShortcutPreparedAt < 700L) {
                 return;
             }
-            configuredBounds = recentShortcutLaunchBounds == null ? null
-                    : new Rect(recentShortcutLaunchBounds);
+            Rect savedBounds = landscapeLaunch
+                    ? recentLandscapeLaunchBounds : recentShortcutLaunchBounds;
+            configuredBounds = savedBounds == null ? null : new Rect(savedBounds);
             if (configuredBounds == null || configuredBounds.isEmpty()) return;
             lastShortcutPreparedTaskId = running.taskId;
             lastShortcutPreparedAt = now;
@@ -282,11 +297,12 @@ final class HyperOsFreeformBridge {
                         new Rect(configuredBounds));
                 XposedHelpers.callMethod(organizer, "applyTransaction", transaction);
             }
-            Log.i("Shortcut enter animation prepared at configured bounds task="
+            Log.i((landscapeLaunch ? "Landscape" : "Shortcut")
+                    + " enter animation prepared at configured bounds task="
                     + running.taskId + " bounds=" + configuredBounds
                     + " top=" + running.topActivity);
         } catch (Throwable error) {
-            Log.e("Cannot prepare shortcut enter animation task=" + running.taskId,
+            Log.e("Cannot prepare configured enter animation task=" + running.taskId,
                     error);
         }
     }
@@ -419,6 +435,7 @@ final class HyperOsFreeformBridge {
             if (externalTrackedTaskId == taskId) externalTrackedTaskId = -1;
             visibleFreeformTaskIds.remove(taskId);
             normalFreeformTaskIds.remove(taskId);
+            edgePinnedTaskIds.remove(taskId);
             removeTaskLocked(taskId, "task vanished");
         }
     }
@@ -624,6 +641,11 @@ final class HyperOsFreeformBridge {
         return miniTracked();
     }
 
+    boolean edgePinTrackedOrPendingLaunch() {
+        if (queuePendingLaunchAction(ConfigContract.ACTION_EDGE_PIN)) return true;
+        return edgePinTracked();
+    }
+
     private boolean queuePendingLaunchAction(int action) {
         synchronized (taskLock) {
             if (pendingPackage == null
@@ -644,6 +666,8 @@ final class HyperOsFreeformBridge {
             handled = miniTracked();
         } else if (action == ConfigContract.ACTION_FULLSCREEN) {
             handled = fullscreenTracked();
+        } else if (action == ConfigContract.ACTION_EDGE_PIN) {
+            handled = edgePinTracked();
         } else {
             return;
         }
@@ -657,6 +681,67 @@ final class HyperOsFreeformBridge {
                 || !booleanCall(info, "isNormalState", false)
                 || booleanCall(info, "isMiniState", false) || isPinned(info)) return false;
         return miniTask(taskId, info);
+    }
+
+    boolean edgePinTracked() {
+        int taskId = interactionTaskId();
+        Object info = taskInfo(taskId);
+        if (taskId < 0 || controller == null || info == null
+                || !booleanCall(info, "isNormalState", false)
+                || booleanCall(info, "isMiniState", false) || isPinned(info)) return false;
+        try {
+            Object executor = XposedHelpers.getObjectField(controller, "mMainExecutor");
+            if (!(executor instanceof Executor)) {
+                throw new IllegalStateException("HyperOS Shell main executor is unavailable");
+            }
+            synchronized (taskLock) {
+                edgePinnedTaskIds.add(taskId);
+            }
+            ((Executor) executor).execute(() -> edgePinOnShellThread(taskId));
+            Log.i("Native freeform edge-pin scheduled task=" + taskId);
+            return true;
+        } catch (Throwable error) {
+            synchronized (taskLock) {
+                edgePinnedTaskIds.remove(taskId);
+            }
+            Log.e("Cannot schedule native freeform edge-pin task=" + taskId, error);
+            return false;
+        }
+    }
+
+    private void edgePinOnShellThread(int taskId) {
+        try {
+            Object info = taskInfo(taskId);
+            if (info == null || !booleanCall(info, "isNormalState", false)
+                    || booleanCall(info, "isMiniState", false) || isPinned(info)) {
+                synchronized (taskLock) {
+                    edgePinnedTaskIds.remove(taskId);
+                }
+                return;
+            }
+            Rect bounds = null;
+            Object value = XposedHelpers.callMethod(info, "getScaledBounds");
+            if (value instanceof Rect && !((Rect) value).isEmpty()) {
+                bounds = new Rect((Rect) value);
+            }
+            Rect display = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics().getBounds();
+            float centerX = bounds == null ? display.exactCenterX() : bounds.exactCenterX();
+            float centerY = bounds == null ? display.exactCenterY() : bounds.exactCenterY();
+            boolean right = centerX >= display.exactCenterX();
+            float edgeX = right ? display.right : display.left;
+            float outwardVelocity = (right ? 1f : -1f) * Math.max(1800f,
+                    display.width() * 1.8f);
+            XposedHelpers.callMethod(controller, "startPinAnimation", info,
+                    edgeX, centerY, outwardVelocity, 0f);
+            Log.i("Native freeform edge-pin started task=" + taskId
+                    + " side=" + (right ? "right" : "left"));
+        } catch (Throwable error) {
+            synchronized (taskLock) {
+                edgePinnedTaskIds.remove(taskId);
+            }
+            Log.e("Cannot start native freeform edge-pin task=" + taskId, error);
+        }
     }
 
     private boolean miniTask(int taskId, Object info) {
@@ -749,6 +834,81 @@ final class HyperOsFreeformBridge {
         } catch (Throwable error) {
             Log.e("Cannot force native mini target to right task=" + taskId, error);
         }
+    }
+
+    void adjustEdgePinRestoreTarget(Object info, Object target, Object transaction) {
+        int taskId = info == null ? -1 : intCall(info, "getTaskId", -1);
+        synchronized (taskLock) {
+            if (taskId < 0 || !edgePinnedTaskIds.contains(taskId)) return;
+        }
+        try {
+            float scale = numberCall(info, "getFreeformScale", 0.7f);
+            if (scale < 0.35f || scale > 1.2f) scale = 0.7f;
+            Rect configuredBounds = customLaunchBounds(latestConfig, scale);
+            Object resolvedTarget = target;
+            if (resolvedTarget == null) {
+                resolvedTarget = XposedHelpers.callMethod(info, "getAnimInfo");
+            }
+            if (resolvedTarget != null) {
+                XposedHelpers.callMethod(resolvedTarget, "setAnimParam",
+                        new Rect(configuredBounds), scale, scale, 0f);
+            }
+            if (transaction != null) {
+                Object running = XposedHelpers.callMethod(info, "getTaskInfo");
+                Object token = XposedHelpers.getObjectField(running, "token");
+                XposedHelpers.callMethod(transaction, "setBounds", token,
+                        new Rect(configuredBounds));
+            }
+            Log.i("Redirected edge-pin restore to configured bounds task=" + taskId
+                    + " bounds=" + configuredBounds + " scale=" + scale
+                    + " transaction=" + (transaction != null));
+        } catch (Throwable error) {
+            Log.e("Cannot redirect edge-pin restore task=" + taskId, error);
+        }
+    }
+
+    boolean stabilizeLandscapeWindowShape(Object info) {
+        int taskId = info == null ? -1 : intCall(info, "getTaskId", -1);
+        if (!shouldHoldLandscapeShape(taskId)) return false;
+        try {
+            Rect bounds = (Rect) XposedHelpers.callMethod(info, "getBounds");
+            if (bounds == null || bounds.isEmpty()) return false;
+            boolean landscapeShape = bounds.width() > bounds.height();
+            XposedHelpers.callMethod(info, "setIsLandscapeFreeform", landscapeShape);
+            Log.i("Suppressed automatic freeform orientation reshape task=" + taskId
+                    + " bounds=" + bounds + " landscapeShape=" + landscapeShape);
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot stabilize landscape freeform shape task=" + taskId, error);
+            return false;
+        }
+    }
+
+    boolean suppressLandscapeShapeChange(int taskId, int orientation) {
+        if (!shouldHoldLandscapeShape(taskId) || isFlexibleOrientation(orientation)) {
+            return false;
+        }
+        Log.i("Suppressed app-requested freeform reshape in landscape task=" + taskId
+                + " orientation=" + orientation);
+        return true;
+    }
+
+    private boolean shouldHoldLandscapeShape(int taskId) {
+        synchronized (taskLock) {
+            if (taskId < 0 || !tasks.contains(taskId)) return false;
+        }
+        Rect display = context.getSystemService(WindowManager.class)
+                .getCurrentWindowMetrics().getBounds();
+        if (display.width() <= display.height()) return false;
+        Object info = taskInfo(taskId);
+        return info != null && booleanCall(info, "isNormalState", false)
+                && !booleanCall(info, "isMiniState", false) && !isPinned(info);
+    }
+
+    private static boolean isFlexibleOrientation(int orientation) {
+        return orientation == -2 || orientation == -1 || orientation == 2
+                || orientation == 3 || orientation == 4 || orientation == 10
+                || orientation == 13 || orientation == 14;
     }
 
     private void minimizeOnShellThread(int taskId) {
@@ -976,6 +1136,21 @@ final class HyperOsFreeformBridge {
             pendingLaunchOptions = new Bundle(options);
             pendingResizeRetry = false;
             pendingShortcutLaunch = shortcutLaunch;
+            WindowMetrics metrics = context.getSystemService(WindowManager.class)
+                    .getCurrentWindowMetrics();
+            Rect display = metrics.getBounds();
+            if (display.width() > display.height()) {
+                recentLandscapeLaunchPackage = packageName;
+                recentLandscapeLaunchUserId = userId;
+                recentLandscapeLaunchUntil = pendingSince + 2200L;
+                recentLandscapeLaunchBounds = launchBounds == null
+                        ? null : new Rect(launchBounds);
+            } else {
+                recentLandscapeLaunchPackage = null;
+                recentLandscapeLaunchUserId = 0;
+                recentLandscapeLaunchUntil = 0L;
+                recentLandscapeLaunchBounds = null;
+            }
             if (shortcutLaunch) {
                 recentShortcutPackage = packageName;
                 recentShortcutUserId = userId;
@@ -1273,15 +1448,27 @@ final class HyperOsFreeformBridge {
         if (safe.width() <= 0 || safe.height() <= 0) safe.set(display);
         boolean landscape = display.width() > display.height();
 
+        // In landscape the system-bar insets take a much larger share of the short edge.
+        // Using the inset-safe rectangle as the percentage reference made the configured
+        // window look wider and shorter than the settings preview. Keep the safe rectangle
+        // for placement, but interpret landscape width/height as percentages of the physical
+        // display, exactly as the preview presents them. Portrait behavior stays unchanged.
+        Rect sizeReference = landscape ? display : safe;
+        Rect placement = landscape
+                ? new Rect(display.left + edge, display.top + edge,
+                display.right - edge, display.bottom - edge)
+                : safe;
         int visualWidth = Math.max(1,
-                Math.round(safe.width() * config.windowWidthPercent(landscape) / 100f));
+                Math.round(sizeReference.width()
+                        * config.windowWidthPercent(landscape) / 100f));
         int visualHeight = Math.max(1,
-                Math.round(safe.height() * config.windowHeightPercent(landscape) / 100f));
-        int visualLeft = safe.left
-                + Math.round((safe.width() - visualWidth)
+                Math.round(sizeReference.height()
+                        * config.windowHeightPercent(landscape) / 100f));
+        int visualLeft = placement.left
+                + Math.round((placement.width() - visualWidth)
                 * config.windowPositionX(landscape) / 100f);
-        int visualTop = safe.top
-                + Math.round((safe.height() - visualHeight)
+        int visualTop = placement.top
+                + Math.round((placement.height() - visualHeight)
                 * config.windowPositionY(landscape) / 100f);
         int logicalWidth = Math.round(visualWidth / scale);
         int logicalHeight = Math.round(visualHeight / scale);

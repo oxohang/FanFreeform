@@ -74,6 +74,22 @@ public final class AnimationSettingsActivity extends Activity {
         enabledRow.addView(enabled);
         card.addView(enabledRow);
         card.addView(Ui.divider(this));
+        LinearLayout shadowRow = row();
+        LinearLayout shadowLabels = new LinearLayout(this);
+        shadowLabels.setOrientation(LinearLayout.VERTICAL);
+        shadowLabels.addView(text("扇形背景阴影", 16, Ui.TEXT, Typeface.BOLD));
+        shadowLabels.addView(text("呼出时显示扇形区域的渐变暗影", 13,
+                Ui.MUTED, Typeface.NORMAL));
+        shadowRow.addView(shadowLabels, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch shadow = new Switch(this);
+        shadow.setChecked(preferences.getBoolean(ConfigContract.KEY_FAN_SHADOW,
+                ConfigContract.DEFAULT_FAN_SHADOW));
+        shadow.setOnCheckedChangeListener((button, checked) ->
+                store.putBoolean(ConfigContract.KEY_FAN_SHADOW, checked));
+        shadowRow.addView(shadow);
+        card.addView(shadowRow);
+        card.addView(Ui.divider(this));
         int speed = preferences.getInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
                 ConfigContract.DEFAULT_FAN_ANIMATION_SPEED);
         card.addView(slider("动画速度", ConfigContract.KEY_FAN_ANIMATION_SPEED, speed,

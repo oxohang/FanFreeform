@@ -36,6 +36,7 @@ final class OutsideTouchCapture {
     private int currentLeftPassThrough;
     private int currentRightPassThrough;
     private volatile boolean capturing;
+    private int activeGeneration;
 
     OutsideTouchCapture(Context context, Handler mainHandler, TouchListener touchListener) {
         this.context = context;
@@ -81,14 +82,17 @@ final class OutsideTouchCapture {
         }
 
         removeNow();
+        int generation = activeGeneration;
         List<Rect> regions = outsideRegions(display, clippedWindows, clippedIme,
                 leftPassThrough, rightPassThrough);
         // Application-overlay is above app/freeform windows but below StatusBar and
         // NotificationShade. This keeps system panels touchable without weakening
         // outside-tap blocking. Retain the old types only as compatibility fallbacks.
-        if (!attach(regions, clippedWindows.size(), TYPE_APPLICATION_OVERLAY)
-                && !attach(regions, clippedWindows.size(), TYPE_NAVIGATION_BAR_PANEL)
-                && !attach(regions, clippedWindows.size(), TYPE_MAGNIFICATION_OVERLAY)) {
+        if (!attach(regions, clippedWindows.size(), TYPE_APPLICATION_OVERLAY, generation)
+                && !attach(regions, clippedWindows.size(),
+                TYPE_NAVIGATION_BAR_PANEL, generation)
+                && !attach(regions, clippedWindows.size(),
+                TYPE_MAGNIFICATION_OVERLAY, generation)) {
             Log.i("Outside touch capture unavailable; using input-monitor fallback");
             return;
         }
@@ -102,13 +106,16 @@ final class OutsideTouchCapture {
         }
     }
 
-    private boolean attach(List<Rect> regions, int windowCount, int type) {
+    private boolean attach(List<Rect> regions, int windowCount, int type,
+                           int generation) {
         try {
             for (int index = 0; index < regions.size(); index++) {
                 Rect region = regions.get(index);
-                View view = captureView(index);
-                windowManager.addView(view, params(region, type, index));
+                View view = captureView(index, generation);
+                // Track first so cleanup can still reach a view when addView throws
+                // after WindowManagerGlobal has already registered it.
                 views.add(view);
+                windowManager.addView(view, params(region, type, index));
             }
             capturing = !views.isEmpty();
             if (capturing) {
@@ -123,11 +130,18 @@ final class OutsideTouchCapture {
         }
     }
 
-    private View captureView(int index) {
+    private View captureView(int index, int generation) {
         View view = new View(context);
         view.setClickable(true);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         view.setOnTouchListener((target, event) -> {
+            if (generation != activeGeneration) {
+                // An IME animation can request several region updates before a newly
+                // added view reports itself attached. If an obsolete view ever survives
+                // that race, remove it on first contact instead of leaving a dead strip.
+                removeStaleView(target, generation);
+                return true;
+            }
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 Log.i("Outside capture consumed down region=" + index);
             }
@@ -157,6 +171,7 @@ final class OutsideTouchCapture {
     }
 
     private void removeNow() {
+        activeGeneration++;
         removeViews();
         currentWindows = new ArrayList<>();
         currentIme.setEmpty();
@@ -166,17 +181,32 @@ final class OutsideTouchCapture {
     }
 
     private void removeViews() {
-        for (View view : views) {
-            if (view == null || !view.isAttachedToWindow()) continue;
+        List<View> removing = new ArrayList<>(views);
+        views.clear();
+        capturing = false;
+        activeRegions = new ArrayList<>();
+        for (View view : removing) {
+            if (view == null) continue;
             try {
+                // WindowManager already knows about a view immediately after addView,
+                // even before View#isAttachedToWindow becomes true. Skipping it in that
+                // interval leaks an invisible touch window, most often while IME bounds
+                // are changing quickly.
                 windowManager.removeViewImmediate(view);
             } catch (Throwable error) {
                 Log.e("Cannot remove outside touch capture", error);
             }
         }
-        views.clear();
-        capturing = false;
-        activeRegions = new ArrayList<>();
+    }
+
+    private void removeStaleView(View view, int generation) {
+        try {
+            windowManager.removeViewImmediate(view);
+            Log.i("Removed stale outside capture generation=" + generation
+                    + " active=" + activeGeneration);
+        } catch (Throwable error) {
+            Log.e("Cannot remove stale outside touch capture", error);
+        }
     }
 
     private void runOnMain(Runnable runnable) {

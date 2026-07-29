@@ -111,6 +111,11 @@ final class HoneycombOverlayController {
                 toLocalX(x), toLocalY(y), cancelled);
     }
 
+    void externalCancel() {
+        HoneycombOverlayView current = view;
+        if (attached && current != null) current.onExternalCancel();
+    }
+
     void setPaused(boolean paused) {
         HoneycombOverlayView current = view;
         if (attached && current != null) current.setInteractionPaused(paused);
