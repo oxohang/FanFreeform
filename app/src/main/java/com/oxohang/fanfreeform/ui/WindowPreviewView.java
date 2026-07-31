@@ -16,6 +16,7 @@ public final class WindowPreviewView extends View {
     private int heightPercent = 58;
     private int positionX = 50;
     private int positionY = 50;
+    private boolean landscape;
 
     public WindowPreviewView(Context context) {
         super(context);
@@ -35,13 +36,18 @@ public final class WindowPreviewView extends View {
         invalidate();
     }
 
+    public void setLandscape(boolean landscape) {
+        this.landscape = landscape;
+        invalidate();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float pad = Ui.dp(getContext(), 18);
         float availableW = getWidth() - pad * 2;
         float availableH = getHeight() - pad * 2;
-        float screenRatio = 1200f / 2608f;
+        float screenRatio = landscape ? 2608f / 1200f : 1200f / 2608f;
         float screenH = availableH;
         float screenW = screenH * screenRatio;
         if (screenW > availableW) {

@@ -1,7 +1,7 @@
 package com.oxohang.fanfreeform.ui;
 
 import android.app.Activity;
-import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -10,43 +10,36 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 
-@SuppressLint("SetTextI18n")
 public final class GestureSettingsActivity extends Activity {
     public static final String EXTRA_MODE = "mode";
     public static final String MODE_BOTTOM = "bottom";
     public static final String MODE_SIDE = "side";
 
-    private ConfigStore store;
     private SharedPreferences prefs;
     private boolean sideMode;
-    private int hotWidthPercent;
-    private int hotHeightPercent;
-    private GesturePreviewView gesturePreview;
+    private LinearLayout entries;
 
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         sideMode = MODE_SIDE.equals(getIntent().getStringExtra(EXTRA_MODE));
-        store = new ConfigStore(this);
-        prefs = store.preferences();
-        hotWidthPercent = prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT,
-                ConfigContract.DEFAULT_HOT_WIDTH_PERCENT);
-        hotHeightPercent = prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT,
-                ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT);
+        prefs = new ConfigStore(this).preferences();
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().setNavigationBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-        setContentView(buildContent());
+        setContentView(content());
     }
 
-    private View buildContent() {
+    @Override protected void onResume() {
+        super.onResume();
+        if (entries != null) populateEntries();
+    }
+
+    private View content() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(0xfff4f5fa);
@@ -54,184 +47,146 @@ public final class GestureSettingsActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(Ui.dp(this, 20), Ui.dp(this, 14),
                 Ui.dp(this, 20), Ui.dp(this, 36));
-        scroll.addView(root, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        scroll.addView(root);
+        root.addView(header(sideMode ? "侧滑手势" : "底角斜滑"));
+        TextView subtitle = text(sideMode
+                        ? "侧滑只有一段；横竖屏可分别选择布局和启动方式"
+                        : "一段扇形与二段蜂窝；横竖屏分别控制",
+                14, Ui.MUTED, Typeface.NORMAL);
+        subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
+        root.addView(subtitle);
+        entries = new LinearLayout(this);
+        entries.setOrientation(LinearLayout.VERTICAL);
+        root.addView(entries);
+        populateEntries();
+        return scroll;
+    }
 
+    private void populateEntries() {
+        entries.removeAllViews();
+        if (sideMode) populateSide();
+        else populateBottom();
+    }
+
+    private void populateBottom() {
+        entries.addView(entry("竖屏行为", bottomSummary(false),
+                () -> openDetail(GestureDetailSettingsActivity.BOTTOM_PORTRAIT)));
+        entries.addView(entry("横屏行为", bottomSummary(true),
+                () -> openDetail(GestureDetailSettingsActivity.BOTTOM_LANDSCAPE)));
+        entries.addView(entry("触发与选择", "触发区域、一段距离、二段距离与回退",
+                () -> openDetail(GestureDetailSettingsActivity.BOTTOM_TRIGGER)));
+        entries.addView(entry("应用与扇形排列", "已选 "
+                        + new ConfigStore(this).getTargets().size() + " 项 · 图标与排数",
+                () -> openDetail(GestureDetailSettingsActivity.BOTTOM_LAYOUT)));
+        entries.addView(entry("扇形动效设置", "呼出、旋转、选中放大、淡出与阴影",
+                () -> openAnimation(AnimationSettingsActivity.MODE_BOTTOM)));
+    }
+
+    private void populateSide() {
+        entries.addView(entry("竖屏行为与布局", sideSummary(false),
+                () -> openDetail(GestureDetailSettingsActivity.SIDE_PORTRAIT)));
+        entries.addView(entry("横屏行为与布局", sideSummary(true),
+                () -> openDetail(GestureDetailSettingsActivity.SIDE_LANDSCAPE)));
+        entries.addView(entry("方向与触发", "安全距离、允许方向、触发距离与停留",
+                () -> openDetail(GestureDetailSettingsActivity.SIDE_TRIGGER)));
+        entries.addView(entry("应用与布局参数", "已选 "
+                        + new ConfigStore(this).getSideTargets().size()
+                        + " 项 · 图标、环形大小与跟手位置",
+                () -> openDetail(GestureDetailSettingsActivity.SIDE_LAYOUT)));
+        entries.addView(entry("侧滑动效设置", "呼出、选择放大、旋转与取消淡出",
+                () -> openAnimation(AnimationSettingsActivity.MODE_SIDE)));
+    }
+
+    private String bottomSummary(boolean landscape) {
+        String firstKey = landscape ? ConfigContract.KEY_BOTTOM_LANDSCAPE_ENABLED
+                : ConfigContract.KEY_BOTTOM_PORTRAIT_ENABLED;
+        String secondKey = landscape
+                ? ConfigContract.KEY_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED
+                : ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_STAGE_ENABLED;
+        String fullscreenKey = landscape ? ConfigContract.KEY_BOTTOM_LANDSCAPE_FULLSCREEN
+                : ConfigContract.KEY_BOTTOM_PORTRAIT_FULLSCREEN;
+        String freeformKey = landscape
+                ? ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM
+                : ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM;
+        boolean first = prefs.getBoolean(firstKey, !landscape);
+        boolean second = prefs.getBoolean(secondKey, !landscape);
+        String firstText = first ? (prefs.getBoolean(fullscreenKey, false)
+                ? "一段全屏" : "一段小窗") : "一段关闭";
+        String secondText = second ? (prefs.getBoolean(freeformKey, true)
+                ? "二段小窗" : "二段全屏") : "二段关闭";
+        return firstText + " · " + secondText;
+    }
+
+    private String sideSummary(boolean landscape) {
+        String enabledKey = landscape ? ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED
+                : ConfigContract.KEY_SIDE_PORTRAIT_ENABLED;
+        if (!prefs.getBoolean(enabledKey, !landscape)) return "已关闭";
+        String fullscreenKey = landscape ? ConfigContract.KEY_SIDE_LANDSCAPE_FULLSCREEN
+                : ConfigContract.KEY_SIDE_PORTRAIT_FULLSCREEN;
+        String layoutKey = landscape ? ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE
+                : ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE;
+        int layout = prefs.getInt(layoutKey, ConfigContract.DEFAULT_SIDE_LAYOUT_MODE);
+        return layoutName(layout) + " · "
+                + (prefs.getBoolean(fullscreenKey, false) ? "全屏启动" : "小窗启动");
+    }
+
+    private String layoutName(int mode) {
+        if (mode == ConfigContract.SIDE_LAYOUT_LIST) return "纵向列表";
+        if (mode == ConfigContract.SIDE_LAYOUT_RING) return "环形";
+        if (mode == ConfigContract.SIDE_LAYOUT_FAN) return "扇形";
+        if (mode == ConfigContract.SIDE_LAYOUT_TASKS) return "任务中心";
+        if (mode == ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS) return "系统任务中心";
+        return "蜂窝";
+    }
+
+    private View entry(String title, String subtitle, Runnable action) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(Ui.dp(this, 18), Ui.dp(this, 10),
+                Ui.dp(this, 18), Ui.dp(this, 10));
+        card.setBackground(Ui.rounded(this, Ui.SURFACE, 20));
+        card.setElevation(Ui.dp(this, 1));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 8));
+        row.setOnClickListener(view -> action.run());
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text(title, 17, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text(subtitle, 13, Ui.MUTED, Typeface.NORMAL));
+        row.addView(labels, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
+        card.addView(row);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = Ui.dp(this, 12);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private void openDetail(String section) {
+        Intent intent = new Intent(this, GestureDetailSettingsActivity.class);
+        intent.putExtra(GestureDetailSettingsActivity.EXTRA_SECTION, section);
+        startActivity(intent);
+    }
+
+    private void openAnimation(String mode) {
+        Intent intent = new Intent(this, AnimationSettingsActivity.class);
+        intent.putExtra(AnimationSettingsActivity.EXTRA_MODE, mode);
+        startActivity(intent);
+    }
+
+    private View header(String title) {
         LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = text("‹", 38, Ui.TEXT, Typeface.NORMAL);
         back.setGravity(Gravity.CENTER);
         back.setContentDescription("返回");
         back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(
-                Ui.dp(this, 44), Ui.dp(this, 52)));
-        TextView title = text(sideMode ? "侧滑列表" : "底角斜滑",
-                26, Ui.TEXT, Typeface.BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        root.addView(header);
-
-        TextView subtitle = text(sideMode
-                        ? "短滑保留 HyperOS 返回，长滑呼出纵向应用列表"
-                        : "贴住左右物理底角，向屏幕内侧斜上方滑动",
-                14, Ui.MUTED, Typeface.NORMAL);
-        subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
-        root.addView(subtitle);
-
-        LinearLayout card = card();
-        if (sideMode) buildSideSettings(card);
-        else buildBottomSettings(card);
-        root.addView(card);
-        return scroll;
-    }
-
-    private void buildBottomSettings(LinearLayout card) {
-        card.addView(text("底角触发范围", 18, Ui.TEXT, Typeface.BOLD));
-        gesturePreview = new GesturePreviewView(this);
-        gesturePreview.update(hotWidthPercent, hotHeightPercent);
-        card.addView(gesturePreview, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 160)));
-        card.addView(slider("触发区宽度", ConfigContract.KEY_HOT_WIDTH_PERCENT,
-                5, 20, hotWidthPercent, value -> value + "%"));
-        card.addView(slider("触发区高度", ConfigContract.KEY_HOT_HEIGHT_PERCENT,
-                3, ConfigContract.MAX_HOT_HEIGHT_PERCENT, hotHeightPercent,
-                value -> value + "%"));
-        card.addView(slider("触发距离", ConfigContract.KEY_TRIGGER_PERCENT,
-                6, 24, prefs.getInt(ConfigContract.KEY_TRIGGER_PERCENT,
-                        ConfigContract.DEFAULT_TRIGGER_PERCENT), value -> value + "%"));
-        card.addView(slider("选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
-                35, 75, prefs.getInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
-                        ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT), value -> value + "%"));
-        card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
-                34, 64, prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
-                        ConfigContract.DEFAULT_ICON_SIZE_DP), value -> value + "dp"));
-        TextView note = text("底角区域始终从屏幕物理边缘开始，不再为侧滑手势向内避让。",
-                13, Ui.MUTED, Typeface.NORMAL);
-        note.setPadding(0, Ui.dp(this, 10), 0, 0);
-        card.addView(note);
-    }
-
-    private void buildSideSettings(LinearLayout card) {
-        card.addView(text("侧滑参数", 18, Ui.TEXT, Typeface.BOLD));
-        card.addView(slider("长滑触发距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
-                18, 50, prefs.getInt(ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
-                        ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT), value -> value + "%"));
-        card.addView(slider("列表图标大小", ConfigContract.KEY_SIDE_ICON_SIZE_DP,
-                34, 64, prefs.getInt(ConfigContract.KEY_SIDE_ICON_SIZE_DP,
-                        prefs.getInt(ConfigContract.KEY_ICON_SIZE_DP,
-                                ConfigContract.DEFAULT_SIDE_ICON_SIZE_DP)),
-                value -> value + "dp"));
-        card.addView(slider("顶部安全距离", ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
-                8, 35, prefs.getInt(ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
-                        ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT),
-                value -> value + "%"));
-        card.addView(slider("反向取消距离", ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
-                ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
-                ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
-                prefs.getInt(ConfigContract.KEY_SIDE_REVERSE_CANCEL_PERCENT,
-                        ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT),
-                value -> value + "%"));
-        card.addView(Ui.divider(this));
-        card.addView(booleanRow("跟随手指显示", "列表在长滑达到阈值时显示于手指前方",
-                ConfigContract.KEY_SIDE_FOLLOW_FINGER,
-                ConfigContract.DEFAULT_SIDE_FOLLOW_FINGER));
-        card.addView(Ui.divider(this));
-        LinearLayout namesRow = row();
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.addView(text("显示应用名称", 16, Ui.TEXT, Typeface.BOLD));
-        labels.addView(text("关闭后只在选中图标时浮现名称",
-                13, Ui.MUTED, Typeface.NORMAL));
-        namesRow.addView(labels, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch names = new Switch(this);
-        names.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES,
-                ConfigContract.DEFAULT_SIDE_SHOW_APP_NAMES));
-        names.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(ConfigContract.KEY_SIDE_SHOW_APP_NAMES, checked));
-        namesRow.addView(names);
-        card.addView(namesRow);
-        TextView note = text("侧滑区域从顶部安全距离以下开始，止于底角热区上方并保留间隔。",
-                13, Ui.MUTED, Typeface.NORMAL);
-        note.setPadding(0, Ui.dp(this, 8), 0, 0);
-        card.addView(note);
-    }
-
-    private View booleanRow(String title, String subtitle, String key, boolean defaultValue) {
-        LinearLayout settingRow = row();
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.addView(text(title, 16, Ui.TEXT, Typeface.BOLD));
-        labels.addView(text(subtitle, 13, Ui.MUTED, Typeface.NORMAL));
-        settingRow.addView(labels, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch toggle = new Switch(this);
-        toggle.setChecked(prefs.getBoolean(key, defaultValue));
-        toggle.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(key, checked));
-        settingRow.addView(toggle);
-        return settingRow;
-    }
-
-    private View slider(String title, String key, int min, int max, int current,
-                        ValueLabel valueLabel) {
-        LinearLayout group = new LinearLayout(this);
-        group.setOrientation(LinearLayout.VERTICAL);
-        group.setPadding(0, Ui.dp(this, 16), 0, Ui.dp(this, 2));
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        TextView label = text(title, 15, Ui.TEXT, Typeface.BOLD);
-        TextView value = text(valueLabel.label(current), 14, Ui.ACCENT, Typeface.BOLD);
-        value.setGravity(Gravity.END);
-        header.addView(label, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        header.addView(value);
-        group.addView(header);
-
-        SeekBar seek = new SeekBar(this);
-        seek.setMax(max - min);
-        seek.setProgress(Math.max(0, Math.min(max - min, current - min)));
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
-
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int resolved = min + progress;
-                value.setText(valueLabel.label(resolved));
-                if (!fromUser) return;
-                store.putInt(key, resolved);
-                if (ConfigContract.KEY_HOT_WIDTH_PERCENT.equals(key)) {
-                    hotWidthPercent = resolved;
-                } else if (ConfigContract.KEY_HOT_HEIGHT_PERCENT.equals(key)) {
-                    hotHeightPercent = resolved;
-                }
-                if (gesturePreview != null) {
-                    gesturePreview.update(hotWidthPercent, hotHeightPercent);
-                }
-            }
-        });
-        group.addView(seek);
-        return group;
-    }
-
-    private LinearLayout card() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(Ui.dp(this, 18), Ui.dp(this, 17),
-                Ui.dp(this, 18), Ui.dp(this, 17));
-        card.setBackground(Ui.rounded(this, Ui.SURFACE, 20));
-        card.setElevation(Ui.dp(this, 1));
-        return card;
-    }
-
-    private LinearLayout row() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 12));
-        return row;
+        header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
+        header.addView(text(title, 26, Ui.TEXT, Typeface.BOLD));
+        return header;
     }
 
     private TextView text(String value, float size, int color, int style) {
@@ -241,9 +196,5 @@ public final class GestureSettingsActivity extends Activity {
         text.setTextColor(color);
         text.setTypeface(null, style);
         return text;
-    }
-
-    private interface ValueLabel {
-        String label(int value);
     }
 }

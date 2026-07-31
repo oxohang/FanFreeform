@@ -1,0 +1,210 @@
+package com.oxohang.fanfreeform.xposed;
+
+import android.content.Context;
+import android.graphics.PixelFormat;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+
+import java.util.List;
+
+final class HoneycombOverlayController {
+    interface Listener {
+        void onLaunch(RuntimeTarget target);
+        void onClosed();
+    }
+
+    private final Context context;
+    private final Handler mainHandler;
+    private final WindowManager windowManager;
+    private final Object moveLock = new Object();
+    private HoneycombOverlayView view;
+    private boolean attached;
+    private int windowTop;
+    private HoneycombOverlayView pendingMoveView;
+    private float pendingMoveX;
+    private float pendingMoveY;
+    private boolean moveFrameScheduled;
+    private final Runnable deliverPendingMove = () -> {
+        HoneycombOverlayView target;
+        float x;
+        float y;
+        synchronized (moveLock) {
+            target = pendingMoveView;
+            x = pendingMoveX;
+            y = pendingMoveY;
+            pendingMoveView = null;
+            moveFrameScheduled = false;
+        }
+        if (attached && target != null && view == target) {
+            target.onExternalMove(toLocalX(x), toLocalY(y));
+        }
+    };
+
+    HoneycombOverlayController(Context context, Handler mainHandler) {
+        this.context = context;
+        this.mainHandler = mainHandler;
+        windowManager = context.getSystemService(WindowManager.class);
+    }
+
+    boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                 float anchorX, float anchorY, GestureConfig config, Listener listener) {
+        removeNow();
+        if (windowManager == null || targets.isEmpty()) return false;
+        HoneycombOverlayView next = new HoneycombOverlayView(context);
+        windowTop = 0;
+        next.configure(targets, corner, toLocalX(anchorX), toLocalY(anchorY), config,
+                new HoneycombOverlayView.Listener() {
+            @Override public void onLaunch(RuntimeTarget target) {
+                removeNow();
+                listener.onLaunch(target);
+            }
+
+            @Override public void onClosed() {
+                removeNow();
+                listener.onClosed();
+            }
+        });
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                displayHeight(),
+                2038,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.y = windowTop;
+        params.setFitInsetsTypes(0);
+        params.setTitle("HyperGestureHoneycomb");
+        params.layoutInDisplayCutoutMode = WindowManager.LayoutParams
+                .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        try {
+            next.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            windowManager.addView(next, params);
+            view = next;
+            attached = true;
+            next.post(() -> {
+                try {
+                    WindowInsetsController controller = next.getWindowInsetsController();
+                    if (controller != null) {
+                        controller.setSystemBarsBehavior(WindowInsetsController
+                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                        controller.hide(WindowInsets.Type.navigationBars());
+                    }
+                } catch (Throwable error) {
+                    Log.e("Cannot hide navigation handle for honeycomb", error);
+                }
+            });
+            next.playEntry();
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot attach honeycomb overlay", error);
+            view = null;
+            attached = false;
+            return false;
+        }
+    }
+
+    private int displayHeight() {
+        return windowManager == null ? context.getResources().getDisplayMetrics().heightPixels
+                : windowManager.getCurrentWindowMetrics().getBounds().height();
+    }
+
+    boolean isVisible() { return attached && view != null; }
+
+    void externalMove(float x, float y) {
+        HoneycombOverlayView current = view;
+        if (!attached || current == null) return;
+        synchronized (moveLock) {
+            pendingMoveView = current;
+            pendingMoveX = x;
+            pendingMoveY = y;
+            if (moveFrameScheduled) return;
+            moveFrameScheduled = true;
+        }
+        current.postOnAnimation(deliverPendingMove);
+    }
+
+    void externalUp(float x, float y, boolean cancelled) {
+        HoneycombOverlayView current = view;
+        cancelPendingMove(current);
+        runOnViewThread(current, () -> {
+            float localX = toLocalX(x);
+            float localY = toLocalY(y);
+            if (!cancelled) current.onExternalMove(localX, localY);
+            current.onExternalUp(localX, localY, cancelled);
+        });
+    }
+
+    void externalCancel() {
+        HoneycombOverlayView current = view;
+        cancelPendingMove(current);
+        runOnViewThread(current, current::onExternalCancel);
+    }
+
+    void setPaused(boolean paused) {
+        HoneycombOverlayView current = view;
+        runOnViewThread(current, () -> current.setInteractionPaused(paused));
+    }
+
+    void dismiss() {
+        HoneycombOverlayView current = view;
+        runOnViewThread(current, current::playDismissal);
+    }
+
+    void removeNow() {
+        HoneycombOverlayView current = view;
+        cancelPendingMove(current);
+        view = null;
+        if (!attached || current == null || windowManager == null) {
+            attached = false;
+            return;
+        }
+        attached = false;
+        windowTop = 0;
+        mainHandler.removeCallbacksAndMessages(current);
+        Runnable removal = () -> {
+            try {
+                windowManager.removeViewImmediate(current);
+            } catch (Throwable error) {
+                Log.e("Cannot remove honeycomb overlay", error);
+            }
+        };
+        Handler owner = current.getHandler();
+        if (owner != null && owner.getLooper() != Looper.myLooper()) owner.post(removal);
+        else removal.run();
+    }
+
+    private void runOnViewThread(HoneycombOverlayView current, Runnable action) {
+        if (!attached || current == null) return;
+        Handler owner = current.getHandler();
+        if (owner != null && owner.getLooper() != Looper.myLooper()) {
+            owner.post(() -> {
+                if (attached && view == current) action.run();
+            });
+        } else if (attached && view == current) {
+            action.run();
+        }
+    }
+
+    private void cancelPendingMove(HoneycombOverlayView current) {
+        if (current != null) current.removeCallbacks(deliverPendingMove);
+        synchronized (moveLock) {
+            if (pendingMoveView == current) pendingMoveView = null;
+            moveFrameScheduled = false;
+        }
+    }
+
+    private float toLocalX(float screenX) { return screenX; }
+
+    private float toLocalY(float screenY) { return screenY - windowTop; }
+}
