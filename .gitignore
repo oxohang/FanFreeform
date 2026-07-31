@@ -5,4 +5,10 @@ local.properties
 *.iml
 captures/
 .DS_Store
-
+release-archive/
+releases/
+*.apk
+*.aab
+*.jks
+*.keystore
+signing.properties
