@@ -13,8 +13,8 @@ android {
         applicationId = "com.oxohang.fanfreeform"
         minSdk = 30
         targetSdk = 34
-        versionCode = 83
-        versionName = "beta0.9"
+        versionCode = 131
+        versionName = "1.0"
     }
 
     buildTypes {
@@ -24,6 +24,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -37,6 +38,7 @@ android {
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 val archiveDebugApk by tasks.registering {
@@ -58,6 +60,26 @@ val archiveDebugApk by tasks.registering {
     }
 }
 
+val archiveReleaseApk by tasks.registering {
+    doLast {
+        val archiveVersionName = android.defaultConfig.versionName ?: "unknown"
+        val archiveVersionCode = android.defaultConfig.versionCode ?: 0
+        val stamp = LocalDateTime.now().format(
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+        )
+        val archiveDir = rootProject.layout.projectDirectory.dir("release-archive").asFile
+        archiveDir.mkdirs()
+        copy {
+            from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+            into(archiveDir)
+            rename {
+                "HyperGesture-$archiveVersionName-build$archiveVersionCode-$stamp.apk"
+            }
+        }
+    }
+}
+
 tasks.configureEach {
     if (name == "assembleDebug") finalizedBy(archiveDebugApk)
+    if (name == "assembleRelease") finalizedBy(archiveReleaseApk)
 }

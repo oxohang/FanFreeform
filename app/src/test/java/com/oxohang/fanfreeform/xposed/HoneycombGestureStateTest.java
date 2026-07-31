@@ -27,4 +27,11 @@ public final class HoneycombGestureStateTest {
         assertTrue(state.shouldEnter(520f, 500f));
         assertFalse(state.shouldExit(0f, 0f));
     }
+
+    @Test public void stationaryEntryStillUsesExistingRetreatHysteresis() {
+        HoneycombGestureState state = new HoneycombGestureState();
+        state.enter();
+        assertFalse(state.shouldExit(171f, 170f));
+        assertTrue(state.shouldExit(170f, 170f));
+    }
 }

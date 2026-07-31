@@ -42,7 +42,14 @@ public final class GeneralSettingsActivity extends Activity {
         card.addView(toggle("显示选中应用名称", "统一用于底角和侧滑布局",
                 ConfigContract.KEY_SHOW_SELECTED_APP_NAME,
                 ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME));
+        card.addView(Ui.divider(this));
+        card.addView(toggle("强制圆形图标", "关闭后保留应用图标自带的圆角矩形或异形轮廓",
+                ConfigContract.KEY_FORCE_CIRCULAR_ICONS,
+                ConfigContract.DEFAULT_FORCE_CIRCULAR_ICONS));
         root.addView(card);
+        Ui.addResetOption(this, root,
+                "将恢复总开关、震动、应用名称和图标形状的默认值。",
+                store::resetGeneralSettings);
         returnContent(scroll);
     }
 

@@ -23,9 +23,6 @@ import com.oxohang.fanfreeform.config.ConfigStore;
 
 @SuppressLint("SetTextI18n")
 public final class HoneycombSettingsActivity extends Activity {
-    private static final String[] SPEEDS = {"很快", "较快", "标准", "柔和", "慢速"};
-    private static final String[] INERTIA = {"低", "中", "高"};
-
     private ConfigStore store;
     private SharedPreferences prefs;
     private TextView targetCountText;
@@ -61,10 +58,10 @@ public final class HoneycombSettingsActivity extends Activity {
         back.setGravity(Gravity.CENTER);
         back.setOnClickListener(view -> finish());
         header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
-        header.addView(text("蜂窝应用与动效", 26, Ui.TEXT, Typeface.BOLD),
+        header.addView(text("蜂窝应用", 26, Ui.TEXT, Typeface.BOLD),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header);
-        TextView subtitle = text("底角扇形后继续向内滑，进入 Apple Watch 风格应用总览",
+        TextView subtitle = text("供底角二段与侧滑蜂窝布局共用的应用总览",
                 14, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
         root.addView(subtitle);
@@ -94,7 +91,7 @@ public final class HoneycombSettingsActivity extends Activity {
         });
         LinearLayout appLabels = new LinearLayout(this);
         appLabels.setOrientation(LinearLayout.VERTICAL);
-        appLabels.addView(text("蜂窝应用", 18, Ui.TEXT, Typeface.BOLD));
+        appLabels.addView(text("蜂窝应用与快捷方式", 18, Ui.TEXT, Typeface.BOLD));
         targetCountText = text("已选 " + store.getHoneycombTargets().size() + " 项",
                 13, Ui.MUTED, Typeface.NORMAL);
         appLabels.addView(targetCountText);
@@ -136,15 +133,11 @@ public final class HoneycombSettingsActivity extends Activity {
         root.addView(behavior, cardParams());
 
         LinearLayout tuning = card();
-        tuning.addView(text("布局与动效", 18, Ui.TEXT, Typeface.BOLD));
+        tuning.addView(text("位置、布局与背景", 18, Ui.TEXT, Typeface.BOLD));
         tuning.addView(toggleRow("跟随手指出现",
                 "关闭后使用下方设置的固定位置",
                 ConfigContract.KEY_HONEYCOMB_FOLLOW_FINGER,
                 ConfigContract.DEFAULT_HONEYCOMB_FOLLOW_FINGER));
-        tuning.addView(toggleRow("横屏启用",
-                "默认关闭；开启后横屏可从扇形进入蜂窝",
-                ConfigContract.KEY_HONEYCOMB_LANDSCAPE_ENABLED,
-                ConfigContract.DEFAULT_HONEYCOMB_LANDSCAPE_ENABLED));
         tuning.addView(slider("固定水平位置", ConfigContract.KEY_HONEYCOMB_FIXED_X_PERCENT,
                 0, 100, prefs.getInt(ConfigContract.KEY_HONEYCOMB_FIXED_X_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_FIXED_X_PERCENT),
@@ -156,11 +149,6 @@ public final class HoneycombSettingsActivity extends Activity {
         tuning.addView(slider("应用数量上限", ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
                 1, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS, 36),
                 value -> value + " 个"));
-        tuning.addView(slider("蜂窝触发距离", ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MIN_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MAX_HONEYCOMB_TRIGGER_DP,
-                prefs.getInt(ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP), value -> value + "dp"));
         tuning.addView(slider("基础图标大小", ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MIN_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MAX_HONEYCOMB_ICON_SIZE_DP,
@@ -177,27 +165,6 @@ public final class HoneycombSettingsActivity extends Activity {
                 ConfigContract.MAX_HONEYCOMB_SPACING_DP,
                 prefs.getInt(ConfigContract.KEY_HONEYCOMB_SPACING_DP,
                         ConfigContract.DEFAULT_HONEYCOMB_SPACING_DP), value -> value + "dp"));
-        tuning.addView(slider("动画速度", ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
-                0, 4, prefs.getInt(ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
-                        ConfigContract.DEFAULT_HONEYCOMB_ANIMATION_SPEED), value -> SPEEDS[value]));
-        tuning.addView(slider("惯性强度", ConfigContract.KEY_HONEYCOMB_INERTIA,
-                0, 2, prefs.getInt(ConfigContract.KEY_HONEYCOMB_INERTIA,
-                        ConfigContract.DEFAULT_HONEYCOMB_INERTIA), value -> INERTIA[value]));
-        tuning.addView(slider("中心放大", ConfigContract.KEY_HONEYCOMB_CENTER_SCALE,
-                ConfigContract.MIN_HONEYCOMB_CENTER_SCALE,
-                ConfigContract.MAX_HONEYCOMB_CENTER_SCALE,
-                prefs.getInt(ConfigContract.KEY_HONEYCOMB_CENTER_SCALE,
-                        ConfigContract.DEFAULT_HONEYCOMB_CENTER_SCALE), value -> value + "%"));
-        tuning.addView(slider("边缘缩小", ConfigContract.KEY_HONEYCOMB_EDGE_SCALE,
-                ConfigContract.MIN_HONEYCOMB_EDGE_SCALE,
-                ConfigContract.MAX_HONEYCOMB_EDGE_SCALE,
-                prefs.getInt(ConfigContract.KEY_HONEYCOMB_EDGE_SCALE,
-                        ConfigContract.DEFAULT_HONEYCOMB_EDGE_SCALE), value -> value + "%"));
-        tuning.addView(slider("选中放大", ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
-                ConfigContract.MIN_HONEYCOMB_SELECTION_SCALE,
-                ConfigContract.MAX_HONEYCOMB_SELECTION_SCALE,
-                prefs.getInt(ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
-                        ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE), value -> value + "%"));
         tuning.addView(toggleRow("显示当前应用名称",
                 "按住滑选时固定显示在蜂窝圆盘上方",
                 ConfigContract.KEY_HONEYCOMB_SHOW_SELECTED_NAME,
@@ -217,16 +184,20 @@ public final class HoneycombSettingsActivity extends Activity {
         tuning.addView(slider("背景压暗", ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                 0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22),
                 value -> value + "%"));
-        Button reset = compactButton("恢复 Apple 风格默认值");
-        reset.setOnClickListener(view -> {
-            store.resetHoneycombTuning();
-            recreate();
-        });
-        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48));
-        resetParams.topMargin = Ui.dp(this, 14);
-        tuning.addView(reset, resetParams);
         root.addView(tuning, cardParams());
+        LinearLayout animationCard = card();
+        LinearLayout animationEntry = row();
+        animationEntry.setOnClickListener(view -> startActivity(
+                new Intent(this, HoneycombAnimationSettingsActivity.class)));
+        animationEntry.addView(labels("蜂窝动效设置",
+                        "凸面镜、惯性、中心凸起、边缘缩放与选中放大"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        animationEntry.addView(text("设置  ›", 14, Ui.ACCENT, Typeface.BOLD));
+        animationCard.addView(animationEntry);
+        root.addView(animationCard, cardParams());
+        Ui.addResetOption(this, root,
+                "将恢复蜂窝开关、位置、布局和背景；已选应用与动效参数会保留。",
+                store::resetHoneycombLayoutSettings);
         return scroll;
     }
 

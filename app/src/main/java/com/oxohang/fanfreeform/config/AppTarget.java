@@ -11,6 +11,7 @@ public final class AppTarget {
     public final String shortcutPackage;
     public final String shortcutId;
     public final String shortcutLabel;
+    public final String shortcutIntentUri;
     public final int userId;
 
     public AppTarget(String component) {
@@ -22,23 +23,35 @@ public final class AppTarget {
         this.shortcutPackage = "";
         this.shortcutId = "";
         this.shortcutLabel = "";
+        this.shortcutIntentUri = "";
         this.userId = Math.max(0, userId);
     }
 
-    private AppTarget(String shortcutPackage, String shortcutId, String shortcutLabel) {
+    private AppTarget(String shortcutPackage, String shortcutId, String shortcutLabel,
+                      String shortcutIntentUri, int userId) {
         this.component = "";
         this.shortcutPackage = shortcutPackage == null ? "" : shortcutPackage;
         this.shortcutId = shortcutId == null ? "" : shortcutId;
         this.shortcutLabel = shortcutLabel == null ? "" : shortcutLabel;
-        this.userId = 0;
+        this.shortcutIntentUri = shortcutIntentUri == null ? "" : shortcutIntentUri;
+        this.userId = Math.max(0, userId);
     }
 
     public static AppTarget shortcut(String packageName, String shortcutId, String label) {
-        return new AppTarget(packageName, shortcutId, label);
+        return new AppTarget(packageName, shortcutId, label, "", 0);
+    }
+
+    public static AppTarget launcherShortcut(String packageName, String shortcutId,
+                                             String label, String intentUri, int userId) {
+        return new AppTarget(packageName, shortcutId, label, intentUri, userId);
     }
 
     public boolean isShortcut() {
         return !shortcutPackage.isEmpty() && !shortcutId.isEmpty();
+    }
+
+    public boolean isLauncherShortcut() {
+        return isShortcut() && !shortcutIntentUri.isEmpty();
     }
 
     public ComponentName componentName() {
@@ -60,6 +73,11 @@ public final class AppTarget {
                 out.put("package", shortcutPackage);
                 out.put("id", shortcutId);
                 out.put("label", shortcutLabel);
+                if (isLauncherShortcut()) {
+                    out.put("type", "launcher_shortcut");
+                    out.put("intent", shortcutIntentUri);
+                    out.put("userId", userId);
+                }
             } else {
                 out.put("type", "activity");
                 out.put("component", component);
@@ -71,8 +89,13 @@ public final class AppTarget {
 
     public static AppTarget fromJson(JSONObject value) {
         if (value == null) return null;
-        if ("shortcut".equals(value.optString("type"))) {
-            AppTarget target = shortcut(value.optString("package"), value.optString("id"),
+        String type = value.optString("type");
+        if ("shortcut".equals(type) || "launcher_shortcut".equals(type)) {
+            AppTarget target = "launcher_shortcut".equals(type)
+                    ? launcherShortcut(value.optString("package"), value.optString("id"),
+                    value.optString("label"), value.optString("intent"),
+                    value.optInt("userId", 0))
+                    : shortcut(value.optString("package"), value.optString("id"),
                     value.optString("label"));
             return target.isShortcut() ? target : null;
         }
@@ -88,11 +111,12 @@ public final class AppTarget {
         return Objects.equals(component, target.component)
                 && Objects.equals(shortcutPackage, target.shortcutPackage)
                 && Objects.equals(shortcutId, target.shortcutId)
+                && Objects.equals(shortcutIntentUri, target.shortcutIntentUri)
                 && userId == target.userId;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(component, shortcutPackage, shortcutId, userId);
+        return Objects.hash(component, shortcutPackage, shortcutId, shortcutIntentUri, userId);
     }
 }

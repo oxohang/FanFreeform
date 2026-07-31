@@ -1,5 +1,7 @@
 package com.oxohang.fanfreeform.xposed;
 
+import com.oxohang.fanfreeform.config.ConfigContract;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -159,6 +161,110 @@ public class GestureGeometryTest {
                     GestureGeometry.Corner.RIGHT, point.x, point.y,
                     1200, 2608, 24, radius, diameter, 3f, true));
         }
+    }
+
+    @Test
+    public void customModeFillsInnerThenStartsMiddleAtTheLowestSlot() {
+        int mode = ConfigContract.FAN_LAYOUT_CUSTOM;
+        float radius = GestureGeometry.effectiveRadius(
+                5, 580f, 28f, 6f, mode, 6, 5, 4);
+        float diameter = GestureGeometry.effectiveIconDiameter(
+                5, radius, 46f, 28f, 6f, mode, 6, 5, 4);
+        GestureGeometry.Point innerFirst = GestureGeometry.iconCenter(
+                GestureGeometry.Corner.LEFT, 0, 5, 1200, 2608, radius,
+                mode, 6, 5, 4);
+        GestureGeometry.Point middleFirst = GestureGeometry.iconCenter(
+                GestureGeometry.Corner.LEFT, 4, 5, 1200, 2608, radius,
+                mode, 6, 5, 4);
+        float expectedInnerRadius = radius * 0.68f;
+        assertEquals(expectedInnerRadius * (float) Math.cos(Math.toRadians(12)),
+                innerFirst.x, 0.01f);
+        assertEquals(2608f - expectedInnerRadius * (float) Math.sin(Math.toRadians(12)),
+                innerFirst.y, 0.01f);
+        float expectedMiddleRadius = radius * 0.88f;
+        assertEquals(expectedMiddleRadius * (float) Math.cos(Math.toRadians(15.5)),
+                middleFirst.x, 0.01f);
+        assertEquals(2608f - expectedMiddleRadius * (float) Math.sin(Math.toRadians(15.5)),
+                middleFirst.y, 0.01f);
+        assertEquals(4, GestureGeometry.selection(GestureGeometry.Corner.LEFT,
+                middleFirst.x, middleFirst.y, 1200, 2608, 5, radius, diameter, 3f,
+                mode, 6, 5, 4));
+    }
+
+    @Test
+    public void customModeSupportsZeroMiddleAndOuterRows() {
+        int mode = ConfigContract.FAN_LAYOUT_CUSTOM;
+        float radius = 580f;
+        for (int index = 0; index < 5; index++) {
+            GestureGeometry.Point point = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.LEFT, index, 5, 1200, 2608, radius,
+                    mode, 0, 0, 5);
+            assertEquals(index, GestureGeometry.selection(
+                    GestureGeometry.Corner.LEFT, point.x, point.y,
+                    1200, 2608, 5, radius, 46f, 3f,
+                    mode, 0, 0, 5));
+        }
+        GestureGeometry.Point firstMiddle = GestureGeometry.iconCenter(
+                GestureGeometry.Corner.LEFT, 5, 7, 1200, 2608, radius,
+                mode, 0, 2, 5);
+        assertEquals(radius * 0.88f * (float) Math.cos(Math.toRadians(15.5)),
+                firstMiddle.x, 0.01f);
+    }
+
+    @Test
+    public void customModeMirrorsEveryVisualCenterAndHitTarget() {
+        int mode = ConfigContract.FAN_LAYOUT_CUSTOM;
+        float radius = GestureGeometry.effectiveRadius(
+                18, 580f, 28f, 6f, mode, 7, 6, 5);
+        float diameter = GestureGeometry.effectiveIconDiameter(
+                18, radius, 46f, 28f, 6f, mode, 7, 6, 5);
+        for (int index = 0; index < 18; index++) {
+            GestureGeometry.Point left = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.LEFT, index, 18, 1200, 2608, radius,
+                    mode, 7, 6, 5);
+            GestureGeometry.Point right = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.RIGHT, index, 18, 1200, 2608, radius,
+                    mode, 7, 6, 5);
+            assertEquals(1200f, left.x + right.x, 0.01f);
+            assertEquals(left.y, right.y, 0.01f);
+            assertEquals(index, GestureGeometry.selection(GestureGeometry.Corner.LEFT,
+                    left.x, left.y, 1200, 2608, 18, radius, diameter, 3f,
+                    mode, 7, 6, 5));
+            assertEquals(index, GestureGeometry.selection(GestureGeometry.Corner.RIGHT,
+                    right.x, right.y, 1200, 2608, 18, radius, diameter, 3f,
+                    mode, 7, 6, 5));
+        }
+    }
+
+    @Test
+    public void honeycombSafetyBoundaryStartsOutsideTheOutermostFanIcon() {
+        int mode = ConfigContract.FAN_LAYOUT_CUSTOM;
+        float radius = GestureGeometry.effectiveRadius(
+                18, 580f, 28f, 6f, mode, 7, 6, 5);
+        float diameter = GestureGeometry.effectiveIconDiameter(
+                18, radius, 46f, 28f, 6f, mode, 7, 6, 5);
+        float safetyMargin = 30f;
+        float boundary = GestureGeometry.fanOutermostEdgeDistance(
+                GestureGeometry.Corner.LEFT, 18, 1200, 2608, radius,
+                diameter, safetyMargin, mode, 7, 6, 5);
+        float outermostCenter = 0f;
+        for (int index = 0; index < 18; index++) {
+            GestureGeometry.Point point = GestureGeometry.iconCenter(
+                    GestureGeometry.Corner.LEFT, index, 18, 1200, 2608,
+                    radius, mode, 7, 6, 5);
+            outermostCenter = Math.max(outermostCenter,
+                    GestureGeometry.distance(0f, 2608f, point.x, point.y));
+        }
+        assertEquals(outermostCenter + diameter / 2f + safetyMargin,
+                boundary, 0.01f);
+        assertFalse(GestureGeometry.beyondFanEdge(GestureGeometry.Corner.LEFT,
+                boundary - 1f, 2608f, 1200, 2608, boundary));
+        assertTrue(GestureGeometry.beyondFanEdge(GestureGeometry.Corner.LEFT,
+                boundary, 2608f, 1200, 2608, boundary));
+        assertFalse(GestureGeometry.beyondFanEdge(GestureGeometry.Corner.RIGHT,
+                1200f - boundary + 1f, 2608f, 1200, 2608, boundary));
+        assertTrue(GestureGeometry.beyondFanEdge(GestureGeometry.Corner.RIGHT,
+                1200f - boundary, 2608f, 1200, 2608, boundary));
     }
 
     @Test

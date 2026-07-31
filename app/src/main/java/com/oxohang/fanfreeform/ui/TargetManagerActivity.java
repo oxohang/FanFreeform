@@ -25,6 +25,7 @@ import android.widget.TextView;
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
+import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 
 import org.json.JSONArray;
 
@@ -98,13 +99,16 @@ public final class TargetManagerActivity extends Activity {
         targetContainer.setOrientation(LinearLayout.VERTICAL);
         card.addView(targetContainer);
         root.addView(card);
+        Ui.addResetOption(this, root,
+                "将用当前手机上可用的预设应用替换这个清单，当前排序和快捷方式会被覆盖。",
+                this::resetTargets);
 
         frame.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         TextView add = text("＋", 32, Color.WHITE, Typeface.NORMAL);
         add.setGravity(Gravity.CENTER);
-        add.setContentDescription("添加应用");
+        add.setContentDescription("添加应用或快捷方式");
         add.setBackground(Ui.rounded(this, Ui.ACCENT, 30));
         add.setElevation(Ui.dp(this, 8));
         add.setOnClickListener(view -> openPicker());
@@ -173,8 +177,10 @@ public final class TargetManagerActivity extends Activity {
                 ? target.shortcutLabel : target.packageName();
         String secondary = target.packageName() + (target.isShortcut() ? " · 快捷方式" : "");
         try {
-            icon = pm.getApplicationIcon(target.packageName());
-            if (!target.isShortcut() && target.componentName() != null) {
+            if (target.isShortcut()) {
+                icon = ShortcutIconLoader.load(this, target.packageName(),
+                        target.shortcutId, target.userId);
+            } else if (target.componentName() != null) {
                 ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
                 CharSequence resolvedLabel = info.loadLabel(pm);
                 if (resolvedLabel != null) label = resolvedLabel.toString();
@@ -206,8 +212,8 @@ public final class TargetManagerActivity extends Activity {
         JSONArray selected = new JSONArray();
         for (AppTarget target : targets) selected.put(target.toJson());
         Intent intent = new Intent(this, AppPickerActivity.class);
-        intent.putExtra(AppPickerActivity.EXTRA_MODE, KIND_FAN.equals(kind)
-                ? AppPickerActivity.MODE_APPS_AND_SHORTCUTS : AppPickerActivity.MODE_APPS);
+        intent.putExtra(AppPickerActivity.EXTRA_MODE,
+                AppPickerActivity.MODE_APPS_AND_SHORTCUTS);
         intent.putExtra(AppPickerActivity.EXTRA_MULTI, true);
         intent.putExtra(AppPickerActivity.EXTRA_SELECTED, selected.toString());
         intent.putExtra(AppPickerActivity.EXTRA_MAX, maximum());
@@ -223,7 +229,7 @@ public final class TargetManagerActivity extends Activity {
             JSONArray array = new JSONArray(data.getStringExtra(AppPickerActivity.EXTRA_TARGETS));
             for (int index = 0; index < array.length() && targets.size() < maximum(); index++) {
                 AppTarget target = AppTarget.fromJson(array.optJSONObject(index));
-                if (target == null || (!KIND_FAN.equals(kind) && target.isShortcut())) continue;
+                if (target == null) continue;
                 if (!targets.contains(target)) targets.add(target);
             }
         } catch (Exception ignored) { }
@@ -237,6 +243,13 @@ public final class TargetManagerActivity extends Activity {
         renderTargets();
     }
 
+    private void resetTargets() {
+        if (KIND_SIDE.equals(kind)) store.resetSideTargets();
+        else if (KIND_HONEYCOMB.equals(kind)) store.resetHoneycombTargets();
+        else store.resetBottomTargets();
+        reloadTargets();
+    }
+
     private int maximum() {
         if (KIND_SIDE.equals(kind)) return prefs.getInt(ConfigContract.KEY_SIDE_MAX_TARGETS,
                 ConfigContract.DEFAULT_SIDE_MAX_TARGETS);
@@ -248,9 +261,9 @@ public final class TargetManagerActivity extends Activity {
     }
 
     private String title() {
-        if (KIND_SIDE.equals(kind)) return "侧滑应用";
-        if (KIND_HONEYCOMB.equals(kind)) return "蜂窝应用";
-        return "小窗应用";
+        if (KIND_SIDE.equals(kind)) return "侧滑应用与快捷方式";
+        if (KIND_HONEYCOMB.equals(kind)) return "蜂窝应用与快捷方式";
+        return "小窗应用与快捷方式";
     }
 
     private LinearLayout row() {

@@ -35,6 +35,7 @@ final class OutsideTouchCapture {
     private boolean hasCurrentIme;
     private int currentLeftPassThrough;
     private int currentRightPassThrough;
+    private int currentWindowType;
     private volatile boolean capturing;
     private int activeGeneration;
 
@@ -81,10 +82,15 @@ final class OutsideTouchCapture {
             return;
         }
 
-        removeNow();
-        int generation = activeGeneration;
         List<Rect> regions = outsideRegions(display, clippedWindows, clippedIme,
                 leftPassThrough, rightPassThrough);
+        if (updateAttachedRegions(regions, clippedWindows, clippedIme,
+                leftPassThrough, rightPassThrough)) {
+            return;
+        }
+
+        removeNow();
+        int generation = activeGeneration;
         // Application-overlay is above app/freeform windows but below StatusBar and
         // NotificationShade. This keeps system panels touchable without weakening
         // outside-tap blocking. Retain the old types only as compatibility fallbacks.
@@ -96,14 +102,38 @@ final class OutsideTouchCapture {
             Log.i("Outside touch capture unavailable; using input-monitor fallback");
             return;
         }
-        currentWindows = copyRects(clippedWindows);
+        commitState(regions, clippedWindows, clippedIme,
+                leftPassThrough, rightPassThrough);
+    }
+
+    private boolean updateAttachedRegions(List<Rect> regions, List<Rect> windows,
+                                          Rect ime, int leftPassThrough,
+                                          int rightPassThrough) {
+        if (!capturing || currentWindowType == 0 || views.size() != regions.size()) {
+            return false;
+        }
+        try {
+            for (int index = 0; index < regions.size(); index++) {
+                windowManager.updateViewLayout(views.get(index),
+                        params(regions.get(index), currentWindowType, index));
+            }
+            commitState(regions, windows, ime, leftPassThrough, rightPassThrough);
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot move outside touch capture in place", error);
+            return false;
+        }
+    }
+
+    private void commitState(List<Rect> regions, List<Rect> windows, Rect ime,
+                             int leftPassThrough, int rightPassThrough) {
+        currentWindows = copyRects(windows);
         currentLeftPassThrough = leftPassThrough;
         currentRightPassThrough = rightPassThrough;
         activeRegions = copyRects(regions);
-        if (clippedIme != null) {
-            currentIme.set(clippedIme);
-            hasCurrentIme = true;
-        }
+        hasCurrentIme = ime != null;
+        if (ime == null) currentIme.setEmpty();
+        else currentIme.set(ime);
     }
 
     private boolean attach(List<Rect> regions, int windowCount, int type,
@@ -119,6 +149,7 @@ final class OutsideTouchCapture {
             }
             capturing = !views.isEmpty();
             if (capturing) {
+                currentWindowType = type;
                 Log.i("Outside touch capture attached regions=" + views.size()
                         + " visibleWindows=" + windowCount + " type=" + type);
             }
@@ -178,6 +209,7 @@ final class OutsideTouchCapture {
         hasCurrentIme = false;
         currentLeftPassThrough = 0;
         currentRightPassThrough = 0;
+        currentWindowType = 0;
     }
 
     private void removeViews() {

@@ -11,6 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -50,6 +51,14 @@ public final class OutsideSettingsActivity extends Activity {
         card.setPadding(Ui.dp(this, 18), Ui.dp(this, 16),
                 Ui.dp(this, 18), Ui.dp(this, 16));
         card.setBackground(Ui.rounded(this, Ui.SURFACE, 20));
+        card.addView(enabledRow("竖屏窗外点击", "关闭后竖屏使用 HyperOS 原生模式",
+                ConfigContract.KEY_OUTSIDE_PORTRAIT_ENABLED,
+                ConfigContract.DEFAULT_OUTSIDE_PORTRAIT_ENABLED, true));
+        card.addView(Ui.divider(this));
+        card.addView(enabledRow("横屏窗外点击", "关闭后横屏使用 HyperOS 原生模式",
+                ConfigContract.KEY_OUTSIDE_LANDSCAPE_ENABLED,
+                ConfigContract.DEFAULT_OUTSIDE_LANDSCAPE_ENABLED, false));
+        card.addView(Ui.divider(this));
         card.addView(action("窗外单击", ConfigContract.KEY_OUTSIDE_SINGLE_ACTION,
                 ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
         card.addView(Ui.divider(this));
@@ -57,7 +66,8 @@ public final class OutsideSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
         card.addView(Ui.divider(this));
         card.addView(tapWindowSlider());
-        TextView note = text("数值越短，单击执行越快；数值越长，双击越容易识别。"
+        TextView note = text("竖屏和横屏独立控制；关闭的方向会移除 Hyper手势触摸层，完全交还 HyperOS。"
+                        + "\n\n数值越短，单击执行越快；数值越长，双击越容易识别。"
                         + "\n\n小窗上、下、左、右外部是一个整体，只识别点击。"
                         + "系统返回侧滑保持更高优先级；输入法存在时第一次点击先收起键盘。",
                 14, Ui.MUTED, Typeface.NORMAL);
@@ -65,7 +75,32 @@ public final class OutsideSettingsActivity extends Activity {
         note.setPadding(0, Ui.dp(this, 12), 0, 0);
         card.addView(note);
         root.addView(card);
+        Ui.addResetOption(this, root,
+                "将重新开启竖屏、关闭横屏窗外点击，并恢复动作和判定时间。",
+                store::resetOutsideSettings);
         return scroll;
+    }
+
+    private View enabledRow(String title, String subtitle, String key,
+                            boolean defaultValue, boolean useLegacyFallback) {
+        LinearLayout line = new LinearLayout(this);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 8));
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text(title, 16, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text(subtitle, 13, Ui.MUTED, Typeface.NORMAL));
+        line.addView(labels, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch enabled = new Switch(this);
+        boolean fallback = useLegacyFallback
+                ? store.preferences().getBoolean(ConfigContract.KEY_OUTSIDE_ENABLED,
+                ConfigContract.DEFAULT_OUTSIDE_ENABLED) : defaultValue;
+        enabled.setChecked(store.preferences().getBoolean(key, fallback));
+        enabled.setOnCheckedChangeListener((button, checked) ->
+                store.putBoolean(key, checked));
+        line.addView(enabled);
+        return line;
     }
 
     private View tapWindowSlider() {

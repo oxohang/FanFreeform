@@ -8,28 +8,44 @@ import android.content.IntentFilter;
 import android.content.pm.LauncherApps;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.ShortcutInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Process;
 import android.os.UserHandle;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
+import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 final class ShortcutHostRuntime {
     static final String MIUI_HOME = "com.miui.home";
     static final String ACTION_START_SHORTCUT = "com.oxohang.fanfreeform.START_SHORTCUT";
     static final String ACTION_START_ACTIVITY = "com.oxohang.fanfreeform.START_ACTIVITY";
+    static final String ACTION_START_LAUNCHER_SHORTCUT =
+            "com.oxohang.fanfreeform.START_LAUNCHER_SHORTCUT";
     static final String EXTRA_PACKAGE = "package";
     static final String EXTRA_SHORTCUT_ID = "shortcut_id";
     static final String EXTRA_COMPONENT = "component";
     static final String EXTRA_USER_ID = "user_id";
     static final String EXTRA_OPTIONS = "options";
+    static final String EXTRA_INTENT_URI = "intent_uri";
     private static volatile boolean installed;
+    private static final Map<String, Long> publishedIconVersions = new HashMap<>();
 
     private ShortcutHostRuntime() { }
 
@@ -40,12 +56,17 @@ final class ShortcutHostRuntime {
             Log.i("Shortcut host waiting for MiuiHome application context");
             return;
         }
+        Log.attachReporter(appContext);
+        RecentsClearButtonRuntime.install(appContext);
         IntentFilter filter = new IntentFilter(ACTION_START_SHORTCUT);
         filter.addAction(ACTION_START_ACTIVITY);
+        filter.addAction(ACTION_START_LAUNCHER_SHORTCUT);
         appContext.registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context receiverContext, Intent intent) {
                 if (ACTION_START_ACTIVITY.equals(intent.getAction())) {
                     startActivity(receiverContext, intent);
+                } else if (ACTION_START_LAUNCHER_SHORTCUT.equals(intent.getAction())) {
+                    startLauncherShortcut(receiverContext, intent);
                 } else {
                     startShortcut(receiverContext, intent);
                 }
@@ -59,6 +80,26 @@ final class ShortcutHostRuntime {
         installed = true;
         publishCatalog(appContext);
         Log.i("Shortcut host active in MiuiHome");
+    }
+
+    private static void startLauncherShortcut(Context context, Intent request) {
+        String expectedPackage = request.getStringExtra(EXTRA_PACKAGE);
+        String intentUri = request.getStringExtra(EXTRA_INTENT_URI);
+        Bundle options = request.getBundleExtra(EXTRA_OPTIONS);
+        if (expectedPackage == null || expectedPackage.isEmpty()
+                || intentUri == null || intentUri.isEmpty()) return;
+        try {
+            Intent launch = Intent.parseUri(intentUri, 0);
+            String actualPackage = packageName(context, launch);
+            if (!expectedPackage.equals(actualPackage)) {
+                throw new SecurityException("Desktop shortcut package changed");
+            }
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(launch, options == null ? Bundle.EMPTY : options);
+            Log.i("MiuiHome started desktop shortcut package=" + expectedPackage);
+        } catch (Throwable error) {
+            Log.e("Cannot start desktop shortcut in MiuiHome", error);
+        }
     }
 
     private static void startShortcut(Context context, Intent intent) {
@@ -109,6 +150,9 @@ final class ShortcutHostRuntime {
             List<ShortcutInfo> shortcuts = launcherApps.getShortcuts(query, Process.myUserHandle());
             if (shortcuts == null) shortcuts = Collections.emptyList();
             JSONArray out = new JSONArray();
+            Set<String> seen = new HashSet<>();
+            ArrayList<String> iconKeys = new ArrayList<>();
+            ArrayList<Bitmap> icons = new ArrayList<>();
             for (ShortcutInfo shortcut : shortcuts) {
                 if (!shortcut.isEnabled() || out.length() >= 160) continue;
                 CharSequence label = shortcut.getShortLabel();
@@ -118,14 +162,150 @@ final class ShortcutHostRuntime {
                 item.put("package", shortcut.getPackage());
                 item.put("id", shortcut.getId());
                 item.put("label", label.toString());
+                item.put("kind", "standard");
                 out.put(item);
+                seen.add(shortcut.getPackage() + "\n" + shortcut.getId());
+                Drawable icon = launcherApps.getShortcutIconDrawable(shortcut,
+                        context.getResources().getDisplayMetrics().densityDpi);
+                queueShortcutIcon(context, iconKeys, icons,
+                        ShortcutIconLoader.key(shortcut.getPackage(), shortcut.getId(), 0),
+                        shortcut.getLastChangedTimestamp(), icon);
             }
+            appendLauncherShortcuts(context, out, seen, iconKeys, icons);
+            flushShortcutIcons(context, iconKeys, icons);
             Bundle extras = new Bundle();
             extras.putString(ConfigContract.KEY_SHORTCUT_CATALOG, out.toString());
             context.getContentResolver().call(ConfigContract.URI, "report_shortcuts", null, extras);
             publishActivityCatalog(context, launcherApps);
         } catch (Throwable error) {
             Log.e("Cannot publish shortcut catalog from MiuiHome", error);
+        }
+    }
+
+    private static void appendLauncherShortcuts(Context context, JSONArray out,
+                                                Set<String> seen,
+                                                ArrayList<String> iconKeys,
+                                                ArrayList<Bitmap> icons) {
+        Uri favorites = Uri.parse(
+                "content://com.miui.home.launcher.settings/favorites");
+        int added = 0;
+        try (Cursor cursor = context.getContentResolver().query(
+                favorites, null, null, null, null)) {
+            if (cursor == null) return;
+            int idColumn = cursor.getColumnIndex("_id");
+            int titleColumn = cursor.getColumnIndex("title");
+            int intentColumn = cursor.getColumnIndex("intent");
+            int typeColumn = cursor.getColumnIndex("itemType");
+            int shortcutColumn = cursor.getColumnIndex("isShortcut");
+            int iconColumn = cursor.getColumnIndex("icon");
+            while (cursor.moveToNext() && out.length() < 240) {
+                int itemType = typeColumn >= 0 && !cursor.isNull(typeColumn)
+                        ? cursor.getInt(typeColumn) : -1;
+                int isShortcut = shortcutColumn >= 0 && !cursor.isNull(shortcutColumn)
+                        ? cursor.getInt(shortcutColumn) : 0;
+                if (itemType != 1 && itemType != 14 && isShortcut == 0) continue;
+                if (intentColumn < 0 || cursor.isNull(intentColumn)) continue;
+                String rawIntent = cursor.getString(intentColumn);
+                if (rawIntent == null || rawIntent.isEmpty()) continue;
+                Intent launch;
+                try {
+                    launch = Intent.parseUri(rawIntent, 0);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                String packageName = packageName(context, launch);
+                if (packageName == null || packageName.isEmpty()) continue;
+                String label = titleColumn >= 0 && !cursor.isNull(titleColumn)
+                        ? cursor.getString(titleColumn) : packageName;
+                if (label == null || label.isEmpty()) label = packageName;
+                String shortcutId = launch.getStringExtra("shortcut_id");
+                if (shortcutId == null || shortcutId.isEmpty()) {
+                    long rowId = idColumn >= 0 && !cursor.isNull(idColumn)
+                            ? cursor.getLong(idColumn) : rawIntent.hashCode();
+                    shortcutId = "launcher:" + rowId;
+                }
+                String key = packageName + "\n" + shortcutId;
+                if (!seen.add(key)) continue;
+                try {
+                    context.getPackageManager().getApplicationInfo(packageName, 0);
+                    JSONObject item = new JSONObject();
+                    item.put("package", packageName);
+                    item.put("id", shortcutId);
+                    item.put("label", label);
+                    item.put("kind", "launcher");
+                    item.put("intent", rawIntent);
+                    item.put("userId", 0);
+                    out.put(item);
+                    if (iconColumn >= 0 && !cursor.isNull(iconColumn)) {
+                        byte[] encoded = cursor.getBlob(iconColumn);
+                        Bitmap icon = encoded == null ? null : BitmapFactory.decodeByteArray(
+                                encoded, 0, encoded.length);
+                        queueShortcutIcon(context, iconKeys, icons,
+                                ShortcutIconLoader.key(packageName, shortcutId, 0),
+                                encoded == null ? 0L : java.util.Arrays.hashCode(encoded), icon);
+                    }
+                    added++;
+                } catch (Throwable ignored) { }
+            }
+            Log.i("MiuiHome published desktop shortcut catalog added=" + added);
+        } catch (Throwable error) {
+            Log.e("Cannot read MiuiHome desktop shortcut catalog", error);
+        }
+    }
+
+    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+                                          ArrayList<Bitmap> icons, String key, long version,
+                                          Drawable drawable) {
+        if (drawable == null) return;
+        Long previous = publishedIconVersions.get(key);
+        if (previous != null && previous == version) return;
+        int intrinsic = Math.max(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
+        int size = Math.max(96, Math.min(144, intrinsic));
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, size, size);
+        drawable.draw(canvas);
+        queueShortcutIcon(context, keys, icons, key, version, bitmap);
+    }
+
+    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+                                          ArrayList<Bitmap> icons, String key, long version,
+                                          Bitmap bitmap) {
+        if (bitmap == null || key == null || key.isEmpty()) return;
+        Long previous = publishedIconVersions.get(key);
+        if (previous != null && previous == version) return;
+        publishedIconVersions.put(key, version);
+        keys.add(key);
+        icons.add(bitmap);
+        if (keys.size() >= 6) flushShortcutIcons(context, keys, icons);
+    }
+
+    private static void flushShortcutIcons(Context context, ArrayList<String> keys,
+                                           ArrayList<Bitmap> icons) {
+        if (keys.isEmpty()) return;
+        Bundle extras = new Bundle();
+        extras.putStringArrayList(ShortcutIconLoader.EXTRA_KEYS,
+                new ArrayList<>(keys));
+        extras.putParcelableArrayList(ShortcutIconLoader.EXTRA_ICONS,
+                new ArrayList<>(icons));
+        context.getContentResolver().call(ConfigContract.URI,
+                ShortcutIconLoader.METHOD_REPORT, null, extras);
+        keys.clear();
+        icons.clear();
+    }
+
+    private static String packageName(Context context, Intent intent) {
+        if (intent.getPackage() != null && !intent.getPackage().isEmpty()) {
+            return intent.getPackage();
+        }
+        if (intent.getComponent() != null) return intent.getComponent().getPackageName();
+        try {
+            android.content.pm.ResolveInfo resolved = context.getPackageManager()
+                    .resolveActivity(intent, 0);
+            return resolved == null || resolved.activityInfo == null
+                    ? null : resolved.activityInfo.packageName;
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 

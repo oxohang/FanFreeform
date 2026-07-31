@@ -61,7 +61,7 @@ public final class DashboardActivity extends Activity {
 
         LinearLayout enabled = card();
         LinearLayout enabledRow = row();
-        LinearLayout labels = labels("启用手势", "总开关、震动与选中名称");
+        LinearLayout labels = labels("启用手势", "总开关、震动、图标形状与桌面入口");
         labels.setOnClickListener(view -> open(GeneralSettingsActivity.class));
         enabledRow.addView(labels, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -81,8 +81,10 @@ public final class DashboardActivity extends Activity {
                 () -> openGesture(GestureSettingsActivity.MODE_BOTTOM)), params(12));
         root.addView(entry("侧滑手势", "方向、布局、应用来源与启动方式",
                 () -> openGesture(GestureSettingsActivity.MODE_SIDE)), params(12));
-        root.addView(entry("蜂窝应用与动效", "应用清单、圆盘大小、背景与滑选手感",
+        root.addView(entry("蜂窝应用", "应用清单、圆盘位置、背景与独立动效",
                 () -> open(HoneycombSettingsActivity.class)), params(12));
+        root.addView(entry("任务中心", "任务数量、卡片布局与独立动效",
+                () -> open(TaskCenterSettingsActivity.class)), params(12));
         root.addView(entry("小窗位置设置", "统一调整小窗大小和初始位置",
                 () -> open(WindowSettingsActivity.class)), params(12));
         root.addView(entry("窗外点击设置", "四个方向统一的单击和双击动作",
@@ -92,6 +94,7 @@ public final class DashboardActivity extends Activity {
         root.addView(entry("喜欢 Hyper手势？",
                 "如果它让你的操作更顺手，欢迎请开发者喝一杯 ☕",
                 () -> SupportQrDialog.show(this)), params(18));
+        Ui.addGlobalResetOption(this, root, store::resetTuning);
         return scroll;
     }
 

@@ -25,6 +25,7 @@ import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigStore;
+import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 
 import java.text.Collator;
 import java.util.ArrayList;
@@ -273,9 +274,17 @@ public final class AppPickerActivity extends Activity {
         if (mode == MODE_SHORTCUTS) {
             for (ConfigStore.ShortcutCatalogEntry shortcut : store.getShortcutCatalog()) {
                 try {
-                    all.add(new Entry(AppTarget.shortcut(shortcut.packageName, shortcut.shortcutId,
-                            shortcut.label), shortcut.label, shortcut.packageName + " · 快捷方式",
-                            pm.getApplicationIcon(shortcut.packageName)));
+                    AppTarget target = shortcut.launcherShortcut
+                            ? AppTarget.launcherShortcut(shortcut.packageName,
+                            shortcut.shortcutId, shortcut.label, shortcut.intentUri,
+                            shortcut.userId)
+                            : AppTarget.shortcut(shortcut.packageName, shortcut.shortcutId,
+                            shortcut.label);
+                    all.add(new Entry(target, shortcut.label,
+                            shortcut.packageName + (shortcut.launcherShortcut
+                                    ? " · 桌面快捷方式" : " · 快捷方式"),
+                            ShortcutIconLoader.load(this, shortcut.packageName,
+                                    shortcut.shortcutId, shortcut.userId)));
                 } catch (Exception ignored) { }
             }
         }
@@ -336,7 +345,7 @@ public final class AppPickerActivity extends Activity {
 
     private void updateModeUi() {
         if (titleText != null) {
-            titleText.setText(combinedMode ? "选择小窗应用"
+            titleText.setText(combinedMode ? "选择应用与快捷方式"
                     : mode == MODE_SHORTCUTS ? "添加快捷方式" : "添加应用");
         }
         if (searchInput != null) searchInput.setHint(

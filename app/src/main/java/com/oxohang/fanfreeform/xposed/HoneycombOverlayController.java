@@ -3,6 +3,7 @@ package com.oxohang.fanfreeform.xposed;
 import android.content.Context;
 import android.graphics.PixelFormat;
 import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -20,9 +21,29 @@ final class HoneycombOverlayController {
     private final Context context;
     private final Handler mainHandler;
     private final WindowManager windowManager;
+    private final Object moveLock = new Object();
     private HoneycombOverlayView view;
     private boolean attached;
     private int windowTop;
+    private HoneycombOverlayView pendingMoveView;
+    private float pendingMoveX;
+    private float pendingMoveY;
+    private boolean moveFrameScheduled;
+    private final Runnable deliverPendingMove = () -> {
+        HoneycombOverlayView target;
+        float x;
+        float y;
+        synchronized (moveLock) {
+            target = pendingMoveView;
+            x = pendingMoveX;
+            y = pendingMoveY;
+            pendingMoveView = null;
+            moveFrameScheduled = false;
+        }
+        if (attached && target != null && view == target) {
+            target.onExternalMove(toLocalX(x), toLocalY(y));
+        }
+    };
 
     HoneycombOverlayController(Context context, Handler mainHandler) {
         this.context = context;
@@ -102,32 +123,47 @@ final class HoneycombOverlayController {
 
     void externalMove(float x, float y) {
         HoneycombOverlayView current = view;
-        if (attached && current != null) current.onExternalMove(toLocalX(x), toLocalY(y));
+        if (!attached || current == null) return;
+        synchronized (moveLock) {
+            pendingMoveView = current;
+            pendingMoveX = x;
+            pendingMoveY = y;
+            if (moveFrameScheduled) return;
+            moveFrameScheduled = true;
+        }
+        current.postOnAnimation(deliverPendingMove);
     }
 
     void externalUp(float x, float y, boolean cancelled) {
         HoneycombOverlayView current = view;
-        if (attached && current != null) current.onExternalUp(
-                toLocalX(x), toLocalY(y), cancelled);
+        cancelPendingMove(current);
+        runOnViewThread(current, () -> {
+            float localX = toLocalX(x);
+            float localY = toLocalY(y);
+            if (!cancelled) current.onExternalMove(localX, localY);
+            current.onExternalUp(localX, localY, cancelled);
+        });
     }
 
     void externalCancel() {
         HoneycombOverlayView current = view;
-        if (attached && current != null) current.onExternalCancel();
+        cancelPendingMove(current);
+        runOnViewThread(current, current::onExternalCancel);
     }
 
     void setPaused(boolean paused) {
         HoneycombOverlayView current = view;
-        if (attached && current != null) current.setInteractionPaused(paused);
+        runOnViewThread(current, () -> current.setInteractionPaused(paused));
     }
 
     void dismiss() {
         HoneycombOverlayView current = view;
-        if (attached && current != null) current.playDismissal();
+        runOnViewThread(current, current::playDismissal);
     }
 
     void removeNow() {
         HoneycombOverlayView current = view;
+        cancelPendingMove(current);
         view = null;
         if (!attached || current == null || windowManager == null) {
             attached = false;
@@ -136,10 +172,35 @@ final class HoneycombOverlayController {
         attached = false;
         windowTop = 0;
         mainHandler.removeCallbacksAndMessages(current);
-        try {
-            windowManager.removeViewImmediate(current);
-        } catch (Throwable error) {
-            Log.e("Cannot remove honeycomb overlay", error);
+        Runnable removal = () -> {
+            try {
+                windowManager.removeViewImmediate(current);
+            } catch (Throwable error) {
+                Log.e("Cannot remove honeycomb overlay", error);
+            }
+        };
+        Handler owner = current.getHandler();
+        if (owner != null && owner.getLooper() != Looper.myLooper()) owner.post(removal);
+        else removal.run();
+    }
+
+    private void runOnViewThread(HoneycombOverlayView current, Runnable action) {
+        if (!attached || current == null) return;
+        Handler owner = current.getHandler();
+        if (owner != null && owner.getLooper() != Looper.myLooper()) {
+            owner.post(() -> {
+                if (attached && view == current) action.run();
+            });
+        } else if (attached && view == current) {
+            action.run();
+        }
+    }
+
+    private void cancelPendingMove(HoneycombOverlayView current) {
+        if (current != null) current.removeCallbacks(deliverPendingMove);
+        synchronized (moveLock) {
+            if (pendingMoveView == current) pendingMoveView = null;
+            moveFrameScheduled = false;
         }
     }
 

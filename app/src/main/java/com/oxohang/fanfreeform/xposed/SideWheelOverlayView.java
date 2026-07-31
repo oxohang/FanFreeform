@@ -57,6 +57,7 @@ final class SideWheelOverlayView extends View {
     private float position;
     private boolean showNames;
     private boolean showBackdrop;
+    private boolean forceCircularIcons = true;
     private float downX;
     private float downY;
     private float lastY;
@@ -88,6 +89,10 @@ final class SideWheelOverlayView extends View {
         textPaint.setTextSize(dp(14));
         textPaint.setTextAlign(Paint.Align.CENTER);
         textPaint.setFakeBoldText(true);
+    }
+
+    void setForceCircularIcons(boolean forceCircularIcons) {
+        this.forceCircularIcons = forceCircularIcons;
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -214,7 +219,7 @@ final class SideWheelOverlayView extends View {
             float scale = Math.max(0.72f, 1f - absoluteDistance * 0.12f);
             int alpha = Math.round(255 * Math.max(0.25f, 1f - absoluteDistance * 0.22f));
             float diameter = iconDiameter * scale;
-            drawIcon(canvas, targets.get(i).icon, centerX, y, diameter, alpha);
+            drawIcon(canvas, targets.get(i), centerX, y, diameter, alpha);
             if (showNames || i == active) {
                 drawLabel(canvas, targets.get(i).label, y, diameter,
                         i == active, alpha);
@@ -222,25 +227,30 @@ final class SideWheelOverlayView extends View {
         }
     }
 
-    private void drawIcon(Canvas canvas, Drawable drawable, float x, float y,
+    private void drawIcon(Canvas canvas, RuntimeTarget target, float x, float y,
                           float diameter, int alpha) {
+        Drawable drawable = target == null ? null : target.icon;
         float radius = diameter / 2f;
         iconShadowPaint.setAlpha(alpha);
         iconStrokePaint.setAlpha(alpha);
-        canvas.drawCircle(x, y, radius, iconShadowPaint);
+        if (forceCircularIcons) canvas.drawCircle(x, y, radius, iconShadowPaint);
         if (drawable != null) {
             int oldAlpha = drawable.getAlpha();
             Rect oldBounds = drawable.copyBounds();
             int intrinsicWidth = Math.max(1, drawable.getIntrinsicWidth());
             int intrinsicHeight = Math.max(1, drawable.getIntrinsicHeight());
-            float target = diameter * 1.16f;
-            float scale = Math.max(target / intrinsicWidth, target / intrinsicHeight);
+            float targetSize = diameter * (forceCircularIcons ? 1.16f : 0.94f);
+            float scale = forceCircularIcons
+                    ? Math.max(targetSize / intrinsicWidth, targetSize / intrinsicHeight)
+                    : Math.min(targetSize / intrinsicWidth, targetSize / intrinsicHeight);
             int drawWidth = Math.round(intrinsicWidth * scale);
             int drawHeight = Math.round(intrinsicHeight * scale);
             int save = canvas.save();
-            iconClipPath.reset();
-            iconClipPath.addCircle(x, y, radius, Path.Direction.CW);
-            canvas.clipPath(iconClipPath);
+            if (forceCircularIcons) {
+                iconClipPath.reset();
+                iconClipPath.addCircle(x, y, radius, Path.Direction.CW);
+                canvas.clipPath(iconClipPath);
+            }
             drawable.setAlpha(alpha);
             drawable.setBounds(Math.round(x - drawWidth / 2f),
                     Math.round(y - drawHeight / 2f),
@@ -251,7 +261,13 @@ final class SideWheelOverlayView extends View {
             drawable.setAlpha(oldAlpha);
             drawable.setBounds(oldBounds);
         }
-        canvas.drawCircle(x, y, radius - dp(0.5f), iconStrokePaint);
+        if (forceCircularIcons) {
+            canvas.drawCircle(x, y, radius - dp(0.5f), iconStrokePaint);
+        }
+        if (target != null && target.isShortcut()) {
+            ShortcutBadgeRenderer.draw(canvas, x, y, diameter, alpha / 255f,
+                    getResources().getDisplayMetrics().density);
+        }
     }
 
     private void drawLabel(Canvas canvas, String label, float iconY,

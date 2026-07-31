@@ -17,14 +17,19 @@ import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 
 public final class AnimationSettingsActivity extends Activity {
+    public static final String EXTRA_MODE = "mode";
+    public static final String MODE_BOTTOM = "bottom";
+    public static final String MODE_SIDE = "side";
     private ConfigStore store;
     private SharedPreferences preferences;
+    private boolean sideMode;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         store = new ConfigStore(this);
         preferences = store.preferences();
+        sideMode = MODE_SIDE.equals(getIntent().getStringExtra(EXTRA_MODE));
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().setNavigationBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -48,11 +53,13 @@ public final class AnimationSettingsActivity extends Activity {
         back.setContentDescription("返回");
         back.setOnClickListener(view -> finish());
         header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
-        header.addView(text("动画效果", 26, Ui.TEXT, Typeface.BOLD),
+        header.addView(text(sideMode ? "侧滑动效" : "扇形动效", 26, Ui.TEXT, Typeface.BOLD),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header);
 
-        TextView subtitle = text("作用于底角扇形与侧滑列表，不改变 HyperOS 原生小窗过渡。", 14,
+        TextView subtitle = text(sideMode
+                        ? "只影响纵向、环形和扇形侧滑布局的显示效果。"
+                        : "只影响底角扇形的呼出、选择与取消效果。", 14,
                 Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
         root.addView(subtitle);
@@ -61,57 +68,74 @@ public final class AnimationSettingsActivity extends Activity {
         LinearLayout enabledRow = row();
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
-        labels.addView(text("扇形动画", 17, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text(sideMode ? "侧滑动画" : "扇形动画",
+                17, Ui.TEXT, Typeface.BOLD));
         labels.addView(text("图标轻微四散呼出，选择时放大并回弹", 13,
                 Ui.MUTED, Typeface.NORMAL));
         enabledRow.addView(labels, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Switch enabled = new Switch(this);
-        enabled.setChecked(preferences.getBoolean(ConfigContract.KEY_FAN_ANIMATIONS_ENABLED,
-                ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED));
+        String enabledKey = sideMode ? ConfigContract.KEY_SIDE_ANIMATIONS_ENABLED
+                : ConfigContract.KEY_FAN_ANIMATIONS_ENABLED;
+        enabled.setChecked(preferences.getBoolean(enabledKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_ANIMATIONS_ENABLED
+                : ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED));
         enabled.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(ConfigContract.KEY_FAN_ANIMATIONS_ENABLED, checked));
+                store.putBoolean(enabledKey, checked));
         enabledRow.addView(enabled);
         card.addView(enabledRow);
+        if (!sideMode) {
+            card.addView(Ui.divider(this));
+            LinearLayout shadowRow = row();
+            LinearLayout shadowLabels = new LinearLayout(this);
+            shadowLabels.setOrientation(LinearLayout.VERTICAL);
+            shadowLabels.addView(text("扇形背景阴影", 16, Ui.TEXT, Typeface.BOLD));
+            shadowLabels.addView(text("呼出时显示扇形区域的渐变暗影", 13,
+                    Ui.MUTED, Typeface.NORMAL));
+            shadowRow.addView(shadowLabels, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            Switch shadow = new Switch(this);
+            shadow.setChecked(preferences.getBoolean(ConfigContract.KEY_FAN_SHADOW,
+                    ConfigContract.DEFAULT_FAN_SHADOW));
+            shadow.setOnCheckedChangeListener((button, checked) ->
+                    store.putBoolean(ConfigContract.KEY_FAN_SHADOW, checked));
+            shadowRow.addView(shadow);
+            card.addView(shadowRow);
+        }
         card.addView(Ui.divider(this));
-        LinearLayout shadowRow = row();
-        LinearLayout shadowLabels = new LinearLayout(this);
-        shadowLabels.setOrientation(LinearLayout.VERTICAL);
-        shadowLabels.addView(text("扇形背景阴影", 16, Ui.TEXT, Typeface.BOLD));
-        shadowLabels.addView(text("呼出时显示扇形区域的渐变暗影", 13,
-                Ui.MUTED, Typeface.NORMAL));
-        shadowRow.addView(shadowLabels, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch shadow = new Switch(this);
-        shadow.setChecked(preferences.getBoolean(ConfigContract.KEY_FAN_SHADOW,
-                ConfigContract.DEFAULT_FAN_SHADOW));
-        shadow.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(ConfigContract.KEY_FAN_SHADOW, checked));
-        shadowRow.addView(shadow);
-        card.addView(shadowRow);
-        card.addView(Ui.divider(this));
-        int speed = preferences.getInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
-                ConfigContract.DEFAULT_FAN_ANIMATION_SPEED);
-        card.addView(slider("动画速度", ConfigContract.KEY_FAN_ANIMATION_SPEED, speed,
+        String speedKey = sideMode ? ConfigContract.KEY_SIDE_ANIMATION_SPEED
+                : ConfigContract.KEY_FAN_ANIMATION_SPEED;
+        int speed = preferences.getInt(speedKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_ANIMATION_SPEED
+                : ConfigContract.DEFAULT_FAN_ANIMATION_SPEED);
+        card.addView(slider("动画速度", speedKey, speed,
                 ConfigContract.MIN_FAN_ANIMATION_SPEED,
                 ConfigContract.MAX_FAN_ANIMATION_SPEED, "%"));
         card.addView(Ui.divider(this));
-        int revealAmount = preferences.getInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT,
-                ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT);
-        card.addView(slider("图标呼出幅度", ConfigContract.KEY_FAN_REVEAL_AMOUNT,
+        String revealKey = sideMode ? ConfigContract.KEY_SIDE_REVEAL_AMOUNT
+                : ConfigContract.KEY_FAN_REVEAL_AMOUNT;
+        int revealAmount = preferences.getInt(revealKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_REVEAL_AMOUNT
+                : ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT);
+        card.addView(slider("图标呼出幅度", revealKey,
                 revealAmount, ConfigContract.MIN_FAN_REVEAL_AMOUNT,
                 ConfigContract.MAX_FAN_REVEAL_AMOUNT, "%"));
         card.addView(Ui.divider(this));
-        int rotation = preferences.getInt(ConfigContract.KEY_FAN_ROTATION_DEGREES,
-                ConfigContract.DEFAULT_FAN_ROTATION_DEGREES);
-        card.addView(slider("图标旋转幅度", ConfigContract.KEY_FAN_ROTATION_DEGREES,
+        String rotationKey = sideMode ? ConfigContract.KEY_SIDE_ROTATION_DEGREES
+                : ConfigContract.KEY_FAN_ROTATION_DEGREES;
+        int rotation = preferences.getInt(rotationKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_ROTATION_DEGREES
+                : ConfigContract.DEFAULT_FAN_ROTATION_DEGREES);
+        card.addView(slider("图标旋转幅度", rotationKey,
                 rotation, ConfigContract.MIN_FAN_ROTATION_DEGREES,
                 ConfigContract.MAX_FAN_ROTATION_DEGREES, "°"));
         card.addView(Ui.divider(this));
-        int selectionScale = preferences.getInt(
-                ConfigContract.KEY_FAN_SELECTION_SCALE_PERCENT,
-                ConfigContract.DEFAULT_FAN_SELECTION_SCALE_PERCENT);
-        card.addView(slider("应用选择放大", ConfigContract.KEY_FAN_SELECTION_SCALE_PERCENT,
+        String scaleKey = sideMode ? ConfigContract.KEY_SIDE_SELECTION_SCALE_PERCENT
+                : ConfigContract.KEY_FAN_SELECTION_SCALE_PERCENT;
+        int selectionScale = preferences.getInt(scaleKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_SELECTION_SCALE_PERCENT
+                : ConfigContract.DEFAULT_FAN_SELECTION_SCALE_PERCENT);
+        card.addView(slider("应用选择放大", scaleKey,
                 selectionScale, ConfigContract.MIN_FAN_SELECTION_SCALE_PERCENT,
                 ConfigContract.MAX_FAN_SELECTION_SCALE_PERCENT, "%"));
         card.addView(Ui.divider(this));
@@ -124,10 +148,13 @@ public final class AnimationSettingsActivity extends Activity {
         ringRow.addView(ringLabels, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Switch ring = new Switch(this);
-        ring.setChecked(preferences.getBoolean(ConfigContract.KEY_FAN_SELECTION_RING,
-                ConfigContract.DEFAULT_FAN_SELECTION_RING));
+        String ringKey = sideMode ? ConfigContract.KEY_SIDE_SELECTION_RING
+                : ConfigContract.KEY_FAN_SELECTION_RING;
+        ring.setChecked(preferences.getBoolean(ringKey, sideMode
+                ? ConfigContract.DEFAULT_SIDE_SELECTION_RING
+                : ConfigContract.DEFAULT_FAN_SELECTION_RING));
         ring.setOnCheckedChangeListener((button, checked) ->
-                store.putBoolean(ConfigContract.KEY_FAN_SELECTION_RING, checked));
+                store.putBoolean(ringKey, checked));
         ringRow.addView(ring);
         card.addView(ringRow);
         TextView note = text("动画速度越高越快；其余数值控制动效幅度。确认应用不会被动效阻塞。", 13,
@@ -135,6 +162,11 @@ public final class AnimationSettingsActivity extends Activity {
         note.setPadding(0, Ui.dp(this, 10), 0, 0);
         card.addView(note);
         root.addView(card);
+        Ui.addResetOption(this, root,
+                sideMode
+                        ? "将恢复侧滑呼出、旋转和选中动效的默认值。"
+                        : "将恢复扇形阴影、呼出、旋转和选中动效的默认值。",
+                sideMode ? store::resetSideAnimationSettings : store::resetAnimationSettings);
         return scroll;
     }
 

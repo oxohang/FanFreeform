@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <queries>
+        <package android:name="com.android.systemui" />
+        <package android:name="com.miui.home" />
+        <package android:name="org.lsposed.manager" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -33,11 +36,31 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.GestureDetailSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.AnimationSettingsActivity"
             android:exported="false" />
 
         <activity
+            android:name=".ui.FanLayoutSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.HoneycombSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.HoneycombAnimationSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.TaskCenterSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.TaskCenterAnimationSettingsActivity"
             android:exported="false" />
 
         <activity android:name=".ui.GeneralSettingsActivity" android:exported="false" />
@@ -54,9 +77,26 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="hypergesture" android:host="settings" />
             </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:targetActivity=".ui.DashboardActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name=".config.ConfigProvider"
@@ -64,6 +104,12 @@
             android:exported="true"
             android:grantUriPermissions="false"
             tools:ignore="ExportedContentProvider" />
+
+        <provider
+            android:name=".diagnostics.CompatibilityReportProvider"
+            android:authorities="com.oxohang.fanfreeform.reports"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription" android:value="HyperOS 3 底角扇形快捷小窗" />

@@ -9,6 +9,8 @@ final class HoneycombGestureState {
         return true;
     }
 
+    void enter() { active = true; }
+
     boolean shouldExit(float distance, float returnThreshold) {
         if (!active || returnThreshold <= 0f || distance > returnThreshold) return false;
         active = false;

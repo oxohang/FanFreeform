@@ -373,7 +373,12 @@ public final class MainActivity extends Activity {
                             ? ConfigContract.SIDE_LAYOUT_FAN
                             : ConfigContract.DEFAULT_SIDE_LAYOUT_MODE);
             String layout = layoutMode == ConfigContract.SIDE_LAYOUT_RING ? "环形"
-                    : layoutMode == ConfigContract.SIDE_LAYOUT_FAN ? "扇形" : "纵向列表";
+                    : layoutMode == ConfigContract.SIDE_LAYOUT_FAN ? "扇形"
+                    : layoutMode == ConfigContract.SIDE_LAYOUT_HONEYCOMB ? "蜂窝"
+                    : layoutMode == ConfigContract.SIDE_LAYOUT_TASKS ? "Hyper任务中心"
+                    : layoutMode == ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS
+                    ? "HyperOS 系统任务中心"
+                    : "纵向列表";
             sideGestureSummary.setText("长滑 " + trigger + "% · 顶部安全 "
                     + safeTop + "% · 反向 " + reverseCancel + "% · "
                     + layout + "·" + (follow ? "手指位置" : "贴边")

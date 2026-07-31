@@ -23,10 +23,10 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     private static final String EVENT_HANDLER = EVENT_CONTROLLER + "$EventHandler";
     private static final String FREEFORM_CONTROLLER =
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController";
-    private static final String FREEFORM_ANIMATION =
-            "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation";
     private static final String FREEFORM_PIN_HANDLER =
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModePinHandler";
+    private static final String FREEFORM_ANIMATION =
+            "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation";
 
     @SuppressLint("StaticFieldLeak")
     private static volatile FanRuntime runtime;
@@ -37,11 +37,13 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) {
         if (MIUI_HOME.equals(loadPackageParam.packageName)) {
             hookShortcutHost(loadPackageParam.classLoader);
+            hookRecentsClearButton(loadPackageParam.classLoader);
             return;
         }
         if (!SYSTEM_UI.equals(loadPackageParam.packageName)) return;
         Log.i("Loading in SystemUI process=" + loadPackageParam.processName);
         hookFreeformController(loadPackageParam.classLoader);
+        hookFreeformPinHandler(loadPackageParam.classLoader);
         hookMiniAnimationTarget(loadPackageParam.classLoader);
         hookEdgePinRestoreTarget(loadPackageParam.classLoader);
         hookShortcutEnterAnimation(loadPackageParam.classLoader);
@@ -51,6 +53,27 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         hookShadeExpansion(loadPackageParam.classLoader);
         hookControlCenterExpansion(loadPackageParam.classLoader);
         hookAuthoritativePanelState(loadPackageParam.classLoader);
+    }
+
+    private static void hookRecentsClearButton(ClassLoader classLoader) {
+        try {
+            Class<?> container = XposedHelpers.findClassIfExists(
+                    "com.miui.home.recents.views.RecentsContainer", classLoader);
+            if (container == null) {
+                Log.i("HyperOS recents clear-button hook skipped: container class missing");
+                return;
+            }
+            XC_MethodHook updater = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    RecentsClearButtonRuntime.attach(param.thisObject);
+                }
+            };
+            XposedBridge.hookAllMethods(container, "onFinishInflate", updater);
+            XposedBridge.hookAllMethods(container, "onAttachedToWindow", updater);
+            Log.i("HyperOS recents clear-button hook installed");
+        } catch (Throwable error) {
+            Log.e("HyperOS recents clear-button hook failed safely", error);
+        }
     }
 
     private static void hookStatusBarTouchEntry(ClassLoader classLoader) {
@@ -346,6 +369,18 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                     }
                 }
             });
+            XC_MethodHook leavingInteractiveStateHook = new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    FanRuntime active = runtime;
+                    if (active == null) return;
+                    active.onNativeFreeformLeavingInteractiveState(param.method.getName());
+                }
+            };
+            XposedBridge.hookAllMethods(controllerClass, "startPinAnimation",
+                    leavingInteractiveStateHook);
+            XposedBridge.hookAllMethods(controllerClass, "fromFreeformToMini",
+                    leavingInteractiveStateHook);
             XposedBridge.hookAllMethods(controllerClass, "onImeVisibilityChanged",
                     new XC_MethodHook() {
                         @Override
@@ -357,9 +392,44 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                                     ((Number) param.args[1]).intValue());
                         }
                     });
+            XposedBridge.hookAllMethods(controllerClass, "handleTouchEvent",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            FanRuntime active = runtime;
+                            if (active == null || param.args.length == 0
+                                    || !(param.args[0] instanceof MotionEvent)) return;
+                            active.onNativeFreeformMotion((MotionEvent) param.args[0]);
+                        }
+                    });
             Log.i("Freeform controller hooks installed");
         } catch (Throwable error) {
             Log.e("Freeform controller hooks failed safely", error);
+        }
+    }
+
+    private static void hookFreeformPinHandler(ClassLoader classLoader) {
+        try {
+            Class<?> handlerClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_PIN_HANDLER, classLoader);
+            if (handlerClass == null) {
+                Log.i("HyperOS freeform pin handler is unavailable; direct pin tracking disabled");
+                return;
+            }
+            XposedBridge.hookAllMethods(handlerClass, "startPinAnimation",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            FanRuntime active = runtime;
+                            if (active != null) {
+                                active.onNativeFreeformLeavingInteractiveState(
+                                        "pin handler startPinAnimation");
+                            }
+                        }
+                    });
+            Log.i("Freeform pin handler hook installed");
+        } catch (Throwable error) {
+            Log.e("Freeform pin handler hook failed safely", error);
         }
     }
 
