@@ -511,7 +511,7 @@ final class FanRuntime {
                     float iconDiameter = iconDiameter(selectionRadius);
                     overlay.show(targets, corner, selectionRadius, iconDiameter,
                             config.showSelectedAppName, config.fanShadow,
-                            config.fanAnimationsEnabled, config.fanAnimationSpeed,
+                            config.fanAnimationsEnabled, config.bottomAnimationSpeed,
                             config.fanRevealAmount, config.fanRotationDegrees,
                             config.fanSelectionScalePercent, config.fanSelectionRing,
                             config.fanLayoutMode, config.fanCustomOuterCount,
@@ -886,14 +886,18 @@ final class FanRuntime {
             float iconDiameter = iconDiameter(selectionRadius);
             overlay.show(targets, corner, selectionRadius, iconDiameter,
                     config.showSelectedAppName, config.fanShadow,
-                    config.fanAnimationsEnabled, config.fanAnimationSpeed,
+                    config.fanAnimationsEnabled, config.bottomAnimationSpeed,
                     config.fanRevealAmount, config.fanRotationDegrees,
                     config.fanSelectionScalePercent,
                     config.fanSelectionRing, config.fanLayoutMode,
                     config.fanCustomOuterCount, config.fanCustomMiddleCount,
                     config.fanCustomInnerCount,
                     config.forceCircularIcons);
-            int next = updateSelection(x, y, width, height, selectionRadius, iconDiameter);
+            overlay.setSelectionTransformLevel(config.selectionTransformLevel);
+            if (BottomTriggerHapticPolicy.shouldVibrate(
+                    config.haptic, config.bottomTriggerHaptic)) vibrateTick();
+            int next = updateSelection(x, y, width, height, selectionRadius,
+                    iconDiameter, false);
             updateBottomHoneycombSettleCandidate(x, y, width, height, next,
                     selectionRadius, iconDiameter);
         }
@@ -918,7 +922,7 @@ final class FanRuntime {
                                     FanRuntime.this::refreshOutsideCapture);
                             refreshOutsideCaptureAfterLaunch();
                         } else {
-                            launchFullscreenTarget(target, true);
+                            launchHoneycombFullscreenTarget(target);
                         }
                     }
 
@@ -934,7 +938,6 @@ final class FanRuntime {
                 * config.triggerPercent / 100f;
         state = State.HONEYCOMB;
         honeycombOverlay.externalMove(x, y);
-        if (config.haptic) vibrateTick();
         Log.i("Honeycomb activated targets=" + honeycombTargets.size()
                 + " mode=" + config.honeycombMode + " after blank-area settle");
         return true;
@@ -950,6 +953,10 @@ final class FanRuntime {
         };
         if (closingFreeform) mainHandler.postDelayed(launch, 220L);
         else launch.run();
+    }
+
+    private void launchHoneycombFullscreenTarget(RuntimeTarget target) {
+        launchFullscreenTarget(target, config.honeycombCenteredSystemAnimation);
     }
 
     private void activateSideList(float x, float y, int width, int height) {
@@ -1042,6 +1049,7 @@ final class FanRuntime {
                     config.sideRotationDegrees, config.sideSelectionScalePercent,
                     config.sideSelectionRing, config.forceCircularIcons);
         }
+        overlay.setSelectionTransformLevel(config.selectionTransformLevel);
         if (config.haptic) vibrateTick();
         updateSideListSelection(x, y);
         Log.i("Side list shown center=" + Math.round(sideListCenterX) + ","
@@ -1063,7 +1071,7 @@ final class FanRuntime {
                 new HoneycombOverlayController.Listener() {
                     @Override public void onLaunch(RuntimeTarget target) {
                         if (config.sideFullscreenFor(isLandscape())) {
-                            launchFullscreenTarget(target, true);
+                            launchHoneycombFullscreenTarget(target);
                         }
                         else {
                             freeform.launch(target, config,
@@ -1093,7 +1101,7 @@ final class FanRuntime {
         configHandler.post(() -> {
             List<RecentTaskPreview> previews = recentTaskRepository.loadRunningTasks(
                     taskConfig.sideTaskMaxCount,
-                    taskConfig.sideTaskLayoutMode != ConfigContract.SIDE_TASK_LAYOUT_ICONS);
+                    taskConfig.sideTaskLayoutMode == ConfigContract.SIDE_TASK_LAYOUT_FLAT);
             mainHandler.post(() -> showLoadedSideTasks(previews, taskCorner, x, y,
                     taskConfig, generation));
         });
@@ -1355,11 +1363,17 @@ final class FanRuntime {
 
     private int updateSelection(float x, float y, int width, int height,
                                 float radius, float iconDiameter) {
+        return updateSelection(x, y, width, height, radius, iconDiameter, true);
+    }
+
+    private int updateSelection(float x, float y, int width, int height,
+                                float radius, float iconDiameter,
+                                boolean emitHaptic) {
         int next = GestureGeometry.selection(corner, x, y, width, height, activeTargets.size(),
                 radius, iconDiameter, 6 * density, config.fanLayoutMode,
                 config.fanCustomOuterCount, config.fanCustomMiddleCount,
                 config.fanCustomInnerCount);
-        if (config.haptic && next >= 0 && next != lastHapticSelection) {
+        if (emitHaptic && config.haptic && next >= 0 && next != lastHapticSelection) {
             vibrateTick();
         }
         lastHapticSelection = next;

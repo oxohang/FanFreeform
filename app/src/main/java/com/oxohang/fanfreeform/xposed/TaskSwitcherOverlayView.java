@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
+import android.view.animation.PathInterpolator;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 
@@ -64,6 +65,7 @@ final class TaskSwitcherOverlayView extends View {
     private float inwardDirection;
     private float scrollPosition;
     private float displayPosition;
+    private float lastPointerX;
     private float lastInward;
     private float fingerVelocity;
     private float currentPulse;
@@ -76,6 +78,7 @@ final class TaskSwitcherOverlayView extends View {
     private int layoutMode;
     private int motionMode;
     private int swipeSpeedPercent;
+    private int animationSpeedIndex;
     private int selected = -1;
     private int lastHapticIndex = -1;
     private int selectionDirection = 1;
@@ -85,7 +88,9 @@ final class TaskSwitcherOverlayView extends View {
     private boolean showTaskName;
     private boolean movedForSelection;
     private boolean closing;
+    private boolean released;
     private ValueAnimator animator;
+    private ValueAnimator confirmationAnimator;
     private MotionProfile motionProfile = MotionProfile.magnetic();
     private final BlurredWallpaperCache.Callback wallpaperCallback = bitmap -> post(() -> {
         if (backgroundStyle != ConfigContract.HONEYCOMB_BACKGROUND_BLUR) return;
@@ -98,7 +103,6 @@ final class TaskSwitcherOverlayView extends View {
         density = context.getResources().getDisplayMetrics().density;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         setFocusableInTouchMode(true);
-        setLayerType(LAYER_TYPE_HARDWARE, null);
         cardPaint.setColor(0xff242733);
         labelPaint.setColor(Color.WHITE);
         labelPaint.setTextAlign(Paint.Align.LEFT);
@@ -108,10 +112,14 @@ final class TaskSwitcherOverlayView extends View {
     void configure(List<RecentTaskPreview> tasks, GestureGeometry.Corner corner,
                    float anchorX, float anchorY,
                    GestureConfig config, Listener listener) {
-        this.tasks = tasks == null ? Collections.emptyList() : new ArrayList<>(tasks);
+        ArrayList<RecentTaskPreview> orderedTasks = tasks == null
+                ? new ArrayList<>() : new ArrayList<>(tasks);
+        if (config.sideTaskReverseOrder) Collections.reverse(orderedTasks);
+        this.tasks = orderedTasks;
         this.anchorX = anchorX;
         this.anchorY = anchorY;
         this.pointerY = anchorY;
+        this.lastPointerX = anchorX;
         this.listener = listener;
         hapticEnabled = config.haptic;
         showTaskName = config.sideTaskShowName;
@@ -131,6 +139,7 @@ final class TaskSwitcherOverlayView extends View {
         motionMode = config.sideTaskMotionMode;
         motionProfile = MotionProfile.forMode(motionMode);
         swipeSpeedPercent = config.sideTaskSwipeSpeedPercent;
+        animationSpeedIndex = config.sideTaskAnimationSpeed;
         backgroundStyle = config.honeycombBackgroundStyle;
         dimPercent = config.honeycombDimPercent;
         blurDp = config.honeycombBlurDp;
@@ -139,7 +148,8 @@ final class TaskSwitcherOverlayView extends View {
 
     void playEntry() {
         requestFocus();
-        animateProgress(0f, 1f, 220L, false);
+        animateProgress(0f, 1f, TaskCenterAnimationPolicy.durationMs(245L,
+                animationSpeedIndex), false);
     }
 
     void onExternalMove(float x, float y) {
@@ -150,6 +160,10 @@ final class TaskSwitcherOverlayView extends View {
         float horizontalMargin = 18f * density + contentWidth / 2f;
         focusX = clamp(x, horizontalMargin, getWidth() - horizontalMargin);
         if (y > anchorY + dismissDistance) {
+            // Do not accumulate horizontal distance while the pointer is in the
+            // dismissal zone. Returning to the rail should resume from the
+            // latest pointer coordinate rather than jump across several tasks.
+            lastPointerX = x;
             if (selected != -1) {
                 selected = -1;
                 invalidate();
@@ -163,9 +177,10 @@ final class TaskSwitcherOverlayView extends View {
                 30f * density, 150f * density)
                 : clamp(cardWidth * 0.22f, 40f * density, 72f * density);
         float step = baseStep * 100f / swipeSpeedPercent;
-        float travel = inward / Math.max(1f, step);
-        if (travel > 1.5f) travel = 1.5f + (travel - 1.5f) * 1.80f;
-        scrollPosition = clamp(travel, 0f, Math.max(0, tasks.size() - 1));
+        float inwardDelta = (x - lastPointerX) * inwardDirection;
+        scrollPosition = TaskSelectionPolicy.advancePosition(
+                scrollPosition, inwardDelta, step, tasks.size());
+        lastPointerX = x;
         updateFingerVelocity(inward);
         displayPosition = magneticPosition(scrollPosition);
         int next = TaskSelectionPolicy.nearestIndex(
@@ -431,7 +446,9 @@ final class TaskSwitcherOverlayView extends View {
         RecentTaskPreview task = tasks.get(index);
         settleStartPosition = displayPosition;
         ValueAnimator confirm = ValueAnimator.ofFloat(0f, 1f);
-        confirm.setDuration(motionProfile.confirmDurationMs);
+        confirmationAnimator = confirm;
+        confirm.setDuration(TaskCenterAnimationPolicy.durationMs(
+                motionProfile.confirmDurationMs, animationSpeedIndex));
         confirm.setInterpolator(new LinearInterpolator());
         confirm.addUpdateListener(value -> {
             float progress = (Float) value.getAnimatedValue();
@@ -443,7 +460,7 @@ final class TaskSwitcherOverlayView extends View {
         });
         confirm.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (listener != null) listener.onLaunch(task);
+                if (!released && listener != null) listener.onLaunch(task);
             }
         });
         confirm.start();
@@ -452,21 +469,24 @@ final class TaskSwitcherOverlayView extends View {
     void playDismissal() {
         if (closing) return;
         closing = true;
-        animateProgress(entryProgress, 0f, 155L, true);
+        animateProgress(entryProgress, 0f,
+                TaskCenterAnimationPolicy.durationMs(155L, animationSpeedIndex), true);
     }
 
     private void animateProgress(float from, float to, long duration, boolean closeAfter) {
         if (animator != null) animator.cancel();
         animator = ValueAnimator.ofFloat(from, to);
         animator.setDuration(duration);
-        animator.setInterpolator(new DecelerateInterpolator(1.25f));
+        animator.setInterpolator(closeAfter
+                ? new DecelerateInterpolator(1.25f)
+                : new PathInterpolator(0.16f, 1f, 0.30f, 1f));
         animator.addUpdateListener(value -> {
             entryProgress = (Float) value.getAnimatedValue();
             invalidate();
         });
         if (closeAfter) animator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (listener != null) listener.onClosed();
+                if (!released && listener != null) listener.onClosed();
             }
         });
         animator.start();
@@ -482,6 +502,7 @@ final class TaskSwitcherOverlayView extends View {
             selected = -1;
             scrollPosition = 0f;
             displayPosition = 0f;
+            lastPointerX = event.getX();
             lastInward = 0f;
             fingerVelocity = 0f;
             lastMoveNanos = 0L;
@@ -496,7 +517,10 @@ final class TaskSwitcherOverlayView extends View {
     }
 
     void releaseResources() {
+        released = true;
+        listener = null;
         if (animator != null) animator.cancel();
+        if (confirmationAnimator != null) confirmationAnimator.cancel();
         for (RecentTaskPreview task : tasks) {
             Bitmap snapshot = task.snapshot;
             if (snapshot != null && !snapshot.isRecycled()) snapshot.recycle();
@@ -534,7 +558,8 @@ final class TaskSwitcherOverlayView extends View {
     private float selectionPulse() {
         if (selectionPulseStartNanos == 0L || selected < 0) return 0f;
         float elapsed = (System.nanoTime() - selectionPulseStartNanos) / 1_000_000f;
-        float progress = elapsed / motionProfile.pulseDurationMs;
+        float progress = elapsed / TaskCenterAnimationPolicy.durationMs(
+                motionProfile.pulseDurationMs, animationSpeedIndex);
         if (progress >= 1f) return 0f;
         float pulse = (float) Math.sin(Math.PI * clamp(progress, 0f, 1f));
         if (motionMode == ConfigContract.SIDE_TASK_MOTION_MARBLE) {

@@ -20,6 +20,26 @@ public final class TaskSelectionPolicyTest {
     }
 
     @Test
+    public void edgeOverscrollDoesNotCreateSelectionDebt() {
+        float step = 40f;
+        float position = TaskSelectionPolicy.advancePosition(0f, step * 3f, step, 4);
+        position = TaskSelectionPolicy.advancePosition(position, -step * 3f, step, 4);
+        assertEquals(0f, position, 0.001f);
+
+        position = TaskSelectionPolicy.advancePosition(position, -step * 4f, step, 4);
+        assertEquals(0f, position, 0.001f);
+
+        position = TaskSelectionPolicy.advancePosition(position, step * 0.51f, step, 4);
+        assertEquals(1, TaskSelectionPolicy.nearestIndex(position, 4, true));
+    }
+
+    @Test
+    public void incrementalMovementKeepsTheExistingFastTraversalCurve() {
+        float position = TaskSelectionPolicy.advancePosition(0f, 100f, 40f, 8);
+        assertEquals(3.3f, position, 0.001f);
+    }
+
+    @Test
     public void extendedToleranceDoublesOnlyTheDownwardDismissDistance() {
         assertEquals(180f, TaskSelectionPolicy.downwardDismissDistance(90f, true), 0.001f);
         assertEquals(90f, TaskSelectionPolicy.downwardDismissDistance(90f, false), 0.001f);

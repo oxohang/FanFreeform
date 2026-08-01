@@ -16,6 +16,8 @@ public final class WindowPreviewView extends View {
     private int heightPercent = 58;
     private int positionX = 50;
     private int positionY = 50;
+    private int nativeScalePercent = 100;
+    private boolean nativeSizeMode;
     private boolean landscape;
 
     public WindowPreviewView(Context context) {
@@ -29,10 +31,17 @@ public final class WindowPreviewView extends View {
     }
 
     public void update(int widthPercent, int heightPercent, int positionX, int positionY) {
+        update(widthPercent, heightPercent, positionX, positionY, false, 100);
+    }
+
+    public void update(int widthPercent, int heightPercent, int positionX, int positionY,
+                       boolean nativeSizeMode, int nativeScalePercent) {
         this.widthPercent = widthPercent;
         this.heightPercent = heightPercent;
         this.positionX = positionX;
         this.positionY = positionY;
+        this.nativeSizeMode = nativeSizeMode;
+        this.nativeScalePercent = Math.max(50, Math.min(150, nativeScalePercent));
         invalidate();
     }
 
@@ -61,6 +70,15 @@ public final class WindowPreviewView extends View {
 
         float winW = screenW * widthPercent / 100f;
         float winH = screenH * heightPercent / 100f;
+        if (nativeSizeMode) {
+            float requestedScale = nativeScalePercent / 100f;
+            winW *= requestedScale;
+            winH *= requestedScale;
+            float fit = Math.min(1f, Math.min(screenW / Math.max(1f, winW),
+                    screenH / Math.max(1f, winH)));
+            winW *= fit;
+            winH *= fit;
+        }
         float travelX = screenW - winW;
         float travelY = screenH - winH;
         float winLeft = left + travelX * positionX / 100f;

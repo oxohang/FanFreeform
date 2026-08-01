@@ -7,8 +7,6 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 
 import java.util.List;
 
@@ -83,31 +81,38 @@ final class HoneycombOverlayController {
         params.setTitle("HyperGestureHoneycomb");
         params.layoutInDisplayCutoutMode = WindowManager.LayoutParams
                 .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        boolean blurRequested = config.honeycombLiveBlurEnabled;
+        if (blurRequested) {
+            params.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            try {
+                params.setBlurBehindRadius(Math.round(config.honeycombLiveBlurDp
+                        * context.getResources().getDisplayMetrics().density));
+            } catch (Throwable error) {
+                params.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                blurRequested = false;
+                Log.e("Live blur is unavailable; using color fallback", error);
+            }
+        }
         try {
-            next.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-            windowManager.addView(next, params);
+            try {
+                windowManager.addView(next, params);
+            } catch (Throwable blurError) {
+                if (!blurRequested) throw blurError;
+                Log.e("Cannot attach honeycomb with live blur; retrying", blurError);
+                params.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                try { params.setBlurBehindRadius(0); } catch (Throwable ignored) { }
+                windowManager.addView(next, params);
+            }
             view = next;
             attached = true;
-            next.post(() -> {
-                try {
-                    WindowInsetsController controller = next.getWindowInsetsController();
-                    if (controller != null) {
-                        controller.setSystemBarsBehavior(WindowInsetsController
-                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                        controller.hide(WindowInsets.Type.navigationBars());
-                    }
-                } catch (Throwable error) {
-                    Log.e("Cannot hide navigation handle for honeycomb", error);
-                }
-            });
+            ForegroundAppBackgroundResolver.request(context, color -> next.post(() -> {
+                if (attached && view == next) next.setAppBackgroundColor(color);
+            }));
             next.playEntry();
             return true;
         } catch (Throwable error) {
             Log.e("Cannot attach honeycomb overlay", error);
+            next.releaseResources();
             view = null;
             attached = false;
             return false;
@@ -177,6 +182,8 @@ final class HoneycombOverlayController {
                 windowManager.removeViewImmediate(current);
             } catch (Throwable error) {
                 Log.e("Cannot remove honeycomb overlay", error);
+            } finally {
+                current.releaseResources();
             }
         };
         Handler owner = current.getHandler();

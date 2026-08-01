@@ -55,6 +55,7 @@ final class FanOverlayView extends View {
     private int selectionScalePercent = 18;
     private boolean showSelectionRing = true;
     private boolean forceCircularIcons = true;
+    private int selectionTransformLevel;
     private long revealStartedAt;
     private int animatedSelection = -1;
     private long selectionStartedAt;
@@ -65,7 +66,6 @@ final class FanOverlayView extends View {
 
     FanOverlayView(Context context) {
         super(context);
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         iconShadowPaint.setColor(0x01000000);
         iconShadowPaint.setShadowLayer(dp(9), 0, dp(3), 0x5c000000);
         iconStrokePaint.setStyle(Paint.Style.STROKE);
@@ -88,6 +88,10 @@ final class FanOverlayView extends View {
     void setForceCircularIcons(boolean forceCircularIcons) {
         this.forceCircularIcons = forceCircularIcons;
         invalidate();
+    }
+
+    void setSelectionTransformLevel(int level) {
+        selectionTransformLevel = level;
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
@@ -307,6 +311,14 @@ final class FanOverlayView extends View {
             float iconRadius = diameter / 2f;
             int save = canvas.save();
             canvas.rotate(revealRotation(i, now), x, y);
+            if (active) {
+                float pulse = Math.max(0f, pop - 1f) * 5f;
+                int direction = corner == GestureGeometry.Corner.LEFT ? 1 : -1;
+                canvas.rotate(SelectionTransform.rotation(selectionTransformLevel,
+                        direction, pulse), x, y);
+                canvas.scale(SelectionTransform.scaleX(selectionTransformLevel, pulse),
+                        SelectionTransform.scaleY(selectionTransformLevel, pulse), x, y);
+            }
             if (forceCircularIcons) canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
             RuntimeTarget target = targets.get(i);
             drawCircularIcon(canvas, target.icon, x, y, diameter);
@@ -387,6 +399,14 @@ final class FanOverlayView extends View {
             float radius = diameter / 2f;
             int save = canvas.save();
             canvas.rotate(revealRotation(i, now), x, y);
+            if (active) {
+                float pulse = Math.max(0f, pop - 1f) * 5f;
+                int direction = corner == GestureGeometry.Corner.LEFT ? 1 : -1;
+                canvas.rotate(SelectionTransform.rotation(selectionTransformLevel,
+                        direction, pulse), x, y);
+                canvas.scale(SelectionTransform.scaleX(selectionTransformLevel, pulse),
+                        SelectionTransform.scaleY(selectionTransformLevel, pulse), x, y);
+            }
             if (active && showSelectionRing) {
                 canvas.drawCircle(x, y, radius + dp(7), selectedFillPaint);
             }

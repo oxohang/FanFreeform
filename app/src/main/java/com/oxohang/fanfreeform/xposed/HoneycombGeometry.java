@@ -1,5 +1,7 @@
 package com.oxohang.fanfreeform.xposed;
 
+import com.oxohang.fanfreeform.config.HoneycombSlotLayout;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -21,27 +23,9 @@ final class HoneycombGeometry {
     private HoneycombGeometry() { }
 
     static List<Point> compactPoints(int count, float pitch) {
-        if (count <= 0 || pitch <= 0f) return Collections.emptyList();
-        int[] capacities = circularRowCapacities(count);
-        ArrayList<Point> result = new ArrayList<>(count);
-        float verticalPitch = pitch * SQRT_THREE_OVER_TWO;
-        float centerRow = (capacities.length - 1) * 0.5f;
-        for (int row = 0; row < capacities.length; row++) {
-            int capacity = capacities[row];
-            float y = (row - centerRow) * verticalPitch;
-            int latticeRow = row - capacities.length / 2;
-            float stagger = Math.floorMod(latticeRow, 2) == 0 ? 0f : 0.5f;
-            ArrayList<Point> rowPoints = new ArrayList<>(capacity + 4);
-            for (int column = -capacity - 2; column <= capacity + 2; column++) {
-                rowPoints.add(new Point((column + stagger) * pitch, y));
-            }
-            rowPoints.sort(Comparator.comparingDouble(point -> Math.abs(point.x)));
-            result.addAll(rowPoints.subList(0, capacity));
-        }
-        recenter(result);
-        result.sort(Comparator
-                .comparingDouble(HoneycombGeometry::squaredRadius)
-                .thenComparingDouble(point -> Math.atan2(point.y, point.x)));
+        List<HoneycombSlotLayout.Point> shared = HoneycombSlotLayout.compactPoints(count, pitch);
+        ArrayList<Point> result = new ArrayList<>(shared.size());
+        for (HoneycombSlotLayout.Point point : shared) result.add(new Point(point.x, point.y));
         return result;
     }
 

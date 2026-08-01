@@ -22,6 +22,9 @@ final class GestureConfig {
     final int fanRotationDegrees;
     final int fanSelectionScalePercent;
     final boolean fanSelectionRing;
+    int bottomAnimationSpeed = ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED;
+    boolean bottomTriggerHaptic = ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC;
+    int selectionTransformLevel = ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL;
     boolean forceCircularIcons = ConfigContract.DEFAULT_FORCE_CIRCULAR_ICONS;
     final boolean sideGestureEnabled;
     final int sideTriggerPercent;
@@ -106,10 +109,14 @@ final class GestureConfig {
     int sideTaskIconGapDp = ConfigContract.DEFAULT_SIDE_TASK_ICON_GAP_DP;
     int sideTaskFingerOffsetDp = ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP;
     int sideTaskLayoutMode = ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE;
+    boolean sideTaskReverseOrder = ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER;
     boolean sideTaskShowName = ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME;
     int sideTaskMotionMode = ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE;
     int sideTaskSwipeSpeedPercent =
             ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT;
+    int sideTaskAnimationSpeed = ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED;
+    boolean honeycombCenteredSystemAnimation =
+            ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION;
     boolean sideTaskExtendedDownwardTolerance =
             ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE;
     boolean sideFullscreen = ConfigContract.DEFAULT_SIDE_FULLSCREEN;
@@ -136,6 +143,12 @@ final class GestureConfig {
     int honeycombBackgroundStyle;
     int honeycombBlurDp = 36;
     int honeycombDimPercent = 22;
+    boolean honeycombAppBackgroundEnabled =
+            ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED;
+    boolean honeycombLiveBlurEnabled = ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED;
+    int honeycombLiveBlurDp = ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP;
+    int honeycombBackgroundDimPercent =
+            ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT;
     int honeycombRetreatDp = ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP;
     int honeycombDiscSizePercent = ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT;
     boolean honeycombShowSelectedName = ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME;
@@ -576,6 +589,9 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE),
                 ConfigContract.SIDE_TASK_LAYOUT_FLAT,
                 ConfigContract.SIDE_TASK_LAYOUT_ICONS);
+        result.sideTaskReverseOrder = bundle.getBoolean(
+                ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER);
         result.sideTaskShowName = bundle.getBoolean(
                 ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                 ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME);
@@ -589,9 +605,27 @@ final class GestureConfig {
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT),
                 ConfigContract.MIN_SIDE_TASK_SWIPE_SPEED_PERCENT,
                 ConfigContract.MAX_SIDE_TASK_SWIPE_SPEED_PERCENT);
+        result.sideTaskAnimationSpeed = clamp(bundle.getInt(
+                        ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED), 0, 4);
         result.sideTaskExtendedDownwardTolerance = bundle.getBoolean(
                 ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                 ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE);
+        result.bottomAnimationSpeed = clamp(bundle.getInt(
+                        ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                        result.fanAnimationSpeed),
+                ConfigContract.MIN_FAN_ANIMATION_SPEED,
+                ConfigContract.MAX_FAN_ANIMATION_SPEED);
+        result.bottomTriggerHaptic = bundle.getBoolean(
+                ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC, result.haptic);
+        result.selectionTransformLevel = clamp(bundle.getInt(
+                        ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL),
+                ConfigContract.SELECTION_TRANSFORM_OFF,
+                ConfigContract.SELECTION_TRANSFORM_STRONG);
+        result.honeycombCenteredSystemAnimation = bundle.getBoolean(
+                ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION);
         result.sideFullscreen = bundle.getBoolean(
                 ConfigContract.KEY_SIDE_FULLSCREEN,
                 ConfigContract.DEFAULT_SIDE_FULLSCREEN);
@@ -659,6 +693,18 @@ final class GestureConfig {
                 ConfigContract.KEY_HONEYCOMB_BLUR_DP, 36), 0, 60);
         result.honeycombDimPercent = clamp(bundle.getInt(
                 ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22), 0, 60);
+        result.honeycombAppBackgroundEnabled = bundle.getBoolean(
+                ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED);
+        result.honeycombLiveBlurEnabled = bundle.getBoolean(
+                ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED);
+        result.honeycombLiveBlurDp = clamp(bundle.getInt(
+                ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP), 0, 60);
+        result.honeycombBackgroundDimPercent = clamp(bundle.getInt(
+                ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT), 0, 60);
         result.honeycombRetreatDp = clamp(bundle.getInt(
                 ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
                 ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),

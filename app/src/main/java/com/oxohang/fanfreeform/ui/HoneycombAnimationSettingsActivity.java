@@ -10,6 +10,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -49,6 +50,7 @@ public final class HoneycombAnimationSettingsActivity extends Activity {
         card.addView(slider("动画速度", ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
                 0, 4, ConfigContract.DEFAULT_HONEYCOMB_ANIMATION_SPEED,
                 value -> SPEEDS[value]));
+        card.addView(systemAnimationToggle());
         card.addView(slider("惯性强度", ConfigContract.KEY_HONEYCOMB_INERTIA,
                 0, 2, ConfigContract.DEFAULT_HONEYCOMB_INERTIA,
                 value -> INERTIA[value]));
@@ -66,9 +68,30 @@ public final class HoneycombAnimationSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE, value -> value + "%"));
         root.addView(card);
         Ui.addResetOption(this, root,
-                "将恢复蜂窝动画速度、惯性、凸起和缩放默认值。",
+                "将恢复蜂窝动画、全屏启动、惯性、凸起和缩放默认值。",
                 store::resetHoneycombAnimationSettings);
         return scroll;
+    }
+
+    private View systemAnimationToggle() {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 8));
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text("中心展开系统动画", 15, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text("关闭后使用 HyperOS 默认全屏启动动画",
+                12, Ui.MUTED, Typeface.NORMAL));
+        row.addView(labels, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch toggle = new Switch(this);
+        toggle.setChecked(prefs.getBoolean(
+                ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION));
+        toggle.setOnCheckedChangeListener((button, checked) -> store.putBoolean(
+                ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION, checked));
+        row.addView(toggle);
+        return row;
     }
 
     private View slider(String title, String key, int min, int max,

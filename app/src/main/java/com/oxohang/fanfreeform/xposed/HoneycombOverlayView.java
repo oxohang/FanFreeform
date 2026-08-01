@@ -7,8 +7,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.text.TextUtils;
@@ -39,7 +39,8 @@ final class HoneycombOverlayView extends View {
     private final Paint iconPlatePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint namePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final Paint namePillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint wallpaperPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint wallpaperPaint = new Paint(Paint.ANTI_ALIAS_FLAG
+            | Paint.FILTER_BITMAP_FLAG);
     private final RectF wallpaperBounds = new RectF();
     private final Rect iconOldBounds = new Rect();
     private final Path clipPath = new Path();
@@ -66,7 +67,9 @@ final class HoneycombOverlayView extends View {
     private boolean forceCircularIcons = true;
     private boolean interactionPaused;
     private boolean closing;
+    private boolean released;
     private int speedIndex;
+    private int selectionTransformLevel;
     private int inertiaIndex;
     private float iconSize;
     private float pitch;
@@ -78,10 +81,14 @@ final class HoneycombOverlayView extends View {
     private boolean followFingerPosition;
     private int fixedXPercent;
     private int fixedYPercent;
+    private boolean appBackgroundEnabled;
+    private boolean liveBlurEnabled;
+    private int appBackgroundColor;
+    private int backgroundDimPercent;
     private Bitmap wallpaper;
-    private int backgroundStyle;
-    private int dimPercent;
-    private int blurDp;
+    private int wallpaperBackgroundStyle;
+    private int wallpaperDimPercent;
+    private int wallpaperBlurDp;
     private int discSizePercent;
     private int statusBarHeight;
     private float panX;
@@ -104,6 +111,7 @@ final class HoneycombOverlayView extends View {
     private boolean scaledDuringGesture;
     private VelocityTracker velocityTracker;
     private final ValueAnimator selectionAnimator = new ValueAnimator();
+    private final ArrayList<ValueAnimator> activeAnimators = new ArrayList<>();
     private float baseMaximumX;
     private float baseMaximumY;
     private float panMinimumX;
@@ -133,9 +141,10 @@ final class HoneycombOverlayView extends View {
     private float externalVelocityY;
     private long externalLastTime;
     private long lastHoldPanFrameMs;
+    private Runnable pendingLaunch;
     private final BlurredWallpaperCache.Callback wallpaperCallback = bitmap -> post(() -> {
-        if (backgroundStyle != com.oxohang.fanfreeform.config.ConfigContract
-                .HONEYCOMB_BACKGROUND_BLUR) return;
+        if (released || wallpaperBackgroundStyle != com.oxohang.fanfreeform.config
+                .ConfigContract.HONEYCOMB_BACKGROUND_BLUR) return;
         wallpaper = bitmap;
         invalidate();
     });
@@ -173,12 +182,12 @@ final class HoneycombOverlayView extends View {
         });
         setFocusableInTouchMode(true);
         backgroundPaint.setColor(Color.BLACK);
+        appBackgroundColor = ForegroundAppBackgroundResolver.fallback(context);
         iconPlatePaint.setColor(0xff17181d);
         namePaint.setColor(Color.WHITE);
         namePaint.setTextSize(15f * density);
         namePaint.setTextAlign(Paint.Align.CENTER);
         namePillPaint.setColor(0xdd20263f);
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         statusBarHeight = 0;
         selectionAnimator.addUpdateListener(value -> {
             selectionProgress = (Float) value.getAnimatedValue();
@@ -200,6 +209,7 @@ final class HoneycombOverlayView extends View {
         forceCircularIcons = config.forceCircularIcons;
         nameTarget = null;
         speedIndex = config.honeycombAnimationSpeed;
+        selectionTransformLevel = config.selectionTransformLevel;
         inertiaIndex = config.honeycombInertia;
         iconSize = config.honeycombIconSizeDp * density;
         pitch = Math.max(iconSize + 4f * density, config.honeycombSpacingDp * density);
@@ -218,12 +228,17 @@ final class HoneycombOverlayView extends View {
             anchorX = triggerX;
             anchorY = triggerY;
         }
-        backgroundStyle = config.honeycombBackgroundStyle;
-        dimPercent = config.honeycombDimPercent;
-        blurDp = config.honeycombBlurDp;
+        appBackgroundEnabled = config.honeycombAppBackgroundEnabled;
+        liveBlurEnabled = config.honeycombLiveBlurEnabled;
+        backgroundDimPercent = config.honeycombBackgroundDimPercent;
+        wallpaperBackgroundStyle = config.honeycombBackgroundStyle;
+        wallpaperDimPercent = config.honeycombDimPercent;
+        wallpaperBlurDp = config.honeycombBlurDp;
         discSizePercent = config.honeycombDiscSizePercent;
-        if (backgroundStyle == com.oxohang.fanfreeform.config.ConfigContract
+        if (!appBackgroundEnabled && !liveBlurEnabled
+                && wallpaperBackgroundStyle == com.oxohang.fanfreeform.config.ConfigContract
                 .HONEYCOMB_BACKGROUND_BLUR) loadWallpaper();
+        applyForegroundColors();
         basePoints = HoneycombGeometry.compactPoints(targets.size(), pitch);
         baseMaximumX = 0f;
         baseMaximumY = 0f;
@@ -260,14 +275,30 @@ final class HoneycombOverlayView extends View {
                 + " fixed=" + fixedXPercent + "," + fixedYPercent);
     }
 
+    void setAppBackgroundColor(int color) {
+        if (released) return;
+        appBackgroundColor = color | 0xff000000;
+        applyForegroundColors();
+        invalidate();
+    }
+
     private void loadWallpaper() {
-        wallpaper = BlurredWallpaperCache.getOrRequest(getContext(), blurDp,
+        wallpaper = BlurredWallpaperCache.getOrRequest(getContext(), wallpaperBlurDp,
                 wallpaperCallback);
+    }
+
+    private void applyForegroundColors() {
+        boolean light = appBackgroundEnabled && !liveBlurEnabled
+                && Color.luminance(appBackgroundColor) > 0.62f;
+        namePaint.setColor(light ? 0xff202126 : Color.WHITE);
+        namePillPaint.setColor(light ? 0xdde7e9f0 : 0xdd20263f);
+        iconPlatePaint.setColor(light ? 0x99ffffff : 0xff17181d);
     }
 
     void playEntry() {
         requestFocus();
         ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        trackAnimator(animator);
         animator.setDuration(scaledDuration(280));
         animator.setInterpolator(new DecelerateInterpolator(1.35f));
         animator.addUpdateListener(value -> {
@@ -371,6 +402,7 @@ final class HoneycombOverlayView extends View {
         closing = true;
         stopPhysics();
         ValueAnimator animator = ValueAnimator.ofFloat(dismissProgress, 1f);
+        trackAnimator(animator);
         animator.setDuration(scaledDuration(220));
         animator.setInterpolator(new DecelerateInterpolator(1.3f));
         animator.addUpdateListener(value -> {
@@ -403,31 +435,74 @@ final class HoneycombOverlayView extends View {
         }
         if (hapticEnabled) performHapticFeedback(HapticFeedbackConstants.CONFIRM);
         ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        trackAnimator(animator);
         animator.setDuration(scaledDuration(230));
         animator.setInterpolator(new DecelerateInterpolator(1.45f));
         animator.addUpdateListener(value -> {
             confirmProgress = (Float) value.getAnimatedValue();
             invalidate();
         });
-        postDelayed(() -> {
+        pendingLaunch = () -> {
+            if (released) return;
             Listener callback = listener;
             if (callback != null) callback.onLaunch(launchTarget);
-        }, scaledDuration(145));
+        };
+        postDelayed(pendingLaunch, scaledDuration(145));
         animator.start();
+    }
+
+    private void trackAnimator(ValueAnimator animator) {
+        activeAnimators.add(animator);
+        animator.addListener(new SimpleAnimatorListener() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                activeAnimators.remove(animator);
+            }
+        });
+    }
+
+    void releaseResources() {
+        if (released) return;
+        released = true;
+        closing = true;
+        listener = null;
+        stopPhysics();
+        selectionAnimator.cancel();
+        removeCallbacks(holdSelectionUpdate);
+        if (pendingLaunch != null) removeCallbacks(pendingLaunch);
+        pendingLaunch = null;
+        ArrayList<ValueAnimator> animators = new ArrayList<>(activeAnimators);
+        activeAnimators.clear();
+        for (ValueAnimator animator : animators) animator.cancel();
+        recycleVelocityTracker();
+        targets = Collections.emptyList();
+        basePoints = Collections.emptyList();
+        wallpaper = null;
     }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float visible = (1f - dismissProgress) * (1f - confirmProgress * 0.18f);
-        if (wallpaper != null && backgroundStyle == 0) {
+        if (liveBlurEnabled) {
+            if (appBackgroundEnabled) {
+                backgroundPaint.setColor(appBackgroundColor);
+                backgroundPaint.setAlpha(Math.round(92f * visible));
+                canvas.drawRect(0, statusBarHeight, getWidth(), getHeight(), backgroundPaint);
+            }
+            backgroundPaint.setColor(Color.BLACK);
+            backgroundPaint.setAlpha(Math.round(255f * backgroundDimPercent / 100f * visible));
+        } else if (appBackgroundEnabled) {
+            backgroundPaint.setColor(appBackgroundColor);
+            backgroundPaint.setAlpha(Math.round(255f * visible));
+        } else if (wallpaper != null && wallpaperBackgroundStyle
+                == com.oxohang.fanfreeform.config.ConfigContract.HONEYCOMB_BACKGROUND_BLUR) {
             wallpaperPaint.setAlpha(Math.round(255f * visible));
             wallpaperBounds.set(0, statusBarHeight, getWidth(), getHeight());
             canvas.drawBitmap(wallpaper, null, wallpaperBounds, wallpaperPaint);
             backgroundPaint.setColor(Color.BLACK);
-            backgroundPaint.setAlpha(Math.round(255f * dimPercent / 100f * visible));
+            backgroundPaint.setAlpha(Math.round(255f * wallpaperDimPercent / 100f * visible));
         } else {
             backgroundPaint.setColor(Color.BLACK);
-            backgroundPaint.setAlpha(Math.round(242f * visible));
+            backgroundPaint.setAlpha(Math.round(255f * visible));
         }
         canvas.drawRect(0, statusBarHeight, getWidth(), getHeight(), backgroundPaint);
         updateLensFocus();
@@ -625,6 +700,15 @@ final class HoneycombOverlayView extends View {
         Drawable icon = target == null ? null : target.icon;
         if (diameter <= 1f || alpha <= 0f || icon == null) return;
         int save = canvas.save();
+        if (active) {
+            int direction = corner == GestureGeometry.Corner.LEFT ? 1 : -1;
+            canvas.rotate(SelectionTransform.rotation(selectionTransformLevel,
+                    direction, selectionProgress), x, y);
+            canvas.scale(SelectionTransform.scaleX(selectionTransformLevel,
+                            selectionProgress),
+                    SelectionTransform.scaleY(selectionTransformLevel,
+                            selectionProgress), x, y);
+        }
         float radius = diameter * 0.5f;
         if (forceCircularIcons) {
             iconPlatePaint.setAlpha(Math.round(255 * alpha));

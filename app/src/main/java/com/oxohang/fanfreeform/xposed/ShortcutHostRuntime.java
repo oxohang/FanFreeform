@@ -15,7 +15,10 @@ import android.graphics.drawable.Drawable;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.os.UserHandle;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -31,6 +34,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class ShortcutHostRuntime {
     static final String MIUI_HOME = "com.miui.home";
@@ -46,6 +51,21 @@ final class ShortcutHostRuntime {
     static final String EXTRA_INTENT_URI = "intent_uri";
     private static volatile boolean installed;
     private static final Map<String, Long> publishedIconVersions = new HashMap<>();
+    private static final Object CATALOG_LOCK = new Object();
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+    private static final ExecutorService CATALOG_EXECUTOR = Executors.newSingleThreadExecutor(
+            runnable -> {
+                Thread thread = new Thread(runnable, "hypergesture-shortcut-catalog");
+                thread.setPriority(Thread.NORM_PRIORITY - 1);
+                return thread;
+            });
+    private static final long CATALOG_DEBOUNCE_MS = 350L;
+    private static Context catalogContext;
+    private static boolean catalogScheduled;
+    private static boolean catalogRunning;
+    private static boolean catalogPending;
+    private static final Runnable START_CATALOG_REFRESH =
+            ShortcutHostRuntime::startCatalogRefresh;
 
     private ShortcutHostRuntime() { }
 
@@ -73,13 +93,66 @@ final class ShortcutHostRuntime {
             }
         }, filter, Context.RECEIVER_EXPORTED);
         appContext.getContentResolver().registerContentObserver(ConfigContract.URI, false,
-                new android.database.ContentObserver(new android.os.Handler(
-                        android.os.Looper.getMainLooper())) {
-                    @Override public void onChange(boolean selfChange) { publishCatalog(appContext); }
+                new android.database.ContentObserver(MAIN_HANDLER) {
+                    @Override public void onChange(boolean selfChange) {
+                        requestCatalogRefresh(appContext, CATALOG_DEBOUNCE_MS);
+                    }
                 });
         installed = true;
-        publishCatalog(appContext);
+        requestCatalogRefresh(appContext, 0L);
         Log.i("Shortcut host active in MiuiHome");
+    }
+
+    private static void requestCatalogRefresh(Context context, long delayMs) {
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) appContext = context;
+        synchronized (CATALOG_LOCK) {
+            catalogContext = appContext;
+            if (catalogRunning) {
+                catalogPending = true;
+                return;
+            }
+            if (catalogScheduled) MAIN_HANDLER.removeCallbacks(START_CATALOG_REFRESH);
+            catalogScheduled = true;
+            MAIN_HANDLER.postDelayed(START_CATALOG_REFRESH, Math.max(0L, delayMs));
+        }
+    }
+
+    private static void startCatalogRefresh() {
+        Context context;
+        synchronized (CATALOG_LOCK) {
+            catalogScheduled = false;
+            if (catalogRunning) {
+                catalogPending = true;
+                return;
+            }
+            context = catalogContext;
+            if (context == null) return;
+            catalogRunning = true;
+        }
+        Context refreshContext = context;
+        CATALOG_EXECUTOR.execute(() -> {
+            long started = SystemClock.elapsedRealtime();
+            try {
+                publishCatalog(refreshContext);
+                long elapsed = SystemClock.elapsedRealtime() - started;
+                Log.i("MiuiHome catalog refresh completed in " + elapsed + "ms");
+            } catch (Throwable error) {
+                Log.e("MiuiHome catalog refresh failed", error);
+            } finally {
+                MAIN_HANDLER.post(() -> finishCatalogRefresh(refreshContext));
+            }
+        });
+    }
+
+    private static void finishCatalogRefresh(Context context) {
+        boolean refreshAgain;
+        synchronized (CATALOG_LOCK) {
+            catalogRunning = false;
+            refreshAgain = catalogPending;
+            catalogPending = false;
+        }
+        if (refreshAgain) requestCatalogRefresh(context, CATALOG_DEBOUNCE_MS);
     }
 
     private static void startLauncherShortcut(Context context, Intent request) {

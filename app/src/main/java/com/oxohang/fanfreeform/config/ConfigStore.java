@@ -21,6 +21,10 @@ public final class ConfigStore {
             "side_targets_independent_migrated_v1";
     private static final String KEY_ORIENTATION_BEHAVIOR_MIGRATED =
             "orientation_behavior_migrated_v1";
+    private static final String KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED =
+            "honeycomb_background_v2_migrated";
+    private static final String KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED =
+            "honeycomb_background_v3_migrated";
     private static final String[] DEFAULT_BOTTOM_PACKAGES = {
             "com.ss.android.article.news", "tv.danmaku.bili", "com.twitter.android",
             "nu.gpu.nagram", "com.tencent.mm", "com.ss.android.yumme.video",
@@ -64,6 +68,8 @@ public final class ConfigStore {
         migrateSelectedAppNameIfNeeded(preferences);
         migrateIndependentSideTargetsIfNeeded(preferences);
         migrateOrientationBehaviorIfNeeded(preferences);
+        migrateHoneycombBackgroundIfNeeded(preferences);
+        migrateHoneycombWallpaperDefaultIfNeeded(preferences);
         ensureNativeWindowScaleDefaults(preferences);
     }
 
@@ -207,6 +213,14 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
                         ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
@@ -247,6 +261,14 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .apply();
         notifyChanged();
     }
@@ -263,6 +285,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_EDGE_SCALE)
                 .putInt(ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
                         ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                        ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION)
                 .apply();
         notifyChanged();
     }
@@ -275,6 +299,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME)
                 .putBoolean(ConfigContract.KEY_FORCE_CIRCULAR_ICONS,
                         ConfigContract.DEFAULT_FORCE_CIRCULAR_ICONS)
+                .putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL)
                 .apply();
         notifyChanged();
     }
@@ -286,6 +312,10 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED)
                 .putInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
                         ConfigContract.DEFAULT_FAN_ANIMATION_SPEED)
+                .putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                        ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)
                 .putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT,
                         ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT)
                 .putInt(ConfigContract.KEY_FAN_ROTATION_DEGREES,
@@ -558,12 +588,16 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putInt(ConfigContract.KEY_SIDE_TASK_MOTION_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                         ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE)
                 .apply();
@@ -590,6 +624,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
@@ -604,6 +640,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
                 .apply();
         notifyChanged();
     }
@@ -810,6 +848,12 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED)
                 .putInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
                         ConfigContract.DEFAULT_FAN_ANIMATION_SPEED)
+                .putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                        ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)
+                .putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL)
                 .putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT,
                         ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT)
                 .putInt(ConfigContract.KEY_FAN_ROTATION_DEGREES,
@@ -911,12 +955,18 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putInt(ConfigContract.KEY_SIDE_TASK_MOTION_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                        ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                         ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE)
                 .putBoolean(ConfigContract.KEY_HIDE_SYSTEM_RECENTS_CLEAR,
@@ -1022,6 +1072,14 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
                         ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP)
                 .apply();
@@ -1211,6 +1269,34 @@ public final class ConfigStore {
                         preferences.getBoolean(ConfigContract.KEY_FAN_SELECTION_RING,
                                 ConfigContract.DEFAULT_SIDE_SELECTION_RING))
                 .putBoolean(KEY_ORIENTATION_BEHAVIOR_MIGRATED, true)
+                .commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateHoneycombBackgroundIfNeeded(SharedPreferences preferences) {
+        if (preferences.getBoolean(KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED, false)) return;
+        int oldStyle = preferences.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE,
+                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_STYLE);
+        preferences.edit()
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED, false)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP, preferences.getInt(
+                        ConfigContract.KEY_HONEYCOMB_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP))
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        preferences.getInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
+                                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT))
+                .putBoolean(KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED, true)
+                .commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateHoneycombWallpaperDefaultIfNeeded(SharedPreferences preferences) {
+        if (preferences.getBoolean(KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED, false)) return;
+        preferences.edit()
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED, false)
+                .putBoolean(KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED, true)
                 .commit();
     }
 

@@ -18,6 +18,9 @@ import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 
 public final class TaskCenterAnimationSettingsActivity extends Activity {
+    private static final String[] ANIMATION_SPEEDS = {
+            "很快", "较快", "标准", "柔和", "慢速"
+    };
     private ConfigStore store;
     private SharedPreferences prefs;
 
@@ -69,12 +72,49 @@ public final class TaskCenterAnimationSettingsActivity extends Activity {
                         : ConfigContract.SIDE_TASK_MOTION_MAGNETIC));
         card.addView(group);
         card.addView(Ui.divider(this));
+        card.addView(overallAnimationSpeedSlider());
+        card.addView(Ui.divider(this));
         card.addView(speedSlider());
         root.addView(card);
         Ui.addResetOption(this, root,
                 "将恢复任务中心选择动效和拖动速度默认值。",
                 store::resetTaskCenterAnimationSettings);
         return scroll;
+    }
+
+    private View overallAnimationSpeedSlider() {
+        int current = prefs.getInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED);
+        current = Math.max(0, Math.min(4, current));
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 8));
+        LinearLayout heading = new LinearLayout(this);
+        heading.addView(text("整体动画速度", 15, Ui.TEXT, Typeface.BOLD),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView value = text(ANIMATION_SPEEDS[current], 14, Ui.ACCENT, Typeface.BOLD);
+        heading.addView(value);
+        group.addView(heading);
+        SeekBar seek = new SeekBar(this);
+        seek.setMax(4);
+        seek.setProgress(current);
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+            @Override public void onProgressChanged(SeekBar seekBar, int progress,
+                                                    boolean fromUser) {
+                int resolved = Math.max(0, Math.min(4, progress));
+                value.setText(ANIMATION_SPEEDS[resolved]);
+                if (fromUser) store.putInt(
+                        ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED, resolved);
+            }
+        });
+        group.addView(seek);
+        TextView note = text("同时调整呼出、选中回弹、确认和关闭",
+                12, Ui.MUTED, Typeface.NORMAL);
+        note.setPadding(0, 0, 0, Ui.dp(this, 4));
+        group.addView(note);
+        return group;
     }
 
     private View speedSlider() {

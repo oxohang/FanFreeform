@@ -124,6 +124,13 @@ final class FanOverlayController {
                         layoutMode, outerCapacity, middleCapacity, innerCapacity);
             }
             fanView.setForceCircularIcons(forceCircularIcons);
+            fanView.setSelectionTransformLevel(0);
+            attachFanView(fanView, animationSpeed, animationsEnabled);
+        });
+    }
+
+    private void attachFanView(FanOverlayView fanView, int animationSpeed,
+                               boolean animationsEnabled) {
             view = fanView;
             view.setAlpha(0f);
             WindowManager.LayoutParams params = params(TYPE_NAVIGATION_BAR_PANEL, false);
@@ -143,7 +150,6 @@ final class FanOverlayController {
             wheelVisible = false;
             view.animate().alpha(1f).setDuration(animationDuration(110, animationSpeed,
                     animationsEnabled)).start();
-        });
     }
 
     void showWheel(List<RuntimeTarget> targets, GestureGeometry.Corner side,
@@ -199,6 +205,14 @@ final class FanOverlayController {
         runOnMain(() -> {
             if (attached && view instanceof FanOverlayView) {
                 ((FanOverlayView) view).updateSelection(selected, x, y);
+            }
+        });
+    }
+
+    void setSelectionTransformLevel(int level) {
+        runOnMain(() -> {
+            if (attached && view instanceof FanOverlayView) {
+                ((FanOverlayView) view).setSelectionTransformLevel(level);
             }
         });
     }

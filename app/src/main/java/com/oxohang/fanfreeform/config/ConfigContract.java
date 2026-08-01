@@ -13,6 +13,10 @@ public final class ConfigContract {
     public static final String KEY_FAN_SHADOW = "fan_shadow";
     public static final String KEY_FAN_ANIMATIONS_ENABLED = "fan_animations_enabled";
     public static final String KEY_FAN_ANIMATION_SPEED = "fan_animation_speed";
+    public static final String KEY_BOTTOM_ANIMATION_SPEED = "bottom_animation_speed";
+    public static final String KEY_BOTTOM_TRIGGER_HAPTIC = "bottom_trigger_haptic";
+    public static final String KEY_SELECTION_TRANSFORM_LEVEL =
+            "selection_transform_level";
     public static final String KEY_FAN_REVEAL_AMOUNT = "fan_reveal_amount";
     public static final String KEY_FAN_ROTATION_DEGREES = "fan_rotation_degrees";
     public static final String KEY_FAN_SELECTION_SCALE_PERCENT =
@@ -79,10 +83,13 @@ public final class ConfigContract {
     public static final String KEY_SIDE_TASK_FINGER_OFFSET_DP =
             "side_task_finger_offset_dp";
     public static final String KEY_SIDE_TASK_LAYOUT_MODE = "side_task_layout_mode";
+    public static final String KEY_SIDE_TASK_REVERSE_ORDER = "side_task_reverse_order";
     public static final String KEY_SIDE_TASK_SHOW_NAME = "side_task_show_name";
     public static final String KEY_SIDE_TASK_MOTION_MODE = "side_task_motion_mode";
     public static final String KEY_SIDE_TASK_SWIPE_SPEED_PERCENT =
             "side_task_swipe_speed_percent";
+    public static final String KEY_SIDE_TASK_ANIMATION_SPEED =
+            "side_task_animation_speed";
     public static final String KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE =
             "side_task_extended_downward_tolerance";
     public static final String KEY_HIDE_SYSTEM_RECENTS_CLEAR =
@@ -144,6 +151,8 @@ public final class ConfigContract {
     public static final String KEY_HONEYCOMB_ICON_SIZE_DP = "honeycomb_icon_size_dp";
     public static final String KEY_HONEYCOMB_SPACING_DP = "honeycomb_spacing_dp";
     public static final String KEY_HONEYCOMB_ANIMATION_SPEED = "honeycomb_animation_speed";
+    public static final String KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION =
+            "honeycomb_centered_system_animation";
     public static final String KEY_HONEYCOMB_INERTIA = "honeycomb_inertia";
     public static final String KEY_HONEYCOMB_CENTER_SCALE = "honeycomb_center_scale";
     public static final String KEY_HONEYCOMB_EDGE_SCALE = "honeycomb_edge_scale";
@@ -175,6 +184,13 @@ public final class ConfigContract {
     public static final String KEY_HONEYCOMB_BACKGROUND_STYLE = "honeycomb_background_style";
     public static final String KEY_HONEYCOMB_BLUR_DP = "honeycomb_blur_dp";
     public static final String KEY_HONEYCOMB_DIM_PERCENT = "honeycomb_dim_percent";
+    public static final String KEY_HONEYCOMB_APP_BACKGROUND_ENABLED =
+            "honeycomb_app_background_enabled";
+    public static final String KEY_HONEYCOMB_LIVE_BLUR_ENABLED =
+            "honeycomb_live_blur_enabled";
+    public static final String KEY_HONEYCOMB_LIVE_BLUR_DP = "honeycomb_live_blur_dp";
+    public static final String KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT =
+            "honeycomb_background_dim_percent";
     public static final String KEY_HONEYCOMB_RETREAT_DP = "honeycomb_retreat_dp";
     public static final String KEY_HONEYCOMB_DISC_SIZE_PERCENT =
             "honeycomb_disc_size_percent";
@@ -192,6 +208,14 @@ public final class ConfigContract {
     public static final int DEFAULT_FAN_ANIMATION_SPEED = 140;
     public static final int MIN_FAN_ANIMATION_SPEED = 75;
     public static final int MAX_FAN_ANIMATION_SPEED = 160;
+    public static final int DEFAULT_BOTTOM_ANIMATION_SPEED = DEFAULT_FAN_ANIMATION_SPEED;
+    public static final boolean DEFAULT_BOTTOM_TRIGGER_HAPTIC = true;
+    public static final int SELECTION_TRANSFORM_OFF = 0;
+    public static final int SELECTION_TRANSFORM_SUBTLE = 1;
+    public static final int SELECTION_TRANSFORM_STANDARD = 2;
+    public static final int SELECTION_TRANSFORM_STRONG = 3;
+    public static final int DEFAULT_SELECTION_TRANSFORM_LEVEL =
+            SELECTION_TRANSFORM_SUBTLE;
     public static final int DEFAULT_FAN_REVEAL_AMOUNT = 49;
     public static final int MIN_FAN_REVEAL_AMOUNT = 15;
     public static final int MAX_FAN_REVEAL_AMOUNT = 130;
@@ -284,6 +308,7 @@ public final class ConfigContract {
     public static final int SIDE_TASK_LAYOUT_FLAT = 0;
     public static final int SIDE_TASK_LAYOUT_ICONS = 1;
     public static final int DEFAULT_SIDE_TASK_LAYOUT_MODE = SIDE_TASK_LAYOUT_FLAT;
+    public static final boolean DEFAULT_SIDE_TASK_REVERSE_ORDER = false;
     public static final boolean DEFAULT_SIDE_TASK_SHOW_NAME = true;
     public static final int SIDE_TASK_MOTION_APPLE = 0;
     public static final int SIDE_TASK_MOTION_MAGNETIC = 1;
@@ -292,6 +317,7 @@ public final class ConfigContract {
     public static final int DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT = 180;
     public static final int MIN_SIDE_TASK_SWIPE_SPEED_PERCENT = 100;
     public static final int MAX_SIDE_TASK_SWIPE_SPEED_PERCENT = 300;
+    public static final int DEFAULT_SIDE_TASK_ANIMATION_SPEED = 2;
     public static final boolean DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE = true;
     public static final boolean DEFAULT_HIDE_SYSTEM_RECENTS_CLEAR = false;
     public static final int DEFAULT_TRIGGER_PERCENT = 17;
@@ -348,6 +374,7 @@ public final class ConfigContract {
     public static final int MIN_HONEYCOMB_SPACING_DP = 24;
     public static final int MAX_HONEYCOMB_SPACING_DP = 120;
     public static final int DEFAULT_HONEYCOMB_ANIMATION_SPEED = 2;
+    public static final boolean DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION = true;
     public static final int DEFAULT_HONEYCOMB_INERTIA = 1;
     public static final int DEFAULT_HONEYCOMB_CENTER_SCALE = 124;
     public static final int MIN_HONEYCOMB_CENTER_SCALE = 105;
@@ -393,6 +420,10 @@ public final class ConfigContract {
     public static final int DEFAULT_HONEYCOMB_BACKGROUND_STYLE = HONEYCOMB_BACKGROUND_BLUR;
     public static final int DEFAULT_HONEYCOMB_BLUR_DP = 36;
     public static final int DEFAULT_HONEYCOMB_DIM_PERCENT = 22;
+    public static final boolean DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED = false;
+    public static final boolean DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED = false;
+    public static final int DEFAULT_HONEYCOMB_LIVE_BLUR_DP = 36;
+    public static final int DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT = 22;
     public static final int DEFAULT_HONEYCOMB_RETREAT_DP = 120;
     public static final int MIN_HONEYCOMB_RETREAT_DP = 20;
     public static final int MAX_HONEYCOMB_RETREAT_DP = 120;

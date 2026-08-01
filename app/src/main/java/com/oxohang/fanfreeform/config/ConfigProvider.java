@@ -36,6 +36,8 @@ public final class ConfigProvider extends ContentProvider {
             ConfigStore.migrateSelectedAppNameIfNeeded(prefs);
             ConfigStore.migrateIndependentSideTargetsIfNeeded(prefs);
             ConfigStore.migrateOrientationBehaviorIfNeeded(prefs);
+            ConfigStore.migrateHoneycombBackgroundIfNeeded(prefs);
+            ConfigStore.migrateHoneycombWallpaperDefaultIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
@@ -48,6 +50,21 @@ public final class ConfigProvider extends ContentProvider {
                             ConfigContract.MAX_FAN_ANIMATION_SPEED, prefs.getInt(
                                     ConfigContract.KEY_FAN_ANIMATION_SPEED,
                                     ConfigContract.DEFAULT_FAN_ANIMATION_SPEED))));
+            out.putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED, clamp(prefs.getInt(
+                    ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                    prefs.getInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
+                            ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)),
+                    ConfigContract.MIN_FAN_ANIMATION_SPEED,
+                    ConfigContract.MAX_FAN_ANIMATION_SPEED));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC, prefs.getBoolean(
+                    ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                    prefs.getBoolean(ConfigContract.KEY_HAPTIC,
+                            ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)));
+            out.putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL, clamp(prefs.getInt(
+                    ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                    ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL),
+                    ConfigContract.SELECTION_TRANSFORM_OFF,
+                    ConfigContract.SELECTION_TRANSFORM_STRONG));
             out.putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT, Math.max(
                     ConfigContract.MIN_FAN_REVEAL_AMOUNT, Math.min(
                             ConfigContract.MAX_FAN_REVEAL_AMOUNT, prefs.getInt(
@@ -128,16 +145,12 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED,
                     ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED));
-            out.putInt(ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE, clamp(prefs.getInt(
+            out.putInt(ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE),
-                    ConfigContract.SIDE_LAYOUT_LIST,
-                    ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS));
-            out.putInt(ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE, clamp(prefs.getInt(
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
+            out.putInt(ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE),
-                    ConfigContract.SIDE_LAYOUT_LIST,
-                    ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS));
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
             out.putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_FULLSCREEN,
                     prefs.getBoolean(ConfigContract.KEY_SIDE_PORTRAIT_FULLSCREEN,
                             ConfigContract.DEFAULT_SIDE_PORTRAIT_FULLSCREEN));
@@ -191,11 +204,9 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_SIDE_FAN_LIST, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_FAN_LIST,
                     ConfigContract.DEFAULT_SIDE_FAN_LIST));
-            out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, Math.max(
-                    ConfigContract.SIDE_LAYOUT_LIST, Math.min(
-                            ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS, prefs.getInt(
-                                    ConfigContract.KEY_SIDE_LAYOUT_MODE,
-                                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE))));
+            out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
+                    ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
             out.putInt(ConfigContract.KEY_SIDE_RING_SIZE_PERCENT, Math.max(
                     ConfigContract.MIN_SIDE_RING_SIZE_PERCENT, Math.min(
                             ConfigContract.MAX_SIDE_RING_SIZE_PERCENT, prefs.getInt(
@@ -258,11 +269,12 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP),
                     ConfigContract.MIN_SIDE_TASK_FINGER_OFFSET_DP,
                     ConfigContract.MAX_SIDE_TASK_FINGER_OFFSET_DP));
-            out.putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE, clamp(prefs.getInt(
+            out.putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE, LayoutModeSanitizer.taskLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE),
-                    ConfigContract.SIDE_TASK_LAYOUT_FLAT,
-                    ConfigContract.SIDE_TASK_LAYOUT_ICONS));
+                    ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)));
+            out.putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                    prefs.getBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                            ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER));
             out.putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                     ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME));
@@ -276,6 +288,10 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT),
                             ConfigContract.MIN_SIDE_TASK_SWIPE_SPEED_PERCENT,
                             ConfigContract.MAX_SIDE_TASK_SWIPE_SPEED_PERCENT));
+            out.putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                    clamp(prefs.getInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                                    ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED),
+                            0, 4));
             out.putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                     prefs.getBoolean(
                             ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
@@ -315,8 +331,12 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_NATIVE_WINDOW_SCALE_PERCENT),
                             ConfigContract.MIN_NATIVE_WINDOW_SCALE_PERCENT,
                             ConfigContract.MAX_NATIVE_WINDOW_SCALE_PERCENT));
-            out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
-            out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
+            out.putInt(ConfigContract.KEY_POSITION_X, WindowPositionPolicy.clampPercent(
+                    prefs.getInt(ConfigContract.KEY_POSITION_X,
+                            ConfigContract.DEFAULT_POSITION_X)));
+            out.putInt(ConfigContract.KEY_POSITION_Y, WindowPositionPolicy.clampPercent(
+                    prefs.getInt(ConfigContract.KEY_POSITION_Y,
+                            ConfigContract.DEFAULT_POSITION_Y)));
             out.putInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
                     ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT),
@@ -330,12 +350,14 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_NATIVE_WINDOW_SCALE_PERCENT),
                             ConfigContract.MIN_NATIVE_WINDOW_SCALE_PERCENT,
                             ConfigContract.MAX_NATIVE_WINDOW_SCALE_PERCENT));
-            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_X, prefs.getInt(
-                    ConfigContract.KEY_LANDSCAPE_POSITION_X,
-                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_X));
-            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y, prefs.getInt(
-                    ConfigContract.KEY_LANDSCAPE_POSITION_Y,
-                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                    WindowPositionPolicy.clampPercent(prefs.getInt(
+                            ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                            ConfigContract.DEFAULT_LANDSCAPE_POSITION_X)));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                    WindowPositionPolicy.clampPercent(prefs.getInt(
+                            ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                            ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y)));
             out.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_TAP_WINDOW_MS, clamp(prefs.getInt(
@@ -375,6 +397,9 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
                     ConfigContract.DEFAULT_HONEYCOMB_ANIMATION_SPEED), 0, 4));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                            ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION));
             out.putInt(ConfigContract.KEY_HONEYCOMB_INERTIA, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_INERTIA,
                     ConfigContract.DEFAULT_HONEYCOMB_INERTIA), 0, 2));
@@ -446,6 +471,18 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.KEY_HONEYCOMB_BLUR_DP, 36), 0, 60));
             out.putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22), 0, 60));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                            ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                            ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP), 0, 60));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                    clamp(prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                            ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT), 0, 60));
             out.putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
                     ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),

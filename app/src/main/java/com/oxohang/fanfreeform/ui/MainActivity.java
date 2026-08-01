@@ -33,6 +33,7 @@ import org.json.JSONObject;
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
+import com.oxohang.fanfreeform.config.WindowPositionPolicy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -78,8 +79,10 @@ public final class MainActivity extends Activity {
         targets.addAll(store.getTargets());
         widthPercent = prefs.getInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT);
         heightPercent = prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT);
-        positionX = prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X);
-        positionY = prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y);
+        positionX = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
+        positionY = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
         hotWidthPercent = prefs.getInt(ConfigContract.KEY_HOT_WIDTH_PERCENT, ConfigContract.DEFAULT_HOT_WIDTH_PERCENT);
         hotHeightPercent = prefs.getInt(ConfigContract.KEY_HOT_HEIGHT_PERCENT, ConfigContract.DEFAULT_HOT_HEIGHT_PERCENT);
 
@@ -289,8 +292,8 @@ public final class MainActivity extends Activity {
         windowCard.addView(preview, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 250)));
         windowCard.addView(slider("宽度", ConfigContract.KEY_WIDTH_PERCENT, 40, 90, widthPercent, value -> value + "%"));
         windowCard.addView(slider("高度", ConfigContract.KEY_HEIGHT_PERCENT, 35, 85, heightPercent, value -> value + "%"));
-        windowCard.addView(slider("水平位置", ConfigContract.KEY_POSITION_X, 0, 100, positionX, MainActivity::positionLabel));
-        windowCard.addView(slider("垂直位置", ConfigContract.KEY_POSITION_Y, 0, 100, positionY, MainActivity::positionLabel));
+        windowCard.addView(slider("水平位置", ConfigContract.KEY_POSITION_X, 0, 100, positionX, WindowPositionPolicy::percentageLabel));
+        windowCard.addView(slider("垂直位置", ConfigContract.KEY_POSITION_Y, 0, 100, positionY, WindowPositionPolicy::percentageLabel));
         TextView boundsNote = text("实际启动时会自动避开状态栏、导航区域和屏幕边缘。", 13, Ui.MUTED, Typeface.NORMAL);
         boundsNote.setPadding(0, Ui.dp(this, 8), 0, 0);
         windowCard.addView(boundsNote);
@@ -653,13 +656,6 @@ public final class MainActivity extends Activity {
         button.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), 0);
         button.setBackground(Ui.rounded(this, 0xffeef0ff, 12));
         return button;
-    }
-
-    private static String positionLabel(int value) {
-        if (value == 0) return "起点";
-        if (value == 50) return "居中";
-        if (value == 100) return "终点";
-        return value + "%";
     }
 
     private interface ValueLabel {
