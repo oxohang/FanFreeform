@@ -119,6 +119,12 @@ final class HyperOsFreeformBridge {
         return launchNow(target, config, onLaunchArmed);
     }
 
+    boolean launchExternalIntent(String packageName, Intent intent, GestureConfig config,
+                                 Runnable onLaunchArmed) {
+        if (packageName == null || packageName.isEmpty() || intent == null) return false;
+        return launchIntentNow(packageName, intent, config, onLaunchArmed, false, null);
+    }
+
     private boolean queueLaunchAfterSuspendingCurrent(RuntimeTarget target,
                                                       GestureConfig config,
                                                       Runnable onLaunchArmed) {
@@ -153,6 +159,19 @@ final class HyperOsFreeformBridge {
     private boolean launchNow(RuntimeTarget target, GestureConfig config,
                               Runnable onLaunchArmed) {
         String packageName = target.packageName;
+        Intent intent = target.isShortcut()
+                ? new Intent(Intent.ACTION_MAIN).setPackage(packageName)
+                : new Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setComponent(target.component)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return launchIntentNow(packageName, intent, config, onLaunchArmed,
+                target.isShortcut(), target);
+    }
+
+    private boolean launchIntentNow(String packageName, Intent intent, GestureConfig config,
+                                    Runnable onLaunchArmed, boolean shortcutLaunch,
+                                    RuntimeTarget shortcutTarget) {
         try {
             Class<?> manager = XposedHelpers.findClass("miui.app.MiuiFreeFormManager", classLoader);
             Object result = XposedHelpers.callStaticMethod(manager, "getActivityOptions",
@@ -167,7 +186,7 @@ final class HyperOsFreeformBridge {
 
             float scale = readFreeformScale(options);
             Rect nativeLaunchBounds = readNativeLaunchBounds(options);
-            int requestedOrientation = targetRequestedOrientation(target);
+            int requestedOrientation = requestedOrientation(intent);
             boolean nativeLandscapeLaunch =
                     FreeformOrientationPolicy.shouldUseNativeLandscapeLaunch(
                             isRotationLockedToPortrait(), requestedOrientation);
@@ -178,7 +197,7 @@ final class HyperOsFreeformBridge {
             Rect launchBounds = customBoundsEnabled && !nativeLandscapeLaunch
                     ? customLaunchBounds(config, scale, nativeLaunchBounds) : null;
             if (launchBounds != null) options.setLaunchBounds(launchBounds);
-            if (target.isShortcut()) {
+            if (shortcutLaunch) {
                 try {
                     XposedHelpers.callMethod(options, "setForceLaunchNewTask");
                     Log.i("Shortcut dispatcher isolated in a new task package="
@@ -189,40 +208,36 @@ final class HyperOsFreeformBridge {
                 }
             }
 
-            Intent intent = target.isShortcut()
-                    ? new Intent(Intent.ACTION_MAIN).setPackage(packageName)
-                    : new Intent(Intent.ACTION_MAIN)
-                    .addCategory(Intent.CATEGORY_LAUNCHER)
-                    .setComponent(target.component)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            ActivityManager.RunningTaskInfo existing = target.isShortcut() ? null
-                    : findRunningTask(packageName, target.userId);
+            int userId = shortcutTarget == null ? 0 : shortcutTarget.userId;
+            ActivityManager.RunningTaskInfo existing = shortcutLaunch ? null
+                    : findRunningTask(packageName, userId);
             if (existing != null) {
                 forceTaskResizable(existing.taskId);
             }
             Bundle launchOptions = options.toBundle();
-            beginPendingMatch(packageName, target.userId,
+            beginPendingMatch(packageName, userId,
                     launchBounds == null ? null : visualBounds(launchBounds, scale),
                     launchBounds, nativeLaunchBounds,
-                    intent, launchOptions, target.isShortcut());
+                    intent, launchOptions, shortcutLaunch);
             notifyLaunchArmed(onLaunchArmed);
-            if (target.isShortcut()) {
-                dispatchShortcut(target, launchOptions);
-            } else if (target.userId != 0) {
+            if (shortcutLaunch) {
+                dispatchShortcut(shortcutTarget, launchOptions);
+            } else if (userId != 0) {
                 Intent request = new Intent(ShortcutHostRuntime.ACTION_START_ACTIVITY)
                         .setPackage(ShortcutHostRuntime.MIUI_HOME)
                         .putExtra(ShortcutHostRuntime.EXTRA_COMPONENT,
-                                target.component.flattenToString())
-                        .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, target.userId)
+                                intent.getComponent().flattenToString())
+                        .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, userId)
                         .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, launchOptions);
                 context.sendBroadcast(request);
             } else {
                 context.startActivity(intent, launchOptions);
             }
-            Log.i("Preparing or launching " + (target.isShortcut()
-                    ? packageName + "/" + target.shortcutId
-                    : target.component.flattenToShortString()
-                    + (target.userId == 0 ? "" : " user=" + target.userId))
+            Log.i("Preparing or launching " + (shortcutLaunch
+                    ? packageName + "/" + shortcutTarget.shortcutId
+                    : (intent.getComponent() == null
+                    ? packageName : intent.getComponent().flattenToShortString())
+                    + (userId == 0 ? "" : " user=" + userId))
                     + " in freeform without home reorder bounds=" + launchBounds
                     + " scale=" + scale
                     + " nativeBounds=" + nativeLaunchBounds
@@ -1233,7 +1248,6 @@ final class HyperOsFreeformBridge {
             pendingLaunchIntent = new Intent(intent);
             pendingLaunchOptions = new Bundle(options);
             pendingResizeRetry = false;
-            pendingShortcutLaunch = shortcutLaunch;
             WindowMetrics metrics = context.getSystemService(WindowManager.class)
                     .getCurrentWindowMetrics();
             Rect display = metrics.getBounds();
@@ -1673,6 +1687,18 @@ final class HyperOsFreeformBridge {
         }
         try {
             return context.getPackageManager().getActivityInfo(target.component, 0)
+                    .screenOrientation;
+        } catch (Throwable ignored) {
+            return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        }
+    }
+
+    private int requestedOrientation(Intent intent) {
+        if (intent == null || intent.getComponent() == null) {
+            return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        }
+        try {
+            return context.getPackageManager().getActivityInfo(intent.getComponent(), 0)
                     .screenOrientation;
         } catch (Throwable ignored) {
             return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;

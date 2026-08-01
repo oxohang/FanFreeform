@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.graphics.Insets;
 import android.graphics.Rect;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -251,6 +252,76 @@ final class FanRuntime {
     void reportInputReady() {
         reportStatusAsync(freeform.hasController()
                 ? "HyperOS 3 原生接口已连接" : "手势接口已连接，等待小窗控制器");
+    }
+
+    void launchExternalRequest(String packageName, String componentName, String intentUri) {
+        if (packageName == null || packageName.trim().isEmpty()) {
+            Log.i("Rejected external launch without package");
+            return;
+        }
+        mainHandler.post(() -> {
+            try {
+                Intent launch = buildExternalLaunchIntent(packageName.trim(), componentName,
+                        intentUri);
+                if (launch == null) return;
+                boolean launched = freeform.launchExternalIntent(packageName.trim(), launch,
+                        config, this::refreshOutsideCapture);
+                if (launched) {
+                    refreshOutsideCaptureAfterLaunch();
+                } else {
+                    Log.i("External launch was not armed package=" + packageName);
+                }
+            } catch (Throwable error) {
+                Log.e("External launch request failed package=" + packageName, error);
+            }
+        });
+    }
+
+    private Intent buildExternalLaunchIntent(String packageName, String componentName,
+                                             String intentUri) {
+        Intent launch;
+        if (intentUri != null && !intentUri.trim().isEmpty()) {
+            String raw = intentUri.trim();
+            try {
+                launch = Intent.parseUri(raw, 0);
+            } catch (Throwable firstError) {
+                try {
+                    launch = Intent.parseUri(raw, Intent.URI_INTENT_SCHEME);
+                } catch (Throwable secondError) {
+                    try {
+                        launch = new Intent(Intent.ACTION_VIEW, Uri.parse(raw));
+                    } catch (Throwable ignored) {
+                        Log.e("Cannot parse external shortcut URI " + raw, firstError);
+                        return null;
+                    }
+                }
+            }
+        } else {
+            ComponentName component = componentName == null ? null
+                    : ComponentName.unflattenFromString(componentName);
+            if (component == null) {
+                Intent launcher = context.getPackageManager()
+                        .getLaunchIntentForPackage(packageName);
+                if (launcher == null) {
+                    Log.i("No launcher activity for external package=" + packageName);
+                    return null;
+                }
+                launch = launcher;
+            } else {
+                launch = Intent.makeMainActivity(component);
+            }
+        }
+        ComponentName requested = launch.getComponent();
+        if (requested != null && !packageName.equals(requested.getPackageName())) {
+            Log.i("Rejected external intent package mismatch expected=" + packageName
+                    + " actual=" + requested.getPackageName());
+            return null;
+        }
+        if (launch.getComponent() == null && launch.getPackage() == null) {
+            launch.setPackage(packageName);
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        return launch;
     }
 
     void onTaskAppeared(int taskId) {

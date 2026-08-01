@@ -2,8 +2,11 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.app.Application;
 import android.app.Instrumentation;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.view.MotionEvent;
 
 import java.lang.reflect.Method;
@@ -32,6 +35,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     private static volatile FanRuntime runtime;
     private static volatile Object freeformController;
     private static volatile Object eventProxy;
+    private static volatile boolean externalLaunchReceiverInstalled;
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) {
@@ -307,6 +311,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                 runtime = new FanRuntime(context, classLoader);
                 if (freeformController != null) runtime.setFreeformController(freeformController);
             }
+            installExternalLaunchReceiver(context);
             if (eventProxy == null) {
                 eventProxy = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[]{handlerClass},
                         (proxy, method, args) -> dispatchProxy(proxy, method, args));
@@ -316,6 +321,38 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             runtime.reportInputReady();
         } catch (Throwable error) {
             Log.e("Runtime installation failed safely", error);
+        }
+    }
+
+    private static synchronized void installExternalLaunchReceiver(Context context) {
+        if (externalLaunchReceiverInstalled) return;
+        try {
+            IntentFilter filter = new IntentFilter(ExternalLaunchContract.ACTION_LAUNCH);
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context receiverContext, Intent intent) {
+                    if (!ExternalLaunchContract.ACTION_LAUNCH.equals(intent.getAction())) return;
+                    if (!ExternalLaunchContract.FLY_PACKAGE.equals(
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_SOURCE_PACKAGE))) {
+                        Log.i("Ignored external launch request from unknown source");
+                        return;
+                    }
+                    FanRuntime active = runtime;
+                    if (active == null) return;
+                    active.launchExternalRequest(
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_PACKAGE),
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_COMPONENT),
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_INTENT_URI));
+                }
+            };
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                context.registerReceiver(receiver, filter);
+            }
+            externalLaunchReceiverInstalled = true;
+            Log.i("External launch bridge registered for fly");
+        } catch (Throwable error) {
+            Log.e("External launch bridge registration failed", error);
         }
     }
 

@@ -227,14 +227,15 @@ final class ShortcutHostRuntime {
             ArrayList<String> iconKeys = new ArrayList<>();
             ArrayList<Bitmap> icons = new ArrayList<>();
             for (ShortcutInfo shortcut : shortcuts) {
-                if (!shortcut.isEnabled() || out.length() >= 160) continue;
+                if (!shortcut.isEnabled()) continue;
                 CharSequence label = shortcut.getShortLabel();
                 if (label == null) label = shortcut.getLongLabel();
                 if (label == null) continue;
                 JSONObject item = new JSONObject();
                 item.put("package", shortcut.getPackage());
                 item.put("id", shortcut.getId());
-                item.put("label", label.toString());
+                item.put("label", displayShortcutLabel(context, shortcut.getPackage(),
+                        label.toString()));
                 item.put("kind", "standard");
                 out.put(item);
                 seen.add(shortcut.getPackage() + "\n" + shortcut.getId());
@@ -304,7 +305,7 @@ final class ShortcutHostRuntime {
                     JSONObject item = new JSONObject();
                     item.put("package", packageName);
                     item.put("id", shortcutId);
-                    item.put("label", label);
+                    item.put("label", displayShortcutLabel(context, packageName, label));
                     item.put("kind", "launcher");
                     item.put("intent", rawIntent);
                     item.put("userId", 0);
@@ -380,6 +381,22 @@ final class ShortcutHostRuntime {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static String displayShortcutLabel(Context context, String packageName,
+                                               String shortcutLabel) {
+        String shortcut = shortcutLabel == null ? "" : shortcutLabel.trim();
+        String app = "";
+        try {
+            android.content.pm.ApplicationInfo info = context.getPackageManager()
+                    .getApplicationInfo(packageName, 0);
+            CharSequence label = context.getPackageManager().getApplicationLabel(info);
+            if (label != null) app = label.toString().trim();
+        } catch (Throwable ignored) { }
+        if (app.isEmpty()) app = packageName == null ? "" : packageName;
+        if (shortcut.isEmpty()) return app;
+        if (app.isEmpty() || shortcut.startsWith(app)) return shortcut;
+        return app + " · " + shortcut;
     }
 
     private static void publishActivityCatalog(Context context, LauncherApps launcherApps) {
