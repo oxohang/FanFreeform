@@ -1,5 +1,6 @@
 package com.oxohang.fanfreeform.xposed;
 
+import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -52,6 +53,7 @@ final class ForegroundAppBackgroundResolver {
         });
     }
 
+    @SuppressLint("ResourceType")
     @SuppressWarnings("deprecation")
     private static int resolve(Context context) {
         int fallback = fallback(context);

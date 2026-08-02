@@ -2,6 +2,7 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.content.Context;
 import android.graphics.PixelFormat;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -81,7 +82,8 @@ final class HoneycombOverlayController {
         params.setTitle("HyperGestureHoneycomb");
         params.layoutInDisplayCutoutMode = WindowManager.LayoutParams
                 .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
-        boolean blurRequested = config.honeycombLiveBlurEnabled;
+        boolean blurRequested = config.honeycombLiveBlurEnabled
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
         if (blurRequested) {
             params.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
             try {
@@ -100,7 +102,6 @@ final class HoneycombOverlayController {
                 if (!blurRequested) throw blurError;
                 Log.e("Cannot attach honeycomb with live blur; retrying", blurError);
                 params.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
-                try { params.setBlurBehindRadius(0); } catch (Throwable ignored) { }
                 windowManager.addView(next, params);
             }
             view = next;

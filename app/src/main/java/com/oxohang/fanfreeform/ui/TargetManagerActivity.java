@@ -9,8 +9,11 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.View;
@@ -30,6 +33,10 @@ import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @SuppressLint("SetTextI18n")
 public final class TargetManagerActivity extends Activity {
@@ -40,6 +47,12 @@ public final class TargetManagerActivity extends Activity {
     private static final int REQUEST_PICK_TARGETS = 121;
 
     private final ArrayList<AppTarget> targets = new ArrayList<>();
+    private final ExecutorService presentationExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Drawable placeholderIcon = new ColorDrawable(0xffeef0f5);
+    private Future<?> presentationTask;
+    private volatile int renderGeneration;
+    private volatile boolean destroyed;
     private ConfigStore store;
     private SharedPreferences prefs;
     private String kind;
@@ -130,10 +143,13 @@ public final class TargetManagerActivity extends Activity {
 
     private void renderTargets() {
         if (targetContainer == null) return;
+        final int generation = ++renderGeneration;
+        final ArrayList<AppTarget> snapshot = new ArrayList<>(targets);
+        if (presentationTask != null) presentationTask.cancel(true);
         targetContainer.removeAllViews();
         countText.setText("已选 " + targets.size() + " / " + maximum()
                 + " · 长按图标可调整顺序");
-        if (targets.isEmpty()) {
+        if (snapshot.isEmpty()) {
             TextView empty = text("尚未选择应用，点击右下角 ＋ 添加。",
                     14, Ui.MUTED, Typeface.NORMAL);
             empty.setGravity(Gravity.CENTER);
@@ -142,13 +158,36 @@ public final class TargetManagerActivity extends Activity {
             targetContainer.addView(empty);
             return;
         }
-        for (AppTarget target : new ArrayList<>(targets)) {
+        ArrayList<TargetPresentation> placeholders = new ArrayList<>(snapshot.size());
+        for (AppTarget target : snapshot) placeholders.add(TargetPresentation.placeholder(target));
+        renderTargetRows(snapshot, placeholders);
+        presentationTask = presentationExecutor.submit(() -> {
+            ArrayList<TargetPresentation> presentations = new ArrayList<>(snapshot.size());
+            for (AppTarget target : snapshot) {
+                if (destroyed || generation != renderGeneration
+                        || Thread.currentThread().isInterrupted()) return;
+                presentations.add(loadPresentation(target));
+            }
+            if (destroyed || generation != renderGeneration) return;
+            mainHandler.post(() -> {
+                if (destroyed || generation != renderGeneration) return;
+                renderTargetRows(snapshot, presentations);
+            });
+        });
+    }
+
+    private void renderTargetRows(List<AppTarget> snapshot,
+                                  List<TargetPresentation> presentations) {
+        if (targetContainer == null) return;
+        targetContainer.removeAllViews();
+        for (int index = 0; index < snapshot.size(); index++) {
+            AppTarget target = snapshot.get(index);
+            TargetPresentation presentation = presentations.get(index);
             if (targetContainer.getChildCount() > 0) targetContainer.addView(Ui.divider(this));
             LinearLayout item = row();
             item.setOnDragListener((view, event) -> onDrop(target, event));
             ImageView icon = new ImageView(this);
-            TargetPresentation presentation = presentation(target);
-            icon.setImageDrawable(presentation.icon);
+            icon.setImageDrawable(presentation.icon != null ? presentation.icon : placeholderIcon);
             icon.setOnLongClickListener(view -> view.startDragAndDrop(
                     ClipData.newPlainText("target", target.toJson().toString()),
                     new View.DragShadowBuilder(item), target, 0));
@@ -170,15 +209,15 @@ public final class TargetManagerActivity extends Activity {
         }
     }
 
-    private TargetPresentation presentation(AppTarget target) {
-        PackageManager pm = getPackageManager();
-        Drawable icon = getApplicationInfo().loadIcon(pm);
+    private TargetPresentation loadPresentation(AppTarget target) {
         String label = target.isShortcut() && !target.shortcutLabel.isEmpty()
                 ? target.shortcutLabel : target.packageName();
         String secondary = target.packageName() + (target.isShortcut() ? " · 快捷方式" : "");
+        Drawable icon = null;
         try {
+            PackageManager pm = getApplicationContext().getPackageManager();
             if (target.isShortcut()) {
-                icon = ShortcutIconLoader.load(this, target.packageName(),
+                icon = ShortcutIconLoader.load(getApplicationContext(), target.packageName(),
                         target.shortcutId, target.userId);
             } else if (target.componentName() != null) {
                 ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
@@ -187,7 +226,7 @@ public final class TargetManagerActivity extends Activity {
                 icon = info.loadIcon(pm);
                 if (target.userId != 0) secondary = target.packageName() + " · 双开";
             }
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             label = label + "（已不可用）";
         }
         return new TargetPresentation(label, secondary, icon);
@@ -234,6 +273,15 @@ public final class TargetManagerActivity extends Activity {
             }
         } catch (Exception ignored) { }
         saveTargets();
+    }
+
+    @Override protected void onDestroy() {
+        destroyed = true;
+        renderGeneration++;
+        mainHandler.removeCallbacksAndMessages(null);
+        if (presentationTask != null) presentationTask.cancel(true);
+        presentationExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     private void saveTargets() {
@@ -305,6 +353,13 @@ public final class TargetManagerActivity extends Activity {
             this.label = label;
             this.secondary = secondary;
             this.icon = icon;
+        }
+
+        static TargetPresentation placeholder(AppTarget target) {
+            String label = target.isShortcut() && !target.shortcutLabel.isEmpty()
+                    ? target.shortcutLabel : target.packageName();
+            String secondary = target.packageName() + (target.isShortcut() ? " · 快捷方式" : "");
+            return new TargetPresentation(label, secondary, null);
         }
     }
 }

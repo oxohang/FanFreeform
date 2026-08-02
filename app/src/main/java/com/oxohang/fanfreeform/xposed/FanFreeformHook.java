@@ -324,6 +324,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private static synchronized void installExternalLaunchReceiver(Context context) {
         if (externalLaunchReceiverInstalled) return;
         try {

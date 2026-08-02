@@ -6,9 +6,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -35,6 +37,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.LinkedHashSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -52,10 +57,16 @@ public final class AppPickerActivity extends Activity {
     public static final int MODE_APPS_AND_SHORTCUTS = 2;
     private final ArrayList<Entry> all = new ArrayList<>();
     private final ArrayList<Entry> filtered = new ArrayList<>();
+    private final ExecutorService loadExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Drawable placeholderIcon = new ColorDrawable(0xffeef0f5);
+    private Future<?> loadTask;
+    private volatile int loadGeneration;
+    private volatile boolean destroyed;
     private AppAdapter adapter;
     private ConfigStore store;
     private String searchText = "";
-    private int mode;
+    private volatile int mode;
     private boolean combinedMode;
     private TextView empty;
     private TextView selectionCount;
@@ -244,7 +255,42 @@ public final class AppPickerActivity extends Activity {
 
     @SuppressWarnings("deprecation")
     private void loadApps() {
+        if (destroyed) return;
+        final int gen = ++loadGeneration;
         all.clear();
+        filtered.clear();
+        if (adapter != null) adapter.notifyDataSetChanged();
+        if (empty != null) {
+            empty.setVisibility(View.VISIBLE);
+            empty.setText("正在加载…");
+        }
+        if (loadTask != null) loadTask.cancel(true);
+        loadTask = loadExecutor.submit(() -> {
+            List<Entry> entries = collectEntries();
+            mainHandler.post(() -> {
+                if (destroyed || gen != loadGeneration) return;
+                all.addAll(entries);
+                filter(searchText);
+            });
+            List<Drawable> icons = new ArrayList<>(entries.size());
+            for (Entry entry : entries) {
+                if (destroyed || gen != loadGeneration || Thread.currentThread().isInterrupted()) return;
+                icons.add(loadIconFor(entry));
+            }
+            if (destroyed || gen != loadGeneration) return;
+            mainHandler.post(() -> {
+                if (destroyed || gen != loadGeneration) return;
+                for (int i = 0; i < entries.size(); i++) {
+                    entries.get(i).icon = icons.get(i);
+                }
+                if (adapter != null) adapter.notifyDataSetChanged();
+            });
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private List<Entry> collectEntries() {
+        List<Entry> entries = new ArrayList<>();
         PackageManager pm = getPackageManager();
         if (mode == MODE_APPS) {
             Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
@@ -256,8 +302,8 @@ public final class AppPickerActivity extends Activity {
                 if (!seen.add(component.flattenToString())) continue;
                 CharSequence labelValue = result.loadLabel(pm);
                 String label = labelValue == null ? result.activityInfo.packageName : labelValue.toString();
-                all.add(new Entry(new AppTarget(component.flattenToString()), label,
-                        result.activityInfo.packageName, result.loadIcon(pm)));
+                entries.add(new Entry(new AppTarget(component.flattenToString()), label,
+                        result.activityInfo.packageName, pm2 -> result.loadIcon(pm2)));
             }
             for (ConfigStore.ActivityCatalogEntry activity : store.getActivityCatalog()) {
                 ComponentName component = ComponentName.unflattenFromString(activity.component);
@@ -265,9 +311,10 @@ public final class AppPickerActivity extends Activity {
                 String key = activity.component + "#" + activity.userId;
                 if (!seen.add(key)) continue;
                 try {
-                    all.add(new Entry(new AppTarget(activity.component, activity.userId),
-                            activity.label, component.getPackageName() + " · 双开",
-                            pm.getApplicationIcon(component.getPackageName())));
+                    String packageName = component.getPackageName();
+                    entries.add(new Entry(new AppTarget(activity.component, activity.userId),
+                            activity.label, packageName + " · 双开",
+                            pm2 -> pm2.getApplicationIcon(packageName)));
                 } catch (Exception ignored) { }
             }
         }
@@ -280,17 +327,24 @@ public final class AppPickerActivity extends Activity {
                             shortcut.userId)
                             : AppTarget.shortcut(shortcut.packageName, shortcut.shortcutId,
                             shortcut.label);
-                    all.add(new Entry(target, shortcut.label,
+                    entries.add(new Entry(target, shortcut.label,
                             shortcut.packageName + (shortcut.launcherShortcut
                                     ? " · 桌面快捷方式" : " · 快捷方式"),
-                            ShortcutIconLoader.load(this, shortcut.packageName,
-                                    shortcut.shortcutId, shortcut.userId)));
+                            pm2 -> ShortcutIconLoader.load(AppPickerActivity.this,
+                                    shortcut.packageName, shortcut.shortcutId,
+                                    shortcut.userId)));
                 } catch (Exception ignored) { }
             }
         }
-        Collator collator = Collator.getInstance(Locale.CHINA);
-        all.sort(Comparator.comparing(entry -> entry.label, collator));
-        filter(searchText);
+        return entries;
+    }
+
+    private Drawable loadIconFor(Entry entry) {
+        try {
+            return entry.iconLoader.load(getPackageManager());
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private void filter(String text) {
@@ -325,11 +379,11 @@ public final class AppPickerActivity extends Activity {
     private void refreshCatalog() {
         if (mode == MODE_APPS) {
             store.requestActivityCatalog();
-            new Handler().postDelayed(this::loadApps, 900L);
+            mainHandler.postDelayed(this::loadApps, 900L);
             return;
         }
         store.requestShortcutCatalog();
-        new Handler().postDelayed(this::loadApps, 900L);
+        mainHandler.postDelayed(this::loadApps, 900L);
     }
 
     private void switchMode(int nextMode) {
@@ -378,7 +432,7 @@ public final class AppPickerActivity extends Activity {
             row.setFocusable(false);
             row.setOnClickListener(view -> selectEntry(entry));
             ImageView icon = new ImageView(AppPickerActivity.this);
-            icon.setImageDrawable(entry.icon);
+            icon.setImageDrawable(entry.icon != null ? entry.icon : placeholderIcon);
             row.addView(icon, new LinearLayout.LayoutParams(Ui.dp(AppPickerActivity.this, 44), Ui.dp(AppPickerActivity.this, 44)));
             LinearLayout text = new LinearLayout(AppPickerActivity.this);
             text.setOrientation(LinearLayout.VERTICAL);
@@ -430,16 +484,31 @@ public final class AppPickerActivity extends Activity {
         return button;
     }
 
+    @Override
+    protected void onDestroy() {
+        destroyed = true;
+        loadGeneration++;
+        mainHandler.removeCallbacksAndMessages(null);
+        if (loadTask != null) loadTask.cancel(true);
+        loadExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
     private static final class Entry {
         final AppTarget target;
         final String label;
         final String secondary;
-        final Drawable icon;
-        Entry(AppTarget target, String label, String secondary, Drawable icon) {
+        final IconLoader iconLoader;
+        Drawable icon;
+        Entry(AppTarget target, String label, String secondary, IconLoader iconLoader) {
             this.target = target;
             this.label = label;
             this.secondary = secondary;
-            this.icon = icon;
+            this.iconLoader = iconLoader;
         }
+    }
+
+    private interface IconLoader {
+        Drawable load(PackageManager pm) throws Exception;
     }
 }
