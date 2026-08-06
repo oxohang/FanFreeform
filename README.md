@@ -32,3 +32,7 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 
 详细行为与验收标准见 [基础设计](docs/specs/2026-07-26-hyperos-fan-freeform-design.md)、[交互优化](docs/specs/2026-07-26-interaction-optimization-design.md)、[扇形与窗外交互](docs/specs/2026-07-26-gesture-area-icon-unified-outside-design.md)、[任务复用与手势仲裁](docs/specs/2026-07-26-task-reuse-exit-animation-gesture-arbitration-design.md)、[后台保留与原生关闭](docs/specs/2026-07-27-background-preserving-launch-native-close-design.md) 和 [侧滑距离扇形手势](docs/specs/2026-07-27-side-distance-fan-gesture-design.md)。
 已验证的设备、接口和操作链路见 [真机验收记录](docs/device-verification.md)。
+
+## 问题反馈
+
+请通过 [GitHub Issues](https://github.com/oxohang/FanFreeform/issues) 提交问题。应用内可进入“杂项设置 → 提交 Bug 反馈”，自动生成设备、系统、模块版本、Hook 状态和兼容性诊断摘要；提交时只需补充复现步骤、预期结果和实际结果。请不要提交联系人、账号或快捷方式名称等隐私信息。

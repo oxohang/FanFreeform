@@ -1,0 +1,32 @@
+<variant
+    name="debug"
+    package="com.oxohang.fanfreeform"
+    minSdkVersion="30"
+    targetSdkVersion="34"
+    debuggable="true"
+    mergedManifest="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"
+    manifestMergeReport="/Users/oxohang/vibecodeing/小窗/.codex-build/app/outputs/logs/manifest-merger-debug-report.txt"
+    proguardFiles="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/default_proguard_files/global/proguard-android.txt-8.7.3"
+    partialResultsDir="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/lint_partial_results/debug/lintAnalyzeDebug/out">
+  <buildFeatures
+      namespacing="REQUIRED"/>
+  <sourceProviders>
+    <sourceProvider
+        manifests="src/main/AndroidManifest.xml:src/debug/AndroidManifest.xml"
+        javaDirectories="src/main/java:src/debug/java:src/main/kotlin:src/debug/kotlin"
+        resDirectories="src/main/res:src/debug/res"
+        assetsDirectories="src/main/assets:src/debug/assets"/>
+  </sourceProviders>
+  <testSourceProviders>
+  </testSourceProviders>
+  <testFixturesSourceProviders>
+  </testFixturesSourceProviders>
+  <artifact
+      classOutputs="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/javac/debug/compileDebugJavaWithJavac/classes:/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar"
+      type="MAIN"
+      applicationId="com.oxohang.fanfreeform"
+      generatedSourceFolders="/Users/oxohang/vibecodeing/小窗/.codex-build/app/generated/ap_generated_sources/debug/out"
+      generatedResourceFolders="/Users/oxohang/vibecodeing/小窗/.codex-build/app/generated/res/resValues/debug"
+      desugaredMethodsFiles="/Users/oxohang/.gradle/caches/8.9/transforms/d1dd1bb2d76355fb91853ab5491c117e/transformed/D8BackportedDesugaredMethods.txt">
+  </artifact>
+</variant>

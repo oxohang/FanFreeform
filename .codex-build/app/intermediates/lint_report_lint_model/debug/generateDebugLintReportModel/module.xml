@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="/Users/oxohang/vibecodeing/小窗/app"
+    name=":app"
+    type="APP"
+    maven="FanFreeform:app:unspecified"
+    agpVersion="8.7.3"
+    buildFolder="/Users/oxohang/vibecodeing/小窗/.codex-build/app"
+    bootClassPath="/opt/homebrew/share/android-commandlinetools/platforms/android-34/android.jar:/opt/homebrew/share/android-commandlinetools/build-tools/34.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-34"
+    neverShrinking="true">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="debug"/>
+</lint-module>

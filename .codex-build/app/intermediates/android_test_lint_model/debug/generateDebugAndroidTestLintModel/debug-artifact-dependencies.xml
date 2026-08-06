@@ -1,0 +1,8 @@
+<dependencies>
+  <compile
+      roots=":@@:app::debug">
+    <dependency
+        name=":@@:app::debug"
+        simpleName="artifacts::app"/>
+  </compile>
+</dependencies>

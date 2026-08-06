@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="partial_results">
+    <map id="UnsafeImplicitIntentLaunch">
+            <map id="actionsSent">
+                    <map id="android.intent.action.MAIN (used to start an activity)">
+                        <location id="0"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java"
+                            line="201"
+                            column="31"
+                            startOffset="8317"
+                            endLine="201"
+                            endColumn="61"
+                            endOffset="8347"/>
+                    </map>
+            </map>
+    </map>
+    <map id="UnsafeIntentLaunch">
+            <map id="incidents">
+                    <map id="0">
+                        <entry
+                            name="incidentClass"
+                            string="com.oxohang.fanfreeform.xposed.ShortcutHostRuntime"/>
+                        <location id="location"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java"
+                            line="165"
+                            column="29"
+                            startOffset="6889"
+                            endLine="165"
+                            endColumn="58"
+                            endOffset="6918"/>
+                        <location id="secondaryLocation"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java"
+                            line="171"
+                            column="13"
+                            startOffset="7210"
+                            endLine="171"
+                            endColumn="84"
+                            endOffset="7281"
+                            message="The unsafe intent is launched here."/>
+                    </map>
+            </map>
+            <map id="unprotected">
+                <entry
+                    name="com.oxohang.fanfreeform.ui.DashboardActivity"
+                    boolean="true"/>
+            </map>
+    </map>
+    <map id="UnusedResources">
+        <entry
+            name="model"
+            string="array[xposed_scope(U)],color[accent(U),window_background(U)],drawable[ic_launcher(U),wechat_support_qr(U)],string[app_name(U)],style[AppTheme(U)],xml[data_extraction_rules(U)];6^1^2;;;"/>
+    </map>
+
+</incidents>

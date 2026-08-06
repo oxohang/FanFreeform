@@ -1,0 +1,298 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.oxohang.fanfreeform"
+4    android:versionCode="136"
+5    android:versionName="1.0-debug" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="30"
+9        android:targetSdkVersion="34" />
+10
+11    <uses-permission android:name="android.permission.VIBRATE" />
+11-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:5:5-66
+11-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:5:22-63
+12    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+12-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:6:5-78
+12-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:6:22-75
+13
+14    <queries>
+14-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:8:5-16:15
+15        <package android:name="com.android.systemui" />
+15-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:9:9-56
+15-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:9:18-53
+16        <package android:name="com.miui.home" />
+16-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:10:9-49
+16-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:10:18-46
+17        <package android:name="org.lsposed.manager" />
+17-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:11:9-55
+17-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:11:18-52
+18
+19        <intent>
+19-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:12:9-15:18
+20            <action android:name="android.intent.action.MAIN" />
+20-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:13-65
+20-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:21-62
+21
+22            <category android:name="android.intent.category.LAUNCHER" />
+22-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:13-73
+22-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:23-70
+23        </intent>
+24    </queries>
+25
+26    <application
+26-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:18:5-132:19
+27        android:allowBackup="false"
+27-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:19:9-36
+28        android:dataExtractionRules="@xml/data_extraction_rules"
+28-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:20:9-65
+29        android:debuggable="true"
+30        android:extractNativeLibs="false"
+31        android:fullBackupContent="false"
+31-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:21:9-42
+32        android:icon="@drawable/ic_launcher"
+32-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:22:9-45
+33        android:label="@string/app_name"
+33-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:23:9-41
+34        android:supportsRtl="true"
+34-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:24:9-35
+35        android:theme="@style/AppTheme" >
+35-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:25:9-40
+36        <activity
+36-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:4:9-10:75
+37            android:name="com.oxohang.fanfreeform.debug.DebugHookReloadActivity"
+37-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:5:13-58
+38            android:excludeFromRecents="true"
+38-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:6:13-46
+39            android:exported="true"
+39-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:7:13-36
+40            android:noHistory="true"
+40-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:8:13-37
+41            android:permission="android.permission.DUMP"
+41-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:9:13-57
+42            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+42-->/Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:10:13-72
+43        <activity
+43-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:27:9-29:40
+44            android:name="com.oxohang.fanfreeform.ui.AppPickerActivity"
+44-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:28:13-49
+45            android:exported="false" />
+45-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:29:13-37
+46        <activity
+46-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:31:9-33:40
+47            android:name="com.oxohang.fanfreeform.ui.TargetManagerActivity"
+47-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:32:13-53
+48            android:exported="false" />
+48-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:33:13-37
+49        <activity
+49-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:35:9-37:40
+50            android:name="com.oxohang.fanfreeform.ui.GestureSettingsActivity"
+50-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:36:13-55
+51            android:exported="false" />
+51-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:37:13-37
+52        <activity
+52-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:39:9-41:40
+53            android:name="com.oxohang.fanfreeform.ui.GestureDetailSettingsActivity"
+53-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:40:13-61
+54            android:exported="false" />
+54-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:41:13-37
+55        <activity
+55-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:43:9-45:40
+56            android:name="com.oxohang.fanfreeform.ui.AnimationSettingsActivity"
+56-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:44:13-57
+57            android:exported="false" />
+57-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:45:13-37
+58        <activity
+58-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:47:9-49:40
+59            android:name="com.oxohang.fanfreeform.ui.FanLayoutSettingsActivity"
+59-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:48:13-57
+60            android:exported="false" />
+60-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:49:13-37
+61        <activity
+61-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:51:9-53:40
+62            android:name="com.oxohang.fanfreeform.ui.HoneycombSettingsActivity"
+62-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:52:13-57
+63            android:exported="false" />
+63-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:53:13-37
+64        <activity
+64-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:55:9-57:40
+65            android:name="com.oxohang.fanfreeform.ui.HoneycombLayoutEditorActivity"
+65-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:56:13-61
+66            android:exported="false" />
+66-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:57:13-37
+67        <activity
+67-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:59:9-61:40
+68            android:name="com.oxohang.fanfreeform.ui.HoneycombAnimationSettingsActivity"
+68-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:60:13-66
+69            android:exported="false" />
+69-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:61:13-37
+70        <activity
+70-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:63:9-65:40
+71            android:name="com.oxohang.fanfreeform.ui.TaskCenterSettingsActivity"
+71-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:64:13-58
+72            android:exported="false" />
+72-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:65:13-37
+73        <activity
+73-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:67:9-69:40
+74            android:name="com.oxohang.fanfreeform.ui.TaskCenterAnimationSettingsActivity"
+74-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:68:13-67
+75            android:exported="false" />
+75-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:69:13-37
+76        <activity
+76-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:9-89
+77            android:name="com.oxohang.fanfreeform.ui.GeneralSettingsActivity"
+77-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:19-61
+78            android:exported="false" />
+78-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:62-86
+79        <activity
+79-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:9-88
+80            android:name="com.oxohang.fanfreeform.ui.WindowSettingsActivity"
+80-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:19-60
+81            android:exported="false" />
+81-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:61-85
+82        <activity
+82-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:9-89
+83            android:name="com.oxohang.fanfreeform.ui.OutsideSettingsActivity"
+83-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:19-61
+84            android:exported="false" />
+84-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:62-86
+85        <activity
+85-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:9-86
+86            android:name="com.oxohang.fanfreeform.ui.MiscSettingsActivity"
+86-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:19-58
+87            android:exported="false" />
+87-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:59-83
+88        <activity
+88-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:9-93
+89            android:name="com.oxohang.fanfreeform.ui.PressureCalibrationActivity"
+89-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:19-65
+90            android:exported="false" />
+90-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:66-90
+91        <activity
+91-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:77:9-79:40
+92            android:name="com.oxohang.fanfreeform.ui.MainActivity"
+92-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:78:13-44
+93            android:exported="false" />
+93-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:79:13-37
+94        <activity
+94-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:81:9-94:20
+95            android:name="com.oxohang.fanfreeform.ui.DashboardActivity"
+95-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:82:13-49
+96            android:exported="true" >
+96-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:83:13-36
+97            <intent-filter>
+97-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:84:13-87:29
+98                <action android:name="android.intent.action.MAIN" />
+98-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:13-65
+98-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:21-62
+99
+100                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+100-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:86:17-92
+100-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:86:27-89
+101            </intent-filter>
+102            <intent-filter>
+102-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:88:13-93:29
+103                <action android:name="android.intent.action.VIEW" />
+103-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:89:17-69
+103-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:89:25-66
+104
+105                <category android:name="android.intent.category.DEFAULT" />
+105-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:90:17-76
+105-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:90:27-73
+106                <category android:name="android.intent.category.BROWSABLE" />
+106-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:91:17-78
+106-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:91:27-75
+107
+108                <data
+108-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:17-79
+109                    android:host="settings"
+109-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:53-76
+110                    android:scheme="hypergesture" />
+110-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:23-52
+111            </intent-filter>
+112        </activity>
+113
+114        <activity-alias
+114-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:96:9-105:26
+115            android:name="com.oxohang.fanfreeform.LauncherAlias"
+115-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:97:13-42
+116            android:enabled="true"
+116-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:98:13-35
+117            android:exported="true"
+117-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:99:13-36
+118            android:targetActivity="com.oxohang.fanfreeform.ui.DashboardActivity" >
+118-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:100:13-59
+119            <intent-filter>
+119-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:101:13-104:29
+120                <action android:name="android.intent.action.MAIN" />
+120-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:13-65
+120-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:21-62
+121
+122                <category android:name="android.intent.category.LAUNCHER" />
+122-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:13-73
+122-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:23-70
+123            </intent-filter>
+124        </activity-alias>
+125
+126        <provider
+126-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:107:9-112:54
+127            android:name="com.oxohang.fanfreeform.config.ConfigProvider"
+127-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:108:13-50
+128            android:authorities="com.oxohang.fanfreeform.config"
+128-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:109:13-65
+129            android:exported="true"
+129-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:110:13-36
+130            android:grantUriPermissions="false" />
+130-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:111:13-48
+131        <provider
+131-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:114:9-118:50
+132            android:name="com.oxohang.fanfreeform.diagnostics.CompatibilityReportProvider"
+132-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:115:13-68
+133            android:authorities="com.oxohang.fanfreeform.reports"
+133-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:116:13-66
+134            android:exported="false"
+134-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:117:13-37
+135            android:grantUriPermissions="true" />
+135-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:118:13-47
+136
+137        <meta-data
+137-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:9-71
+138            android:name="xposedmodule"
+138-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:20-47
+139            android:value="true" />
+139-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:48-68
+140        <meta-data
+140-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:9-90
+141            android:name="xposeddescription"
+141-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:20-52
+142            android:value="HyperOS 3 底角扇形快捷小窗" />
+142-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:53-87
+143        <meta-data
+143-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:9-73
+144            android:name="xposedminversion"
+144-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:20-51
+145            android:value="82" />
+145-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:52-70
+146        <meta-data
+146-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:9-88
+147            android:name="xposedscope"
+147-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:20-46
+148            android:resource="@array/xposed_scope" />
+148-->/Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:47-85
+149
+150        <provider
+151            android:name="rikka.shizuku.ShizukuProvider"
+152            android:authorities="com.oxohang.fanfreeform.shizuku"
+153            android:enabled="true"
+154            android:exported="true"
+155            android:multiprocess="false"
+156            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+157
+158        <meta-data
+158-->[dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:11:9-13:36
+159            android:name="moe.shizuku.client.V3_SUPPORT"
+159-->[dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:12:13-57
+160            android:value="true" />
+160-->[dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:13:13-33
+161    </application>
+162
+163</manifest>

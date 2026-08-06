@@ -83,6 +83,8 @@ public final class DashboardActivity extends Activity {
                 () -> openGesture(GestureSettingsActivity.MODE_SIDE)), params(12));
         root.addView(entry("蜂窝应用", "应用清单、圆盘位置、背景与独立动效",
                 () -> open(HoneycombSettingsActivity.class)), params(12));
+        root.addView(entry("按压手势", "圆形区域、气压校准与蜂窝激活",
+                () -> open(PressureGestureSettingsActivity.class)), params(12));
         root.addView(entry("任务中心", "任务数量、卡片布局与独立动效",
                 () -> open(TaskCenterSettingsActivity.class)), params(12));
         root.addView(entry("小窗位置设置", "统一调整小窗大小和初始位置",

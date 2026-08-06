@@ -60,6 +60,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.PressureGestureSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.TaskCenterSettingsActivity"
             android:exported="false" />
 

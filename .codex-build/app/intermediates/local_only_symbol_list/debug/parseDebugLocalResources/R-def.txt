@@ -1,0 +1,10 @@
+R_DEF: Internal format may change without notice
+local
+array xposed_scope
+color accent
+color window_background
+drawable ic_launcher
+drawable wechat_support_qr
+string app_name
+style AppTheme
+xml data_extraction_rules

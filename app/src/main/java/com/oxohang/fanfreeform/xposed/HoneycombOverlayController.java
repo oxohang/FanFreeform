@@ -15,6 +15,7 @@ final class HoneycombOverlayController {
     interface Listener {
         void onLaunch(RuntimeTarget target);
         void onClosed();
+        default void onSelectionChanged(RuntimeTarget target) { }
     }
 
     private final Context context;
@@ -52,11 +53,18 @@ final class HoneycombOverlayController {
 
     boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                  float anchorX, float anchorY, GestureConfig config, Listener listener) {
+        return show(targets, corner, anchorX, anchorY, config, false, listener);
+    }
+
+    boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                 float anchorX, float anchorY, GestureConfig config,
+                 boolean forceBrowseMode, Listener listener) {
         removeNow();
         if (windowManager == null || targets.isEmpty()) return false;
         HoneycombOverlayView next = new HoneycombOverlayView(context);
         windowTop = 0;
         next.configure(targets, corner, toLocalX(anchorX), toLocalY(anchorY), config,
+                forceBrowseMode,
                 new HoneycombOverlayView.Listener() {
             @Override public void onLaunch(RuntimeTarget target) {
                 removeNow();
@@ -66,6 +74,10 @@ final class HoneycombOverlayController {
             @Override public void onClosed() {
                 removeNow();
                 listener.onClosed();
+            }
+
+            @Override public void onSelectionChanged(RuntimeTarget target) {
+                listener.onSelectionChanged(target);
             }
         });
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(

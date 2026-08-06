@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="conditional_incidents">
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.VIBRATE" message="Missing permissions required by Vibrator.vibrate: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanRuntime.java"
+            line="2052"
+            column="38"
+            startOffset="95305"
+            endLine="2052"
+            endColumn="82"
+            endOffset="95349"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by Vibrator.vibrate: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.VIBRATE"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.VIBRATE" message="Missing permissions required by Vibrator.vibrate: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanRuntime.java"
+            line="2055"
+            column="39"
+            startOffset="95488"
+            endLine="2055"
+            endColumn="63"
+            endOffset="95512"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by Vibrator.vibrate: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.VIBRATE"/>
+        </map>
+    </incident>
+
+    <incident
+        id="InlinedApi"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffe0000000" requiresApi="ffffffff00000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanRuntime.java"
+            line="222"
+            column="33"
+            startOffset="10669"
+            endLine="222"
+            endColumn="62"
+            endOffset="10698"/>
+        <map>
+            <entry
+                name="message"
+                string="Field requires API level 33 (current min is %1$s): `android.content.Context#RECEIVER_NOT_EXPORTED`"/>
+            <api-levels id="minSdk"
+                value="ffffffffe0000000"/>
+            <entry
+                name="name"
+                string="RECEIVER_NOT_EXPORTED"/>
+            <entry
+                name="owner"
+                string="android.content.Context"/>
+            <api-levels id="requiresApi"
+                value="ffffffff00000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="InlinedApi"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffe0000000" requiresApi="ffffffff00000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java"
+            line="94"
+            column="20"
+            startOffset="3974"
+            endLine="94"
+            endColumn="45"
+            endOffset="3999"/>
+        <map>
+            <entry
+                name="message"
+                string="Field requires API level 33 (current min is %1$s): `android.content.Context#RECEIVER_EXPORTED`"/>
+            <api-levels id="minSdk"
+                value="ffffffffe0000000"/>
+            <entry
+                name="name"
+                string="RECEIVER_EXPORTED"/>
+            <entry
+                name="owner"
+                string="android.content.Context"/>
+            <api-levels id="requiresApi"
+                value="ffffffff00000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="NewApi"
+        severity="error"
+        message="">
+        <fix-data minSdk="ffffffffe0000000" requiresApi="ffffffffc0000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/HoneycombOverlayController.java"
+            line="88"
+            column="24"
+            startOffset="3282"
+            endLine="88"
+            endColumn="43"
+            endOffset="3301"/>
+        <map>
+            <entry
+                name="desc"
+                string="(I)"/>
+            <entry
+                name="message"
+                string="Call requires API level 31 (current min is %1$s): `android.view.WindowManager.LayoutParams#setBlurBehindRadius`"/>
+            <api-levels id="minSdk"
+                value="ffffffffe0000000"/>
+            <entry
+                name="name"
+                string="setBlurBehindRadius"/>
+            <entry
+                name="owner"
+                string="android.view.WindowManager.LayoutParams"/>
+            <api-levels id="requiresApi"
+                value="ffffffffc0000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="NewApi"
+        severity="error"
+        message="">
+        <fix-data minSdk="ffffffffe0000000" requiresApi="ffffffffc0000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/HoneycombOverlayController.java"
+            line="103"
+            column="30"
+            startOffset="4056"
+            endLine="103"
+            endColumn="49"
+            endOffset="4075"/>
+        <map>
+            <entry
+                name="desc"
+                string="(I)"/>
+            <entry
+                name="message"
+                string="Call requires API level 31 (current min is %1$s): `android.view.WindowManager.LayoutParams#setBlurBehindRadius`"/>
+            <api-levels id="minSdk"
+                value="ffffffffe0000000"/>
+            <entry
+                name="name"
+                string="setBlurBehindRadius"/>
+            <entry
+                name="owner"
+                string="android.view.WindowManager.LayoutParams"/>
+            <api-levels id="requiresApi"
+                value="ffffffffc0000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="QueryPermissionsNeeded"
+        severity="warning"
+        message="Consider adding a `&lt;queries>` declaration to your manifest when calling this method; see https://g.co/dev/packagevisibility for details">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/AppPickerActivity.java"
+            line="292"
+            column="44"
+            startOffset="12186"
+            endLine="292"
+            endColumn="65"
+            endOffset="12207"/>
+        <map>
+            <entry
+                name="queryAll"
+                boolean="false"/>
+        </map>
+    </incident>
+
+    <incident
+        id="QueryPermissionsNeeded"
+        severity="warning"
+        message="Consider adding a `&lt;queries>` declaration to your manifest when calling this method; see https://g.co/dev/packagevisibility for details">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/config/ConfigStore.java"
+            line="716"
+            column="68"
+            startOffset="39945"
+            endLine="716"
+            endColumn="89"
+            endOffset="39966"/>
+        <map>
+            <entry
+                name="queryAll"
+                boolean="false"/>
+        </map>
+    </incident>
+
+    <incident
+        id="QueryPermissionsNeeded"
+        severity="warning"
+        message="Consider adding a `&lt;queries>` declaration to your manifest when calling this method; see https://g.co/dev/packagevisibility for details">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/config/ConfigStore.java"
+            line="1098"
+            column="68"
+            startOffset="63463"
+            endLine="1098"
+            endColumn="89"
+            endOffset="63484"/>
+        <map>
+            <entry
+                name="queryAll"
+                boolean="false"/>
+        </map>
+    </incident>
+
+    <incident
+        id="UnspecifiedRegisterReceiverFlag"
+        severity="error"
+        message="`receiver` is missing `RECEIVER_EXPORTED` or `RECEIVER_NOT_EXPORTED` flag for unprotected broadcasts registered for com.oxohang.fanfreeform.action.LAUNCH">
+        <fix-alternatives>
+            <fix-replace
+                description="Add RECEIVER_NOT_EXPORTED (preferred)"
+                oldString="_lint_insert_end_"
+                replacement=", android.content.Context.RECEIVER_NOT_EXPORTED"
+                shortenNames="true"
+                reformat="value"
+                priority="0">
+                <range
+                    file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanFreeformHook.java"
+                    startOffset="18890"
+                    endOffset="18896"/>
+            </fix-replace>
+            <fix-replace
+                description="Add RECEIVER_EXPORTED"
+                oldString="_lint_insert_end_"
+                replacement=", android.content.Context.RECEIVER_EXPORTED"
+                shortenNames="true"
+                reformat="value"
+                priority="0">
+                <range
+                    file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanFreeformHook.java"
+                    startOffset="18890"
+                    endOffset="18896"/>
+            </fix-replace>
+        </fix-alternatives>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanFreeformHook.java"
+            line="350"
+            column="17"
+            startOffset="18855"
+            endLine="350"
+            endColumn="59"
+            endOffset="18897"/>
+        <map>
+            <entry
+                name="hasUnprotected"
+                boolean="true"/>
+        </map>
+    </incident>
+
+</incidents>

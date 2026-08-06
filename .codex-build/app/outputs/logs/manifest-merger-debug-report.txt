@@ -1,0 +1,320 @@
+-- Merging decision tree log ---
+provider#rikka.shizuku.ShizukuProvider
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:125:9-131:82
+	android:authorities
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml
+manifest
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:2:1-133:12
+MERGED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:2:1-133:12
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:2:1-12:12
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:2:1-12:12
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:2:1-12:12
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:2:1-16:12
+MERGED from [dev.rikka.shizuku:api:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3aa55f3efff9527ca49139cbee8e712e/transformed/api-13.1.5/AndroidManifest.xml:2:1-7:12
+MERGED from [dev.rikka.shizuku:shared:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/4976f57663197851022852c726013993/transformed/shared-13.1.5/AndroidManifest.xml:2:1-7:12
+MERGED from [dev.rikka.shizuku:aidl:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/cda9563327cb7196c8845a6943eca24e/transformed/aidl-13.1.5/AndroidManifest.xml:2:1-7:12
+	package
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+	android:versionName
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+	xmlns:tools
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:3:5-51
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:3:5-51
+	android:versionCode
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:2:11-69
+uses-permission#android.permission.VIBRATE
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:5:5-66
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:5:22-63
+uses-permission#moe.shizuku.manager.permission.API_V23
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:6:5-78
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:8:5-78
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:8:5-78
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:6:22-75
+queries
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:8:5-16:15
+package#com.android.systemui
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:9:9-56
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:9:18-53
+package#com.miui.home
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:10:9-49
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:10:18-46
+package#org.lsposed.manager
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:11:9-55
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:11:18-52
+intent#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:12:9-15:18
+action#android.intent.action.MAIN
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:13-65
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:13:21-62
+category#android.intent.category.LAUNCHER
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:13-73
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:14:23-70
+application
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:18:5-132:19
+MERGED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:18:5-132:19
+MERGED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:18:5-132:19
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:3:5-11:19
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:10:5-14:19
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:10:5-14:19
+	android:extractNativeLibs
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+	android:supportsRtl
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:24:9-35
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:24:9-35
+	android:label
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:23:9-41
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:23:9-41
+	android:fullBackupContent
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:21:9-42
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:21:9-42
+	tools:ignore
+		ADDED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:10:18-69
+	android:icon
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:22:9-45
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:22:9-45
+	android:allowBackup
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:19:9-36
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:19:9-36
+	android:theme
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:25:9-40
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:25:9-40
+	android:dataExtractionRules
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:20:9-65
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:20:9-65
+activity#com.oxohang.fanfreeform.ui.AppPickerActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:27:9-29:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:29:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:28:13-49
+activity#com.oxohang.fanfreeform.ui.TargetManagerActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:31:9-33:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:33:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:32:13-53
+activity#com.oxohang.fanfreeform.ui.GestureSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:35:9-37:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:37:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:36:13-55
+activity#com.oxohang.fanfreeform.ui.GestureDetailSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:39:9-41:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:41:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:40:13-61
+activity#com.oxohang.fanfreeform.ui.AnimationSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:43:9-45:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:45:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:44:13-57
+activity#com.oxohang.fanfreeform.ui.FanLayoutSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:47:9-49:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:49:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:48:13-57
+activity#com.oxohang.fanfreeform.ui.HoneycombSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:51:9-53:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:53:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:52:13-57
+activity#com.oxohang.fanfreeform.ui.HoneycombLayoutEditorActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:55:9-57:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:57:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:56:13-61
+activity#com.oxohang.fanfreeform.ui.HoneycombAnimationSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:59:9-61:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:61:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:60:13-66
+activity#com.oxohang.fanfreeform.ui.TaskCenterSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:63:9-65:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:65:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:64:13-58
+activity#com.oxohang.fanfreeform.ui.TaskCenterAnimationSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:67:9-69:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:69:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:68:13-67
+activity#com.oxohang.fanfreeform.ui.GeneralSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:9-89
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:62-86
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:71:19-61
+activity#com.oxohang.fanfreeform.ui.WindowSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:9-88
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:61-85
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:72:19-60
+activity#com.oxohang.fanfreeform.ui.OutsideSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:9-89
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:62-86
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:73:19-61
+activity#com.oxohang.fanfreeform.ui.MiscSettingsActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:9-86
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:59-83
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:74:19-58
+activity#com.oxohang.fanfreeform.ui.PressureCalibrationActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:9-93
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:66-90
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:75:19-65
+activity#com.oxohang.fanfreeform.ui.MainActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:77:9-79:40
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:79:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:78:13-44
+activity#com.oxohang.fanfreeform.ui.DashboardActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:81:9-94:20
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:83:13-36
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:82:13-49
+intent-filter#action:name:android.intent.action.MAIN+category:name:de.robv.android.xposed.category.MODULE_SETTINGS
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:84:13-87:29
+category#de.robv.android.xposed.category.MODULE_SETTINGS
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:86:17-92
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:86:27-89
+intent-filter#action:name:android.intent.action.VIEW+category:name:android.intent.category.BROWSABLE+category:name:android.intent.category.DEFAULT+data:host:settings+data:scheme:hypergesture
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:88:13-93:29
+action#android.intent.action.VIEW
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:89:17-69
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:89:25-66
+category#android.intent.category.DEFAULT
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:90:17-76
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:90:27-73
+category#android.intent.category.BROWSABLE
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:91:17-78
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:91:27-75
+data
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:17-79
+	android:host
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:53-76
+	android:scheme
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:92:23-52
+activity-alias#com.oxohang.fanfreeform.LauncherAlias
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:96:9-105:26
+	android:enabled
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:98:13-35
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:99:13-36
+	android:targetActivity
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:100:13-59
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:97:13-42
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:101:13-104:29
+provider#com.oxohang.fanfreeform.config.ConfigProvider
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:107:9-112:54
+	android:grantUriPermissions
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:111:13-48
+	android:authorities
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:109:13-65
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:110:13-36
+	tools:ignore
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:112:13-51
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:108:13-50
+provider#com.oxohang.fanfreeform.diagnostics.CompatibilityReportProvider
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:114:9-118:50
+	android:grantUriPermissions
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:118:13-47
+	android:authorities
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:116:13-66
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:117:13-37
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:115:13-68
+meta-data#xposedmodule
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:9-71
+	android:value
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:48-68
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:120:20-47
+meta-data#xposeddescription
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:9-90
+	android:value
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:53-87
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:121:20-52
+meta-data#xposedminversion
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:9-73
+	android:value
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:52-70
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:122:20-51
+meta-data#xposedscope
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:9-88
+	android:resource
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:47-85
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/main/AndroidManifest.xml:123:20-46
+activity#com.oxohang.fanfreeform.debug.DebugHookReloadActivity
+ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:4:9-10:75
+	android:excludeFromRecents
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:6:13-46
+	android:noHistory
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:8:13-37
+	android:exported
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:7:13-36
+	android:permission
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:9:13-57
+	android:theme
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:10:13-72
+	android:name
+		ADDED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml:5:13-58
+uses-sdk
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:6:5-44
+MERGED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:6:5-44
+MERGED from [dev.rikka.shizuku:api:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3aa55f3efff9527ca49139cbee8e712e/transformed/api-13.1.5/AndroidManifest.xml:5:5-44
+MERGED from [dev.rikka.shizuku:api:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3aa55f3efff9527ca49139cbee8e712e/transformed/api-13.1.5/AndroidManifest.xml:5:5-44
+MERGED from [dev.rikka.shizuku:shared:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/4976f57663197851022852c726013993/transformed/shared-13.1.5/AndroidManifest.xml:5:5-44
+MERGED from [dev.rikka.shizuku:shared:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/4976f57663197851022852c726013993/transformed/shared-13.1.5/AndroidManifest.xml:5:5-44
+MERGED from [dev.rikka.shizuku:aidl:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/cda9563327cb7196c8845a6943eca24e/transformed/aidl-13.1.5/AndroidManifest.xml:5:5-44
+MERGED from [dev.rikka.shizuku:aidl:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/cda9563327cb7196c8845a6943eca24e/transformed/aidl-13.1.5/AndroidManifest.xml:5:5-44
+	android:targetSdkVersion
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/oxohang/vibecodeing/小窗/app/src/debug/AndroidManifest.xml
+meta-data#moe.shizuku.client.V3_SUPPORT
+ADDED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:11:9-13:36
+	android:value
+		ADDED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:13:13-33
+	android:name
+		ADDED from [dev.rikka.shizuku:provider:13.1.5] /Users/oxohang/.gradle/caches/8.9/transforms/3dcdc8dec6fc37e2951dc723be97f6c4/transformed/provider-13.1.5/AndroidManifest.xml:12:13-57

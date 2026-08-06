@@ -1,0 +1,29 @@
+<dependencies>
+  <compile
+      roots=":@@:app::debug,junit:junit:4.13.2@jar,org.json:json:20240303@jar,org.hamcrest:hamcrest-core:1.3@jar">
+    <dependency
+        name=":@@:app::debug"
+        simpleName="artifacts::app"/>
+    <dependency
+        name="junit:junit:4.13.2@jar"
+        simpleName="junit:junit"/>
+    <dependency
+        name="org.json:json:20240303@jar"
+        simpleName="org.json:json"/>
+    <dependency
+        name="org.hamcrest:hamcrest-core:1.3@jar"
+        simpleName="org.hamcrest:hamcrest-core"/>
+  </compile>
+  <package
+      roots="junit:junit:4.13.2@jar,org.json:json:20240303@jar,org.hamcrest:hamcrest-core:1.3@jar">
+    <dependency
+        name="junit:junit:4.13.2@jar"
+        simpleName="junit:junit"/>
+    <dependency
+        name="org.json:json:20240303@jar"
+        simpleName="org.json:json"/>
+    <dependency
+        name="org.hamcrest:hamcrest-core:1.3@jar"
+        simpleName="org.hamcrest:hamcrest-core"/>
+  </package>
+</dependencies>

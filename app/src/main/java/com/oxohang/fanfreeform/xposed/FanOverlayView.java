@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.TextPaint;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 
@@ -19,6 +20,12 @@ import java.util.Collections;
 import java.util.List;
 
 final class FanOverlayView extends View {
+    interface TouchListener {
+        void onLaunch(int index);
+        void onDismiss();
+        void onSelectionChanged(int index);
+    }
+
     private final Paint backdrop = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -63,6 +70,7 @@ final class FanOverlayView extends View {
     private long confirmationStartedAt;
     private boolean dismissing;
     private long dismissalStartedAt;
+    private TouchListener touchListener;
 
     FanOverlayView(Context context) {
         super(context);
@@ -92,6 +100,10 @@ final class FanOverlayView extends View {
 
     void setSelectionTransformLevel(int level) {
         selectionTransformLevel = level;
+    }
+
+    void setTouchListener(TouchListener listener) {
+        touchListener = listener;
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
@@ -267,6 +279,34 @@ final class FanOverlayView extends View {
 
     long dismissalDurationMs() {
         return animationsEnabled ? duration(150L) : 1L;
+    }
+
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if (touchListener == null || !sideRingListLayout || dismissing) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_CANCEL) {
+            touchListener.onDismiss();
+            return true;
+        }
+        if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_MOVE
+                && action != MotionEvent.ACTION_UP) return true;
+        int next = GestureGeometry.sideRingSelection(event.getX(), event.getY(),
+                targets.size(), sideListCenterX, sideListTop, sideFanRadius,
+                iconDiameter, dp(10));
+        boolean changed = next != selected;
+        updateSelection(next, event.getX(), event.getY());
+        if (changed && next >= 0) touchListener.onSelectionChanged(next);
+        if (action == MotionEvent.ACTION_UP) {
+            performClick();
+            if (next >= 0) touchListener.onLaunch(next);
+            else touchListener.onDismiss();
+        }
+        return true;
+    }
+
+    @Override public boolean performClick() {
+        super.performClick();
+        return true;
     }
 
     @Override

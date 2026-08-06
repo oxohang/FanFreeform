@@ -32,6 +32,7 @@ final class HoneycombOverlayView extends View {
     interface Listener {
         void onLaunch(RuntimeTarget target);
         void onClosed();
+        default void onSelectionChanged(RuntimeTarget target) { }
     }
 
     private final float density;
@@ -197,11 +198,12 @@ final class HoneycombOverlayView extends View {
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                    float triggerX, float triggerY,
-                   GestureConfig config, Listener listener) {
+                   GestureConfig config, boolean forceBrowseMode, Listener listener) {
         this.targets = Collections.unmodifiableList(new ArrayList<>(targets));
         this.corner = corner;
         this.listener = listener;
-        browseMode = config.honeycombMode == com.oxohang.fanfreeform.config.ConfigContract
+        browseMode = forceBrowseMode
+                || config.honeycombMode == com.oxohang.fanfreeform.config.ConfigContract
                 .HONEYCOMB_MODE_BROWSE;
         hapticEnabled = config.haptic;
         emptyTapClose = config.honeycombEmptyTapClose;
@@ -1019,6 +1021,9 @@ final class HoneycombOverlayView extends View {
             nameTarget = targets.get(selected);
         }
         selected = next;
+        if (next >= 0 && next < targets.size() && listener != null) {
+            listener.onSelectionChanged(targets.get(next));
+        }
         selectionAnimator.cancel();
         float start = next >= 0 && changed ? 0.62f : selectionProgress;
         float end = next < 0 ? 0f : 1f;

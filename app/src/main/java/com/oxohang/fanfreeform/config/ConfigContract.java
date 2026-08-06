@@ -40,6 +40,10 @@ public final class ConfigContract {
             "bottom_landscape_fullscreen";
     public static final String KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM =
             "bottom_portrait_honeycomb_freeform";
+    public static final String KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH =
+            "bottom_portrait_first_pressure_launch";
+    public static final String KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH =
+            "bottom_portrait_second_pressure_launch";
     public static final String KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM =
             "bottom_landscape_honeycomb_freeform";
     public static final String KEY_SIDE_GESTURE_ENABLED = "side_gesture_enabled";
@@ -194,6 +198,65 @@ public final class ConfigContract {
     public static final String KEY_HONEYCOMB_RETREAT_DP = "honeycomb_retreat_dp";
     public static final String KEY_HONEYCOMB_DISC_SIZE_PERCENT =
             "honeycomb_disc_size_percent";
+    public static final String KEY_PRESSURE_GESTURE_ENABLED =
+            "pressure_gesture_enabled";
+    public static final String KEY_PRESSURE_LONG_PRESS_MS =
+            "pressure_long_press_ms";
+    public static final String KEY_PRESSURE_CENTER_X_PERCENT =
+            "pressure_center_x_percent";
+    public static final String KEY_PRESSURE_CENTER_Y_PERCENT =
+            "pressure_center_y_percent";
+    public static final String KEY_PRESSURE_RADIUS_PERCENT =
+            "pressure_radius_percent";
+    public static final String KEY_PRESSURE_THRESHOLD = "pressure_threshold";
+    public static final String KEY_PRESSURE_CALIBRATION_VALID_COUNT =
+            "pressure_calibration_valid_count";
+    public static final String KEY_PRESSURE_CALIBRATED = "pressure_calibrated";
+    public static final String KEY_PRESSURE_SHOW_POSITION =
+            "pressure_show_position";
+    public static final String KEY_PRESSURE_ORB_THEME = "pressure_orb_theme";
+    public static final String KEY_PRESSURE_ORB_SIZE_PERCENT =
+            "pressure_orb_size_percent";
+    public static final String KEY_PRESSURE_ACTION = "pressure_action";
+    public static final String KEY_PRESSURE_OPEN_AS_FREEFORM =
+            "pressure_open_as_freeform";
+    public static final String KEY_PRESSURE_COMPONENTS = "pressure_components";
+    public static final String KEY_PRESSURE_HAPTIC_MODE = "pressure_haptic_mode";
+    public static final String KEY_PRESSURE_FIRST_HAPTIC_ENABLED =
+            "pressure_first_haptic_enabled";
+    public static final String KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS =
+            "pressure_first_haptic_duration_ms";
+    public static final String KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE =
+            "pressure_first_haptic_amplitude";
+    public static final String KEY_PRESSURE_SECOND_HAPTIC_ENABLED =
+            "pressure_second_haptic_enabled";
+    public static final String KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS =
+            "pressure_second_haptic_duration_ms";
+    public static final String KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE =
+            "pressure_second_haptic_amplitude";
+    public static final String KEY_PRESSURE_CALIBRATION_ACTIVE =
+            "pressure_calibration_active";
+    public static final String KEY_PRESSURE_CALIBRATION_ATTEMPTS =
+            "pressure_calibration_attempts";
+    public static final String KEY_PRESSURE_CALIBRATION_LAST_DELTA =
+            "pressure_calibration_last_delta";
+    public static final String KEY_PRESSURE_CALIBRATION_LAST_VALID =
+            "pressure_calibration_last_valid";
+
+    public static final int PRESSURE_ACTION_HONEYCOMB = 0;
+    public static final int PRESSURE_ACTION_CIRCULAR = 1;
+    public static final int PRESSURE_ACTION_HOME = 2;
+    public static final int PRESSURE_HAPTIC_SYSTEM = 0;
+    public static final int PRESSURE_HAPTIC_CUSTOM = 1;
+    public static final int PRESSURE_ORB_ORBITS = 0;
+    public static final int PRESSURE_ORB_GLOBE = 1;
+    public static final int PRESSURE_ORB_RUBIK = 2;
+    public static final int PRESSURE_ORB_WAVE = 3;
+    public static final int PRESSURE_ORB_WEB = 4;
+    public static final int PRESSURE_ORB_BRAID = 5;
+    public static final int PRESSURE_ORB_RIBBON = 6;
+    public static final int PRESSURE_ORB_RING = 7;
+    public static final int PRESSURE_ORB_MORPH = 8;
 
     public static final int ACTION_NONE = 0;
     public static final int ACTION_CLOSE = 1;
@@ -242,6 +305,8 @@ public final class ConfigContract {
     public static final boolean DEFAULT_BOTTOM_PORTRAIT_ENABLED = true;
     public static final boolean DEFAULT_BOTTOM_LANDSCAPE_ENABLED = false;
     public static final boolean DEFAULT_BOTTOM_PORTRAIT_SECOND_STAGE_ENABLED = true;
+    public static final boolean DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH = false;
+    public static final boolean DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH = false;
     public static final boolean DEFAULT_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED = false;
     public static final boolean DEFAULT_SIDE_GESTURE_ENABLED = true;
     public static final boolean DEFAULT_SIDE_PORTRAIT_ENABLED = true;
@@ -430,4 +495,43 @@ public final class ConfigContract {
     public static final int DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT = 60;
     public static final int MIN_HONEYCOMB_DISC_SIZE_PERCENT = 50;
     public static final int MAX_HONEYCOMB_DISC_SIZE_PERCENT = 100;
+    public static final boolean DEFAULT_PRESSURE_GESTURE_ENABLED = false;
+    public static final int DEFAULT_PRESSURE_LONG_PRESS_MS = 300;
+    public static final int MIN_PRESSURE_LONG_PRESS_MS = 200;
+    public static final int MAX_PRESSURE_LONG_PRESS_MS = 800;
+    public static final int DEFAULT_PRESSURE_CENTER_X_PERCENT = 50;
+    public static final int DEFAULT_PRESSURE_CENTER_Y_PERCENT = 50;
+    public static final int DEFAULT_PRESSURE_RADIUS_PERCENT = 12;
+    public static final int MIN_PRESSURE_RADIUS_PERCENT = 4;
+    public static final int MAX_PRESSURE_RADIUS_PERCENT = 40;
+    public static final float DEFAULT_PRESSURE_THRESHOLD = 0f;
+    public static final float MAX_PRESSURE_THRESHOLD = 100f;
+    public static final int DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT = 0;
+    public static final boolean DEFAULT_PRESSURE_CALIBRATED = false;
+    public static final boolean DEFAULT_PRESSURE_SHOW_POSITION = false;
+    public static final int DEFAULT_PRESSURE_ORB_THEME = PRESSURE_ORB_ORBITS;
+    public static final int DEFAULT_PRESSURE_ORB_SIZE_PERCENT = 100;
+    public static final int MIN_PRESSURE_ORB_SIZE_PERCENT = 50;
+    public static final int MAX_PRESSURE_ORB_SIZE_PERCENT = 200;
+    public static final int DEFAULT_PRESSURE_ACTION = PRESSURE_ACTION_HONEYCOMB;
+    public static final boolean DEFAULT_PRESSURE_OPEN_AS_FREEFORM = false;
+    public static final int DEFAULT_PRESSURE_HAPTIC_MODE = PRESSURE_HAPTIC_SYSTEM;
+    public static final boolean DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED = false;
+    public static final int DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS = 16;
+    public static final int MIN_PRESSURE_FIRST_HAPTIC_DURATION_MS = 5;
+    public static final int MAX_PRESSURE_FIRST_HAPTIC_DURATION_MS = 60;
+    public static final int DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE = 110;
+    public static final int MIN_PRESSURE_FIRST_HAPTIC_AMPLITUDE = 1;
+    public static final int MAX_PRESSURE_FIRST_HAPTIC_AMPLITUDE = 255;
+    public static final boolean DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED = true;
+    public static final int DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS = 24;
+    public static final int MIN_PRESSURE_SECOND_HAPTIC_DURATION_MS = 5;
+    public static final int MAX_PRESSURE_SECOND_HAPTIC_DURATION_MS = 80;
+    public static final int DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE = 190;
+    public static final int MIN_PRESSURE_SECOND_HAPTIC_AMPLITUDE = 1;
+    public static final int MAX_PRESSURE_SECOND_HAPTIC_AMPLITUDE = 255;
+    public static final boolean DEFAULT_PRESSURE_CALIBRATION_ACTIVE = false;
+    public static final int DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS = 0;
+    public static final float DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA = 0f;
+    public static final boolean DEFAULT_PRESSURE_CALIBRATION_LAST_VALID = false;
 }

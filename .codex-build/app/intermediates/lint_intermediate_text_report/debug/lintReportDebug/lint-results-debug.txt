@@ -1,0 +1,243 @@
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/ForegroundAppBackgroundResolver.java:85: Error: Expected resource of type styleable [ResourceType]
+            android.content.res.TypedArray array = themed.obtainStyledAttributes(attrs);
+                                                                                 ~~~~~
+
+   Explanation for issues of type "ResourceType":
+   Ensures that resource id's passed to APIs are of the right type; for
+   example, calling Resources.getColor(R.string.name) is wrong.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/FanRuntime.java:222: Warning: Field requires API level 33 (current min is 30): android.content.Context#RECEIVER_NOT_EXPORTED [InlinedApi]
+            }, lifecycleFilter, Context.RECEIVER_NOT_EXPORTED);
+                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java:94: Warning: Field requires API level 33 (current min is 30): android.content.Context#RECEIVER_EXPORTED [InlinedApi]
+        }, filter, Context.RECEIVER_EXPORTED);
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "InlinedApi":
+   This check scans through all the Android API field references in the
+   application and flags certain constants, such as static final integers and
+   Strings, which were introduced in later versions. These will actually be
+   copied into the class files rather than being referenced, which means that
+   the value is available even when running on older devices. In some cases
+   that's fine, and in other cases it can result in a runtime crash or
+   incorrect behavior. It depends on the context, so consider the code
+   carefully and decide whether it's safe and can be suppressed or whether the
+   code needs to be guarded.
+
+   If you really want to use this API and don't need to support older devices
+   just set the minSdkVersion in your build.gradle or AndroidManifest.xml
+   files.
+
+   If your code is deliberately accessing newer APIs, and you have ensured
+   (e.g. with conditional execution) that this code will only ever be called
+   on a supported platform, then you can annotate your class or method with
+   the @TargetApi annotation specifying the local minimum SDK to apply, such
+   as @TargetApi(11), such that this check considers 11 rather than your
+   manifest file's minimum SDK as the required API level.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/FanRuntime.java:1775: Warning: Using internal inset dimension resource status_bar_height is not supported [InternalInsetResource]
+            int resourceId = context.getResources().getIdentifier(
+                             ^
+
+   Explanation for issues of type "InternalInsetResource":
+   The internal inset dimension resources are not a supported way to retrieve
+   the relevant insets for your application. The insets are dynamic values
+   that can change while your app is visible, and your app's window may not
+   intersect with the system UI. To get the relevant value for your app and
+   listen to updates, use androidx.core.view.WindowInsetsCompat and related
+   APIs.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/HoneycombOverlayController.java:88: Error: Call requires API level 31 (current min is 30): android.view.WindowManager.LayoutParams#setBlurBehindRadius [NewApi]
+                params.setBlurBehindRadius(Math.round(config.honeycombLiveBlurDp
+                       ~~~~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/HoneycombOverlayController.java:103: Error: Call requires API level 31 (current min is 30): android.view.WindowManager.LayoutParams#setBlurBehindRadius [NewApi]
+                try { params.setBlurBehindRadius(0); } catch (Throwable ignored) { }
+                             ~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "NewApi":
+   This check scans through all the Android API calls in the application and
+   warns about any calls that are not available on all versions targeted by
+   this application (according to its minimum SDK attribute in the manifest).
+
+   If you really want to use this API and don't need to support older devices
+   just set the minSdkVersion in your build.gradle or AndroidManifest.xml
+   files.
+
+   If your code is deliberately accessing newer APIs, and you have ensured
+   (e.g. with conditional execution) that this code will only ever be called
+   on a supported platform, then you can annotate your class or method with
+   the @TargetApi annotation specifying the local minimum SDK to apply, such
+   as @TargetApi(11), such that this check considers 11 rather than your
+   manifest file's minimum SDK as the required API level.
+
+   If you are deliberately setting android: attributes in style definitions,
+   make sure you place this in a values-vNN folder in order to avoid running
+   into runtime conflicts on certain devices where manufacturers have added
+   custom attributes whose ids conflict with the new ones on later platforms.
+
+   Similarly, you can use tools:targetApi="11" in an XML file to indicate that
+   the element will only be inflated in an adequate context.
+
+/Users/oxohang/vibecodeing/小窗/app/build.gradle.kts:15: Warning: Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the android.os.Build.VERSION_CODES javadoc for details. [OldTargetApi]
+        targetSdk = 34
+        ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "OldTargetApi":
+   When your application runs on a version of Android that is more recent than
+   your targetSdkVersion specifies that it has been tested with, various
+   compatibility modes kick in. This ensures that your application continues
+   to work, but it may look out of place. For example, if the targetSdkVersion
+   is less than 14, your app may get an option button in the UI.
+
+   To fix this issue, set the targetSdkVersion to the highest available value.
+   Then test your app to make sure everything works correctly. You may want to
+   consult the compatibility notes to see what changes apply to each version
+   you are adding support for:
+   https://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+   as well as follow this guide:
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.
+   html
+
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.html
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/FanFreeformHook.java:350: Error: receiver is missing RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED flag for unprotected broadcasts registered for com.oxohang.fanfreeform.action.LAUNCH [UnspecifiedRegisterReceiverFlag]
+                context.registerReceiver(receiver, filter);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnspecifiedRegisterReceiverFlag":
+   In Android U, all receivers registering for non-system broadcasts are
+   required to include a flag indicating the receiver's exported state. Apps
+   registering for non-system broadcasts should use the
+   ContextCompat#registerReceiver APIs with flags set to either
+   RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED.
+
+   If you are not expecting broadcasts from other apps on the device, register
+   your receiver with RECEIVER_NOT_EXPORTED to protect your receiver on all
+   platform releases.
+
+   https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int)
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/FanRuntime.java:1775: Warning: Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. R.foo.bar) than by name (e.g. getIdentifier("bar", "foo", null)). [DiscouragedApi]
+            int resourceId = context.getResources().getIdentifier(
+                                                    ~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/RecentsClearButtonRuntime.java:65: Warning: Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. R.foo.bar) than by name (e.g. getIdentifier("bar", "foo", null)). [DiscouragedApi]
+            int id = containerView.getResources().getIdentifier(
+                                                  ~~~~~~~~~~~~~
+
+   Explanation for issues of type "DiscouragedApi":
+   Discouraged APIs are allowed and are not deprecated, but they may be unfit
+   for common use (e.g. due to slow performance or subtle behavior).
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java:509: Warning: Avoid object allocations during draw/layout operations (preallocate and reuse instead) [DrawAllocation]
+                canvas.drawOval(new RectF(touchX - major / 2f, touchY - minor / 2f,
+                                ^
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/TaskCardPreviewView.java:53: Warning: Avoid object allocations during draw/layout operations (preallocate and reuse instead) [DrawAllocation]
+        card.setShader(new LinearGradient(left, top, bounds.right, bounds.bottom,
+                       ^
+
+   Explanation for issues of type "DrawAllocation":
+   You should avoid allocating objects during a drawing or layout operation.
+   These are called frequently, so a smooth UI can be interrupted by garbage
+   collection pauses caused by the object allocations.
+
+   The way this is generally handled is to allocate the needed objects up
+   front and to reuse them for each drawing operation.
+
+   Some methods allocate memory on your behalf (such as Bitmap.create), and
+   these should be handled in the same way.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/Log.java:30: Warning: Do not place Android context classes in static fields; this is a memory leak [StaticFieldLeak]
+    private static Context reporterContext;
+            ~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java:63: Warning: Do not place Android context classes in static fields; this is a memory leak [StaticFieldLeak]
+    private static Context catalogContext;
+            ~~~~~~
+
+   Explanation for issues of type "StaticFieldLeak":
+   A static field will leak contexts.
+
+   Non-static inner classes have an implicit reference to their outer class.
+   If that outer class is for example a Fragment or Activity, then this
+   reference means that the long-running handler/loader/task will hold a
+   reference to the activity which prevents it from getting garbage
+   collected.
+
+   Similarly, direct field references to activities and fragments from these
+   longer running instances can cause leaks.
+
+   ViewModel classes should never point to Views or non-application Contexts.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/FanTriggerCapture.java:201: Warning: onTouch lambda should call View#performClick when a click is detected [ClickableViewAccessibility]
+        view.setOnTouchListener((target, event) -> {
+                                ^
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/HoneycombLayoutEditorActivity.java:292: Warning: Custom view HoneycombEditorView overrides onTouchEvent but not performClick [ClickableViewAccessibility]
+        @Override public boolean onTouchEvent(MotionEvent event) {
+                                 ~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/HoneycombOverlayView.java:769: Warning: Custom view HoneycombOverlayView overrides onTouchEvent but not performClick [ClickableViewAccessibility]
+    @Override public boolean onTouchEvent(MotionEvent event) {
+                             ~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/OutsideTouchCapture.java:168: Warning: onTouch lambda should call View#performClick when a click is detected [ClickableViewAccessibility]
+        view.setOnTouchListener((target, event) -> {
+                                ^
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java:520: Warning: Custom view PressurePadView overrides onTouchEvent but not performClick [ClickableViewAccessibility]
+        @Override public boolean onTouchEvent(MotionEvent event) {
+                                 ~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/xposed/TaskSwitcherOverlayView.java:495: Warning: Custom view TaskSwitcherOverlayView overrides onTouchEvent but not performClick [ClickableViewAccessibility]
+    @Override public boolean onTouchEvent(MotionEvent event) {
+                             ~~~~~~~~~~~~
+
+   Explanation for issues of type "ClickableViewAccessibility":
+   If a View that overrides onTouchEvent or uses an OnTouchListener does not
+   also implement performClick and call it when clicks are detected, the View
+   may not handle accessibility actions properly. Logic handling the click
+   actions should ideally be placed in View#performClick as some accessibility
+   services invoke performClick when a click action should occur.
+
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/AnimationSettingsActivity.java:212: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                value.setText(resolved + suffix);
+                              ~~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/AppPickerActivity.java:242: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+        if (selectionCount != null) selectionCount.setText("已选 " + selectedTargets.size()
+                                                           ^
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/DashboardActivity.java:119: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            status.setText("等待 SystemUI 与模块连接");
+                           ~~~~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/DashboardActivity.java:124: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+            status.setText(value + relative);
+                           ~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/GestureDetailSettingsActivity.java:54: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+            targetCount.setText("已选 " + count + " 项");
+                                ~~~~~~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java:64: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        reload.setText("一键重载 Hook 进程");
+                       ~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java:216: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    reload.setText("一键重载 Hook 进程");
+                                   ~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java:236: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+        status.setText((value == null || value.isEmpty() ? "Hook 尚未连接" : value)
+                       ^
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/OutsideSettingsActivity.java:132: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                value.setText(resolved + "ms");
+                              ~~~~~~~~~~~~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/OutsideSettingsActivity.java:132: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                value.setText(resolved + "ms");
+                                         ~~~~
+/Users/oxohang/vibecodeing/小窗/app/src/main/java/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java:339: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            sensorStatus.setText("未发现 Android 气压计，无法进行压感校准。");
+                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetTextI18n":
+   When calling TextView#setText
+   * Never call Number#toString() to format numbers; it will not handle
+   fraction separators and locale-specific digits properly. Consider using
+   String#format with proper format specifications (%d or %f) instead.
+   * Do not pass a string literal (e.g. "Hello") to display text. Hardcoded
+   text can not be properly translated to other languages. Consider using
+   Android resource strings instead.
+   * Do not build messages by concatenating text chunks. Such messages can not
+   be properly translated.
+
+   https://developer.android.com/guide/topics/resources/localization.html
+
+4 errors, 27 warnings

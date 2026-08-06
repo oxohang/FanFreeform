@@ -18,9 +18,15 @@ import de.robv.android.xposed.XposedHelpers;
 final class FanTriggerCapture {
     private static final int TYPE_NAVIGATION_BAR_PANEL = 2024;
 
+    interface Listener {
+        void onTouch(MotionEvent event);
+        void onAvailabilityChanged(boolean available);
+    }
+
     private final Context context;
     private final Handler mainHandler;
     private final WindowManager windowManager;
+    private final Listener listener;
     private View leftView;
     private View rightView;
     private volatile boolean capturing;
@@ -39,9 +45,10 @@ final class FanTriggerCapture {
     private int desiredRightInset;
     private boolean passthroughInProgress;
 
-    FanTriggerCapture(Context context, Handler mainHandler) {
+    FanTriggerCapture(Context context, Handler mainHandler, Listener listener) {
         this.context = context;
         this.mainHandler = mainHandler;
+        this.listener = listener;
         windowManager = context.getSystemService(WindowManager.class);
     }
 
@@ -93,7 +100,9 @@ final class FanTriggerCapture {
         height = nextHeight;
         this.leftInset = desiredLeftInset;
         this.rightInset = desiredRightInset;
-        if (!attach(TYPE_NAVIGATION_BAR_PANEL) && !attach(2038)) {
+        boolean attached = attach(TYPE_NAVIGATION_BAR_PANEL) || attach(2038);
+        listener.onAvailabilityChanged(attached);
+        if (!attached) {
             Log.i("Corner trigger capture unavailable; using pilfer fallback");
         }
     }
@@ -201,6 +210,14 @@ final class FanTriggerCapture {
         view.setOnTouchListener((target, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 Log.i("Corner trigger window received down corner=" + corner);
+            }
+            MotionEvent screenEvent = MotionEvent.obtain(event);
+            try {
+                screenEvent.offsetLocation(event.getRawX() - event.getX(),
+                        event.getRawY() - event.getY());
+                listener.onTouch(screenEvent);
+            } finally {
+                screenEvent.recycle();
             }
             return true;
         });

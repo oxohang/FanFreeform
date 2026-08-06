@@ -43,7 +43,7 @@ public final class CompatibilityReport {
         return Uri.parse("content://" + AUTHORITY + "/" + FILE_NAME);
     }
 
-    static String build(Context context, ConfigStore store) {
+    public static String build(Context context, ConfigStore store) {
         StringBuilder out = new StringBuilder();
         line(out, "Hyper手势兼容性报告");
         line(out, "生成时间: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US)

@@ -1,6 +1,7 @@
 package com.oxohang.fanfreeform.ui;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ComponentName;
@@ -27,6 +28,9 @@ import com.oxohang.fanfreeform.config.ConfigStore;
 import com.oxohang.fanfreeform.diagnostics.CompatibilityReport;
 
 public final class MiscSettingsActivity extends Activity {
+    private static final String BUG_REPORT_URL =
+            "https://github.com/oxohang/FanFreeform/issues/new";
+    private static final int MAX_PREFILLED_REPORT_CHARS = 12000;
     private ConfigStore store;
     private TextView status;
     private Button reload;
@@ -86,11 +90,81 @@ public final class MiscSettingsActivity extends Activity {
         processCard.addView(launcherIconRow());
         root.addView(processCard);
 
+        LinearLayout feedbackCard = card();
+        feedbackCard.addView(text("问题反馈", 17, Ui.TEXT, Typeface.BOLD));
+        TextView feedbackNote = text("自动填写设备、系统、模块版本、Hook 状态和诊断摘要；"
+                        + "提交前只需补充复现步骤、预期结果和实际结果。",
+                13, Ui.MUTED, Typeface.NORMAL);
+        feedbackNote.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 12));
+        feedbackCard.addView(feedbackNote);
+        Button feedback = new Button(this);
+        feedback.setText("提交 Bug 反馈");
+        feedback.setAllCaps(false);
+        feedback.setOnClickListener(view -> openBugFeedback());
+        feedbackCard.addView(feedback, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52)));
+        root.addView(feedbackCard, layoutParams(14));
+
         Ui.addGlobalResetOption(this, root, () -> {
             store.resetTuning();
             setLauncherIconVisible(true);
         });
         return scroll;
+    }
+
+    private void openBugFeedback() {
+        try {
+            // Refresh the local report first so the existing “导出兼容性报告” action and
+            // the issue body are based on the same snapshot.
+            CompatibilityReport.create(this, store);
+            String report = CompatibilityReport.build(this, store);
+            String body = buildIssueBody(report);
+            Uri issue = Uri.parse(BUG_REPORT_URL).buildUpon()
+                    .appendQueryParameter("template", "bug_report.md")
+                    .appendQueryParameter("title", "[Bug] ")
+                    .appendQueryParameter("body", body)
+                    .build();
+            startActivity(new Intent(Intent.ACTION_VIEW, issue));
+        } catch (ActivityNotFoundException error) {
+            Toast.makeText(this, "未找到浏览器，请先安装浏览器后重试",
+                    Toast.LENGTH_LONG).show();
+        } catch (Throwable error) {
+            Toast.makeText(this, "准备反馈信息失败：" + error.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String buildIssueBody(String report) {
+        String safeReport = report == null ? "" : report;
+        boolean truncated = safeReport.length() > MAX_PREFILLED_REPORT_CHARS;
+        if (truncated) {
+            int half = MAX_PREFILLED_REPORT_CHARS / 2;
+            safeReport = safeReport.substring(0, half)
+                    + "\n\n...[报告中间内容因 GitHub 页面长度限制省略]...\n\n"
+                    + safeReport.substring(safeReport.length() - half);
+        }
+        String reportNote = truncated
+                ? "\n> 报告过长，正文只保留了首尾内容；如需完整报告，请使用应用内“导出兼容性报告”后作为附件补充。\n"
+                : "";
+        return "### 问题描述\n"
+                + "<!-- 请先用一句话说明问题。 -->\n\n"
+                + "### 复现步骤\n"
+                + "1. \n2. \n3. \n\n"
+                + "### 预期结果\n"
+                + "<!-- 原本应该发生什么？ -->\n\n"
+                + "### 实际结果\n"
+                + "<!-- 实际发生了什么？是否完全失效、偶发失效或表现异常？ -->\n\n"
+                + "### 自动诊断信息\n"
+                + "以下内容由应用自动生成，请不要删除：\n\n"
+                + "<details>\n<summary>展开兼容性报告</summary>\n\n"
+                + "```text\n"
+                + safeReport
+                + "\n```\n\n</details>\n"
+                + reportNote
+                + "### 提交前检查\n"
+                + "- [ ] 我已填写可复现问题的步骤。\n"
+                + "- [ ] 我已填写预期结果和实际结果。\n"
+                + "- [ ] 我已确认没有重复提交相同问题。\n";
     }
 
     private View recentsClearButtonRow() {
@@ -244,6 +318,13 @@ public final class MiscSettingsActivity extends Activity {
                 Ui.dp(this, 18), Ui.dp(this, 16));
         card.setBackground(Ui.rounded(this, Ui.SURFACE, 20));
         return card;
+    }
+
+    private LinearLayout.LayoutParams layoutParams(int top) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Ui.dp(this, top);
+        return params;
     }
 
     private View header() {

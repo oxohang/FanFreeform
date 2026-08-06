@@ -135,6 +135,12 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM,
                             ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                    prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                    prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH));
             out.putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                             ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM));
@@ -493,7 +499,126 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT),
                     ConfigContract.MIN_HONEYCOMB_DISC_SIZE_PERCENT,
                     ConfigContract.MAX_HONEYCOMB_DISC_SIZE_PERCENT));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT),
+                    ConfigContract.MIN_PRESSURE_RADIUS_PERCENT,
+                    ConfigContract.MAX_PRESSURE_RADIUS_PERCENT));
+            float pressureThreshold = prefs.getFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    ConfigContract.DEFAULT_PRESSURE_THRESHOLD);
+            if (!Float.isFinite(pressureThreshold)) pressureThreshold = 0f;
+            out.putFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    Math.max(0f, Math.min(ConfigContract.MAX_PRESSURE_THRESHOLD,
+                            pressureThreshold)));
+            out.putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT), 0, 5));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATED));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                            ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION));
+            out.putInt(ConfigContract.KEY_PRESSURE_ORB_THEME, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ORB_THEME,
+                    ConfigContract.DEFAULT_PRESSURE_ORB_THEME),
+                    ConfigContract.PRESSURE_ORB_ORBITS,
+                    ConfigContract.PRESSURE_ORB_MORPH));
+            out.putInt(ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT),
+                    ConfigContract.MIN_PRESSURE_ORB_SIZE_PERCENT,
+                    ConfigContract.MAX_PRESSURE_ORB_SIZE_PERCENT));
+            out.putInt(ConfigContract.KEY_PRESSURE_ACTION, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ACTION,
+                    ConfigContract.DEFAULT_PRESSURE_ACTION),
+                    ConfigContract.PRESSURE_ACTION_HONEYCOMB,
+                    ConfigContract.PRESSURE_ACTION_HOME));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                            ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM));
+            out.putString(ConfigContract.KEY_PRESSURE_COMPONENTS, prefs.getString(
+                    ConfigContract.KEY_PRESSURE_COMPONENTS, "[]"));
+            out.putInt(ConfigContract.KEY_PRESSURE_HAPTIC_MODE, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
+                    ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE),
+                    ConfigContract.PRESSURE_HAPTIC_SYSTEM,
+                    ConfigContract.PRESSURE_HAPTIC_CUSTOM));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS),
+                    ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                    ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_DURATION_MS));
+            out.putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE),
+                    ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                    ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_AMPLITUDE));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS),
+                    ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                    ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_DURATION_MS));
+            out.putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE),
+                    ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                    ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_AMPLITUDE));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE));
             return out;
+        }
+        if ("report_pressure_calibration_sample".equals(method) && extras != null) {
+            int attempts = clamp(extras.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS), 0, 5);
+            float delta = extras.getFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA);
+            if (!Float.isFinite(delta) || delta < 0f) delta = 0f;
+            prefs.edit()
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS, attempts)
+                    .putFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA, delta)
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                            extras.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                                    false))
+                    .apply();
+            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            return Bundle.EMPTY;
+        }
+        if ("report_pressure_calibration_result".equals(method) && extras != null) {
+            float threshold = extras.getFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    ConfigContract.DEFAULT_PRESSURE_THRESHOLD);
+            if (!Float.isFinite(threshold)) threshold = ConfigContract.DEFAULT_PRESSURE_THRESHOLD;
+            int validCount = clamp(extras.getInt(
+                    ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT), 0, 5);
+            prefs.edit()
+                    .putFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                            Math.max(0f, Math.min(ConfigContract.MAX_PRESSURE_THRESHOLD,
+                                    threshold)))
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT, validCount)
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                            extras.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED, false))
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE, false)
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS, 5)
+                    .apply();
+            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            return Bundle.EMPTY;
         }
         if ("report".equals(method) && extras != null) {
             prefs.edit()

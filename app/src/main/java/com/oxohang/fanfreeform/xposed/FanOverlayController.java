@@ -85,6 +85,44 @@ final class FanOverlayController {
                 forceCircularIcons);
     }
 
+    void showTouchableSideRingList(List<RuntimeTarget> targets, GestureGeometry.Corner side,
+                                   float centerX, float centerY, float radius,
+                                   float iconDiameter, boolean showNames,
+                                   boolean showBackdrop, boolean animationsEnabled,
+                                   int animationSpeed, int revealAmount,
+                                   int rotationDegrees, int selectionScalePercent,
+                                   boolean showSelectionRing, boolean forceCircularIcons,
+                                   WheelListener listener) {
+        runOnMain(() -> {
+            removeNow();
+            FanOverlayView fanView = new FanOverlayView(context);
+            fanView.configureSideRingList(targets, side, centerX, centerY, radius,
+                    iconDiameter, showNames, showBackdrop, animationsEnabled,
+                    animationSpeed, revealAmount, rotationDegrees,
+                    selectionScalePercent, showSelectionRing);
+            fanView.setForceCircularIcons(forceCircularIcons);
+            fanView.setSelectionTransformLevel(0);
+            fanView.setTouchListener(new FanOverlayView.TouchListener() {
+                @Override public void onLaunch(int index) {
+                    removeNow();
+                    listener.onLaunch(index);
+                }
+
+                @Override public void onDismiss() {
+                    removeNow();
+                    listener.onDismiss();
+                }
+
+                @Override public void onSelectionChanged(int index) {
+                    listener.onSelectionChanged(index);
+                }
+            });
+            attachFanView(fanView, animationSpeed, animationsEnabled, true);
+            wheelVisible = attached;
+            if (!attached) listener.onDismiss();
+        });
+    }
+
     private void showInternal(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                               float radius, float iconDiameter, boolean showBackdrop,
                               boolean sideListLayout, boolean sideFanListLayout,
@@ -125,20 +163,20 @@ final class FanOverlayController {
             }
             fanView.setForceCircularIcons(forceCircularIcons);
             fanView.setSelectionTransformLevel(0);
-            attachFanView(fanView, animationSpeed, animationsEnabled);
+            attachFanView(fanView, animationSpeed, animationsEnabled, false);
         });
     }
 
     private void attachFanView(FanOverlayView fanView, int animationSpeed,
-                               boolean animationsEnabled) {
+                               boolean animationsEnabled, boolean touchable) {
             view = fanView;
             view.setAlpha(0f);
-            WindowManager.LayoutParams params = params(TYPE_NAVIGATION_BAR_PANEL, false);
+            WindowManager.LayoutParams params = params(TYPE_NAVIGATION_BAR_PANEL, touchable);
             try {
                 windowManager.addView(view, params);
             } catch (Throwable first) {
                 try {
-                    windowManager.addView(view, params(2038, false));
+                    windowManager.addView(view, params(2038, touchable));
                 } catch (Throwable second) {
                     Log.e("Cannot attach fan overlay", second);
                     view = null;

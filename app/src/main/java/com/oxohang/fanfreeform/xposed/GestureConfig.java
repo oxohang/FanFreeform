@@ -83,6 +83,10 @@ final class GestureConfig {
     boolean bottomLandscapeEnabled = ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_ENABLED;
     boolean bottomPortraitSecondStageEnabled =
             ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_STAGE_ENABLED;
+    boolean bottomPortraitFirstPressureLaunch =
+            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH;
+    boolean bottomPortraitSecondPressureLaunch =
+            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH;
     boolean bottomLandscapeSecondStageEnabled =
             ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED;
     boolean sidePortraitEnabled = ConfigContract.DEFAULT_SIDE_PORTRAIT_ENABLED;
@@ -156,6 +160,28 @@ final class GestureConfig {
     boolean outsidePortraitEnabled = ConfigContract.DEFAULT_OUTSIDE_PORTRAIT_ENABLED;
     boolean outsideLandscapeEnabled = ConfigContract.DEFAULT_OUTSIDE_LANDSCAPE_ENABLED;
     List<TargetSpec> sideTargets = Collections.emptyList();
+    List<TargetSpec> pressureTargets = Collections.emptyList();
+    int pressureAction = ConfigContract.DEFAULT_PRESSURE_ACTION;
+    boolean pressureOpenAsFreeform = ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM;
+    int pressureHapticMode = ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE;
+    boolean pressureGestureEnabled = ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED;
+    int pressureCenterXPercent = ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT;
+    int pressureCenterYPercent = ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT;
+    int pressureRadiusPercent = ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT;
+    float pressureThreshold = ConfigContract.DEFAULT_PRESSURE_THRESHOLD;
+    int pressureCalibrationValidCount =
+            ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT;
+    boolean pressureCalibrated = ConfigContract.DEFAULT_PRESSURE_CALIBRATED;
+    boolean pressureShowPosition = ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION;
+    int pressureOrbTheme = ConfigContract.DEFAULT_PRESSURE_ORB_THEME;
+    int pressureOrbSizePercent = ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT;
+    boolean pressureFirstHapticEnabled = ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED;
+    int pressureFirstHapticDurationMs = ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS;
+    int pressureFirstHapticAmplitude = ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE;
+    boolean pressureSecondHapticEnabled = ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED;
+    int pressureSecondHapticDurationMs = ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS;
+    int pressureSecondHapticAmplitude = ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE;
+    boolean pressureCalibrationActive = ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE;
 
     static final class TargetSpec {
         final String component;
@@ -478,6 +504,12 @@ final class GestureConfig {
         result.bottomPortraitSecondStageEnabled = bundle.getBoolean(
                 ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_STAGE_ENABLED,
                 ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_STAGE_ENABLED);
+        result.bottomPortraitFirstPressureLaunch = bundle.getBoolean(
+                ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH);
+        result.bottomPortraitSecondPressureLaunch = bundle.getBoolean(
+                ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH);
         result.bottomLandscapeSecondStageEnabled = bundle.getBoolean(
                 ConfigContract.KEY_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED,
                 ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED);
@@ -732,6 +764,89 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_OUTSIDE_LANDSCAPE_ENABLED);
         result.sideTargets = Collections.unmodifiableList(parseTargets(bundle.getString(
                 ConfigContract.KEY_SIDE_COMPONENTS, "[]"), 36));
+        result.pressureTargets = Collections.unmodifiableList(parseTargets(bundle.getString(
+                ConfigContract.KEY_PRESSURE_COMPONENTS, "[]"),
+                ConfigContract.MAX_FAN_MAX_TARGETS));
+        result.pressureAction = clamp(bundle.getInt(ConfigContract.KEY_PRESSURE_ACTION,
+                        ConfigContract.DEFAULT_PRESSURE_ACTION),
+                ConfigContract.PRESSURE_ACTION_HONEYCOMB,
+                ConfigContract.PRESSURE_ACTION_HOME);
+        result.pressureOpenAsFreeform = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM);
+        result.pressureHapticMode = clamp(bundle.getInt(
+                        ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
+                        ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE),
+                ConfigContract.PRESSURE_HAPTIC_SYSTEM,
+                ConfigContract.PRESSURE_HAPTIC_CUSTOM);
+        result.pressureGestureEnabled = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED);
+        result.pressureCenterXPercent = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT), 0, 100);
+        result.pressureCenterYPercent = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT), 0, 100);
+        result.pressureRadiusPercent = clamp(bundle.getInt(
+                        ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT),
+                ConfigContract.MIN_PRESSURE_RADIUS_PERCENT,
+                ConfigContract.MAX_PRESSURE_RADIUS_PERCENT);
+        result.pressureThreshold = clamp(bundle.getFloat(
+                        ConfigContract.KEY_PRESSURE_THRESHOLD,
+                        ConfigContract.DEFAULT_PRESSURE_THRESHOLD),
+                0f, ConfigContract.MAX_PRESSURE_THRESHOLD);
+        result.pressureCalibrationValidCount = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT), 0, 5);
+        result.pressureCalibrated = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_CALIBRATED,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATED)
+                && result.pressureThreshold > 0f
+                && result.pressureCalibrationValidCount >= 3;
+        result.pressureShowPosition = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION);
+        result.pressureOrbTheme = clamp(bundle.getInt(
+                        ConfigContract.KEY_PRESSURE_ORB_THEME,
+                        ConfigContract.DEFAULT_PRESSURE_ORB_THEME),
+                ConfigContract.PRESSURE_ORB_ORBITS,
+                ConfigContract.PRESSURE_ORB_MORPH);
+        result.pressureOrbSizePercent = clamp(bundle.getInt(
+                        ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT),
+                ConfigContract.MIN_PRESSURE_ORB_SIZE_PERCENT,
+                ConfigContract.MAX_PRESSURE_ORB_SIZE_PERCENT);
+        result.pressureFirstHapticEnabled = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED);
+        result.pressureFirstHapticDurationMs = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS),
+                ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_DURATION_MS);
+        result.pressureFirstHapticAmplitude = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE),
+                ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_AMPLITUDE);
+        result.pressureSecondHapticEnabled = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED);
+        result.pressureSecondHapticDurationMs = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS),
+                ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_DURATION_MS);
+        result.pressureSecondHapticAmplitude = clamp(bundle.getInt(
+                ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE),
+                ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_AMPLITUDE);
+        result.pressureCalibrationActive = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE);
         return result;
     }
 
@@ -760,6 +875,14 @@ final class GestureConfig {
     boolean bottomHoneycombFreeformFor(boolean landscape) {
         return landscape ? bottomLandscapeHoneycombFreeform
                 : bottomPortraitHoneycombFreeform;
+    }
+
+    boolean bottomFirstPressureLaunchFor(boolean landscape) {
+        return !landscape && bottomPortraitFirstPressureLaunch;
+    }
+
+    boolean bottomSecondPressureLaunchFor(boolean landscape) {
+        return !landscape && bottomPortraitSecondPressureLaunch;
     }
 
     int sideLayoutModeFor(boolean landscape) {
@@ -859,6 +982,11 @@ final class GestureConfig {
     }
 
     private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static float clamp(float value, float min, float max) {
+        if (!Float.isFinite(value)) return min;
         return Math.max(min, Math.min(max, value));
     }
 

@@ -120,6 +120,13 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(toggleWithChild("启用一段手势", "斜滑后显示扇形应用",
                 firstEnabled, !landscape, firstLaunch));
         card.addView(firstLaunch);
+        if (!landscape) {
+            card.addView(toggle("一段重压启动", "选中一段应用后重压，反转当前启动方式",
+                    ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                    ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH));
+            card.addView(text("需先在“按压手势”中完成气压校准并启用。",
+                    13, Ui.MUTED, Typeface.NORMAL));
+        }
         card.addView(Ui.divider(this));
         card.addView(text("二段蜂窝", 18, Ui.TEXT, Typeface.BOLD));
         LinearLayout secondLaunch = launchMode(secondFreeform, true,
@@ -127,6 +134,11 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(toggleWithChild("启用二段手势", "越过扇形后进入蜂窝应用",
                 secondEnabled, !landscape, secondLaunch));
         card.addView(secondLaunch);
+        if (!landscape) {
+            card.addView(toggle("二段重压启动", "蜂窝中选中应用后重压，反转当前启动方式",
+                    ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                    ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH));
+        }
     }
 
     private void buildSideBehavior(LinearLayout card, boolean landscape) {

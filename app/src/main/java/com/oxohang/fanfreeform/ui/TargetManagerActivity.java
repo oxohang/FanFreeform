@@ -44,6 +44,7 @@ public final class TargetManagerActivity extends Activity {
     public static final String KIND_FAN = "fan";
     public static final String KIND_SIDE = "side";
     public static final String KIND_HONEYCOMB = "honeycomb";
+    public static final String KIND_PRESSURE = "pressure";
     private static final int REQUEST_PICK_TARGETS = 121;
 
     private final ArrayList<AppTarget> targets = new ArrayList<>();
@@ -64,7 +65,8 @@ public final class TargetManagerActivity extends Activity {
         store = new ConfigStore(this);
         prefs = store.preferences();
         kind = getIntent().getStringExtra(EXTRA_KIND);
-        if (!KIND_SIDE.equals(kind) && !KIND_HONEYCOMB.equals(kind)) kind = KIND_FAN;
+        if (!KIND_SIDE.equals(kind) && !KIND_HONEYCOMB.equals(kind)
+                && !KIND_PRESSURE.equals(kind)) kind = KIND_FAN;
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().setNavigationBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -137,6 +139,7 @@ public final class TargetManagerActivity extends Activity {
         targets.clear();
         if (KIND_SIDE.equals(kind)) targets.addAll(store.getSideTargets());
         else if (KIND_HONEYCOMB.equals(kind)) targets.addAll(store.getHoneycombTargets());
+        else if (KIND_PRESSURE.equals(kind)) targets.addAll(store.getPressureTargets());
         else targets.addAll(store.getTargets());
         renderTargets();
     }
@@ -287,6 +290,7 @@ public final class TargetManagerActivity extends Activity {
     private void saveTargets() {
         if (KIND_SIDE.equals(kind)) store.setSideTargets(targets);
         else if (KIND_HONEYCOMB.equals(kind)) store.setHoneycombTargets(targets);
+        else if (KIND_PRESSURE.equals(kind)) store.setPressureTargets(targets);
         else store.setTargets(targets);
         renderTargets();
     }
@@ -294,6 +298,7 @@ public final class TargetManagerActivity extends Activity {
     private void resetTargets() {
         if (KIND_SIDE.equals(kind)) store.resetSideTargets();
         else if (KIND_HONEYCOMB.equals(kind)) store.resetHoneycombTargets();
+        else if (KIND_PRESSURE.equals(kind)) store.resetPressureTargets();
         else store.resetBottomTargets();
         reloadTargets();
     }
@@ -304,6 +309,8 @@ public final class TargetManagerActivity extends Activity {
         if (KIND_HONEYCOMB.equals(kind)) return prefs.getInt(
                 ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
                 ConfigContract.DEFAULT_HONEYCOMB_MAX_TARGETS);
+        if (KIND_PRESSURE.equals(kind)) return prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS,
+                ConfigContract.DEFAULT_FAN_MAX_TARGETS);
         return prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS,
                 ConfigContract.DEFAULT_FAN_MAX_TARGETS);
     }
@@ -311,6 +318,7 @@ public final class TargetManagerActivity extends Activity {
     private String title() {
         if (KIND_SIDE.equals(kind)) return "侧滑应用与快捷方式";
         if (KIND_HONEYCOMB.equals(kind)) return "蜂窝应用与快捷方式";
+        if (KIND_PRESSURE.equals(kind)) return "按压圆形应用与快捷方式";
         return "小窗应用与快捷方式";
     }
 

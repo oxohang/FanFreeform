@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-08-02T16:23:50" hostname="oxohangdeMacBook-Air-3.local" time="0.0">
+  <properties/>
+  <testcase name="appForcedLandscapeWhileRotationLockedPreservesNativeRestore" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="lockedPortraitUsesNativeLaunchForFixedLandscapeActivity" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="portraitDisplayKeepsCustomRestoreForPortraitApp" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="wideNativeRestoreIsEnoughWhenOrientationIsFlexible" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="physicalLandscapeStillUsesLandscapeCustomSettings" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="portraitDisplayPreservesForcedLandscapeGameRestore" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="lockedPortraitKeepsConfiguredLaunchForPortraitActivity" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <testcase name="autoRotatedLandscapeKeepsConfiguredLandscapeLaunch" classname="com.oxohang.fanfreeform.xposed.FreeformOrientationPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
