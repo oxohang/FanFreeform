@@ -59,6 +59,14 @@ final class HoneycombOverlayController {
     boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                  float anchorX, float anchorY, GestureConfig config,
                  boolean forceBrowseMode, Listener listener) {
+        return show(targets, corner, anchorX, anchorY, config, forceBrowseMode,
+                false, listener);
+    }
+
+    boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                 float anchorX, float anchorY, GestureConfig config,
+                 boolean forceBrowseMode, boolean requireMoveBeforeSelection,
+                 Listener listener) {
         removeNow();
         if (windowManager == null || targets.isEmpty()) return false;
         HoneycombOverlayView next = new HoneycombOverlayView(context);
@@ -80,13 +88,17 @@ final class HoneycombOverlayController {
                 listener.onSelectionChanged(target);
             }
         });
+        if (requireMoveBeforeSelection) {
+            next.requireMoveBeforeSelection(toLocalX(anchorX), toLocalY(anchorY));
+        }
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 displayHeight(),
                 2038,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         params.y = windowTop;
@@ -118,9 +130,11 @@ final class HoneycombOverlayController {
             }
             view = next;
             attached = true;
-            ForegroundAppBackgroundResolver.request(context, color -> next.post(() -> {
-                if (attached && view == next) next.setAppBackgroundColor(color);
-            }));
+            if (config.honeycombAppBackgroundEnabled) {
+                ForegroundAppBackgroundResolver.request(context, color -> next.post(() -> {
+                    if (attached && view == next) next.setAppBackgroundColor(color);
+                }));
+            }
             next.playEntry();
             return true;
         } catch (Throwable error) {

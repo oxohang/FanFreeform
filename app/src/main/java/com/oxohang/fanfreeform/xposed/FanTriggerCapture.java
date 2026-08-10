@@ -13,10 +13,23 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanTriggerCapture {
     private static final int TYPE_NAVIGATION_BAR_PANEL = 2024;
+    private static final int INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT = 1;
+    private static final long TAP_TARGET_SETTLE_MS = 16L;
+    private static final long TAP_DURATION_MS = 16L;
+    private static final ExecutorService TAP_INJECTOR = Executors.newSingleThreadExecutor(
+            runnable -> {
+                Thread thread = new Thread(runnable, "fanfreeform-tap-injector");
+                thread.setDaemon(true);
+                thread.setPriority(Math.max(Thread.MIN_PRIORITY, Thread.NORM_PRIORITY - 1));
+                return thread;
+            });
 
     interface Listener {
         void onTouch(MotionEvent event);
@@ -32,8 +45,6 @@ final class FanTriggerCapture {
     private volatile boolean capturing;
     private volatile long injectedDownTime;
     private volatile long injectedUntil;
-    private volatile float injectedX;
-    private volatile float injectedY;
     private int width;
     private int height;
     private int leftInset;
@@ -43,7 +54,8 @@ final class FanTriggerCapture {
     private int desiredHotHeightPercent;
     private int desiredLeftInset;
     private int desiredRightInset;
-    private boolean passthroughInProgress;
+    private volatile boolean passthroughInProgress;
+    private boolean captureWindowsTemporarilyUntouchable;
 
     FanTriggerCapture(Context context, Handler mainHandler, Listener listener) {
         this.context = context;
@@ -62,11 +74,17 @@ final class FanTriggerCapture {
         return capturing;
     }
 
+    void remove() {
+        runOnMain(this::removeNow);
+    }
+
     boolean isInjectedEvent(MotionEvent event) {
         if (event == null || SystemClock.uptimeMillis() > injectedUntil) return false;
-        return event.getDownTime() == injectedDownTime
-                || (Math.abs(event.getX() - injectedX) <= 2f
-                && Math.abs(event.getY() - injectedY) <= 2f);
+        return event.getDownTime() == injectedDownTime;
+    }
+
+    boolean isPassthroughInProgress() {
+        return passthroughInProgress;
     }
 
     void passthroughTap(float x, float y, int displayId) {
@@ -75,6 +93,10 @@ final class FanTriggerCapture {
 
     void dispatchBack(int displayId) {
         runOnMain(() -> dispatchBackNow(displayId));
+    }
+
+    void dispatchKeyCode(int keyCode, int displayId) {
+        runOnMain(() -> dispatchKeyCodeNow(keyCode, displayId));
     }
 
     private void updateNow(boolean enabled, int hotWidthPercent, int hotHeightPercent,
@@ -110,28 +132,54 @@ final class FanTriggerCapture {
     private void passthroughTapNow(float x, float y, int displayId) {
         if (passthroughInProgress) return;
         passthroughInProgress = true;
-        removeNow();
-        long downTime = SystemClock.uptimeMillis() + 24L;
+        captureWindowsTemporarilyUntouchable = setCaptureTouchable(false);
+        if (!captureWindowsTemporarilyUntouchable) removeNow();
+        long downTime = SystemClock.uptimeMillis() + TAP_TARGET_SETTLE_MS;
         injectedDownTime = downTime;
-        injectedUntil = downTime + 140L;
-        injectedX = x;
-        injectedY = y;
-        mainHandler.postDelayed(() -> injectTapEvent(MotionEvent.ACTION_DOWN,
-                downTime, downTime, x, y, displayId), 24L);
-        mainHandler.postDelayed(() -> injectTapEvent(MotionEvent.ACTION_UP,
-                downTime, downTime + 18L, x, y, displayId), 42L);
+        injectedUntil = downTime + 1000L;
         mainHandler.postDelayed(() -> {
-            passthroughInProgress = false;
-            updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent,
-                    desiredLeftInset, desiredRightInset);
-            Log.i("Corner trigger capture restored after application tap passthrough");
-        }, 96L);
+            try {
+                TAP_INJECTOR.execute(() -> {
+                    boolean downAccepted = injectTapEvent(MotionEvent.ACTION_DOWN,
+                            downTime, downTime, x, y, displayId);
+                    boolean upAccepted = false;
+                    if (downAccepted) {
+                        SystemClock.sleep(TAP_DURATION_MS);
+                        upAccepted = injectTapEvent(MotionEvent.ACTION_UP,
+                                downTime, downTime + TAP_DURATION_MS, x, y, displayId);
+                        if (!upAccepted) {
+                            injectTapEvent(MotionEvent.ACTION_CANCEL, downTime,
+                                    SystemClock.uptimeMillis(), x, y, displayId);
+                        }
+                    }
+                    boolean accepted = downAccepted && upAccepted;
+                    mainHandler.post(() -> finishTapPassthrough(accepted));
+                });
+            } catch (Throwable error) {
+                Log.e("Cannot schedule application tap passthrough", error);
+                finishTapPassthrough(false);
+            }
+        }, TAP_TARGET_SETTLE_MS);
         Log.i("Replaying corner tap to application x=" + Math.round(x)
                 + " y=" + Math.round(y));
     }
 
-    private void injectTapEvent(int action, long downTime, long eventTime,
-                                float x, float y, int displayId) {
+    private void finishTapPassthrough(boolean accepted) {
+        boolean restored = true;
+        if (captureWindowsTemporarilyUntouchable && desiredEnabled) {
+            restored = setCaptureTouchable(true);
+        }
+        captureWindowsTemporarilyUntouchable = false;
+        passthroughInProgress = false;
+        if (!restored) removeNow();
+        updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent,
+                desiredLeftInset, desiredRightInset);
+        Log.i("Corner application tap passthrough accepted=" + accepted
+                + " captureRestored=" + (desiredEnabled && capturing));
+    }
+
+    private boolean injectTapEvent(int action, long downTime, long eventTime,
+                                   float x, float y, int displayId) {
         MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0);
         try {
             event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
@@ -140,12 +188,15 @@ final class FanTriggerCapture {
             } catch (Throwable ignored) {}
             Object inputManager = context.getSystemService(Context.INPUT_SERVICE);
             Object result = XposedHelpers.callMethod(inputManager,
-                    "injectInputEvent", event, 0);
+                    "injectInputEvent", event, INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT);
             if (result instanceof Boolean && !((Boolean) result)) {
                 Log.i("Application tap passthrough was rejected action=" + action);
+                return false;
             }
+            return true;
         } catch (Throwable error) {
             Log.e("Cannot replay application tap action=" + action, error);
+            return false;
         } finally {
             event.recycle();
         }
@@ -153,13 +204,23 @@ final class FanTriggerCapture {
 
     private void dispatchBackNow(int displayId) {
         long downTime = SystemClock.uptimeMillis();
-        injectBackEvent(KeyEvent.ACTION_DOWN, downTime, downTime, displayId);
-        injectBackEvent(KeyEvent.ACTION_UP, downTime, downTime + 16L, displayId);
+        injectKeyEvent(KeyEvent.ACTION_DOWN, downTime, downTime, KeyEvent.KEYCODE_BACK,
+                displayId);
+        injectKeyEvent(KeyEvent.ACTION_UP, downTime, downTime + 16L, KeyEvent.KEYCODE_BACK,
+                displayId);
         Log.i("Captured side swipe dispatched as system back");
     }
 
-    private void injectBackEvent(int action, long downTime, long eventTime, int displayId) {
-        KeyEvent event = new KeyEvent(downTime, eventTime, action, KeyEvent.KEYCODE_BACK,
+    private void dispatchKeyCodeNow(int keyCode, int displayId) {
+        long downTime = SystemClock.uptimeMillis();
+        injectKeyEvent(KeyEvent.ACTION_DOWN, downTime, downTime, keyCode, displayId);
+        injectKeyEvent(KeyEvent.ACTION_UP, downTime, downTime + 16L, keyCode, displayId);
+        Log.i("Dispatched system key code=" + keyCode);
+    }
+
+    private void injectKeyEvent(int action, long downTime, long eventTime, int keyCode,
+                                 int displayId) {
+        KeyEvent event = new KeyEvent(downTime, eventTime, action, keyCode,
                 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
                 KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
                 InputDevice.SOURCE_KEYBOARD);
@@ -171,10 +232,10 @@ final class FanTriggerCapture {
             Object result = XposedHelpers.callMethod(inputManager,
                     "injectInputEvent", event, 0);
             if (result instanceof Boolean && !((Boolean) result)) {
-                Log.i("Captured side back was rejected action=" + action);
+                Log.i("Injected system key was rejected code=" + keyCode + " action=" + action);
             }
         } catch (Throwable error) {
-            Log.e("Cannot dispatch captured side back action=" + action, error);
+            Log.e("Cannot dispatch system key code=" + keyCode + " action=" + action, error);
         }
     }
 
@@ -242,16 +303,42 @@ final class FanTriggerCapture {
         return params;
     }
 
+    private boolean setCaptureTouchable(boolean touchable) {
+        boolean leftUpdated = setViewTouchable(leftView, touchable);
+        boolean rightUpdated = setViewTouchable(rightView, touchable);
+        return leftUpdated && rightUpdated;
+    }
+
+    private boolean setViewTouchable(View view, boolean touchable) {
+        if (view == null) return false;
+        try {
+            if (!(view.getLayoutParams() instanceof WindowManager.LayoutParams)) return false;
+            WindowManager.LayoutParams params =
+                    (WindowManager.LayoutParams) view.getLayoutParams();
+            if (touchable) {
+                params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            } else {
+                params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            }
+            windowManager.updateViewLayout(view, params);
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot change corner trigger touchability", error);
+            return false;
+        }
+    }
+
     private void removeNow() {
         removeView(leftView);
         removeView(rightView);
         leftView = null;
         rightView = null;
         capturing = false;
+        captureWindowsTemporarilyUntouchable = false;
     }
 
     private void removeView(View view) {
-        if (view == null || !view.isAttachedToWindow()) return;
+        if (view == null) return;
         try {
             windowManager.removeViewImmediate(view);
         } catch (Throwable error) {

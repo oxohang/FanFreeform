@@ -4,6 +4,7 @@ import android.os.Bundle;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.FanRowAllocation;
+import com.oxohang.fanfreeform.config.PressureTrigger;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -134,6 +135,7 @@ final class GestureConfig {
             ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM;
     boolean bottomLandscapeHoneycombFreeform =
             ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM;
+    int bottomHoneycombSettleMs = ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS;
     boolean sideAnimationsEnabled = ConfigContract.DEFAULT_SIDE_ANIMATIONS_ENABLED;
     int sideAnimationSpeed = ConfigContract.DEFAULT_SIDE_ANIMATION_SPEED;
     int sideRevealAmount = ConfigContract.DEFAULT_SIDE_REVEAL_AMOUNT;
@@ -153,7 +155,6 @@ final class GestureConfig {
     int honeycombLiveBlurDp = ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP;
     int honeycombBackgroundDimPercent =
             ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT;
-    int honeycombRetreatDp = ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP;
     int honeycombDiscSizePercent = ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT;
     boolean honeycombShowSelectedName = ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME;
     int outsideTapWindowMs = ConfigContract.DEFAULT_OUTSIDE_TAP_WINDOW_MS;
@@ -161,9 +162,13 @@ final class GestureConfig {
     boolean outsideLandscapeEnabled = ConfigContract.DEFAULT_OUTSIDE_LANDSCAPE_ENABLED;
     List<TargetSpec> sideTargets = Collections.emptyList();
     List<TargetSpec> pressureTargets = Collections.emptyList();
+    List<PressureTrigger> pressureTriggers = Collections.emptyList();
     int pressureAction = ConfigContract.DEFAULT_PRESSURE_ACTION;
     boolean pressureOpenAsFreeform = ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM;
+    boolean pressureHeavyLaunchEnabled =
+            ConfigContract.DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED;
     int pressureHapticMode = ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE;
+    int pressureSensorRateMode = ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE;
     boolean pressureGestureEnabled = ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED;
     int pressureCenterXPercent = ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT;
     int pressureCenterYPercent = ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT;
@@ -174,6 +179,7 @@ final class GestureConfig {
     boolean pressureCalibrated = ConfigContract.DEFAULT_PRESSURE_CALIBRATED;
     boolean pressureShowPosition = ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION;
     int pressureOrbTheme = ConfigContract.DEFAULT_PRESSURE_ORB_THEME;
+    boolean pressureThemeEnabled = ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED;
     int pressureOrbSizePercent = ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT;
     boolean pressureFirstHapticEnabled = ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED;
     int pressureFirstHapticDurationMs = ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS;
@@ -286,7 +292,8 @@ final class GestureConfig {
         this.hotWidthPercent = clamp(hotWidthPercent, 5, 20);
         this.hotHeightPercent = clamp(hotHeightPercent, 3,
                 ConfigContract.MAX_HOT_HEIGHT_PERCENT);
-        this.iconSizeDp = clamp(iconSizeDp, 34, 64);
+        this.iconSizeDp = clamp(iconSizeDp, ConfigContract.MIN_ICON_SIZE_DP,
+                ConfigContract.MAX_ICON_SIZE_DP);
         this.widthPercent = clamp(widthPercent, 40, 90);
         this.heightPercent = clamp(heightPercent, 35, 85);
         this.positionX = clamp(positionX, 0, 100);
@@ -320,7 +327,7 @@ final class GestureConfig {
     }
 
     static GestureConfig defaults() {
-        return new GestureConfig(true, true, ConfigContract.DEFAULT_FAN_SHADOW,
+        GestureConfig result = new GestureConfig(true, true, ConfigContract.DEFAULT_FAN_SHADOW,
                 ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED,
                 ConfigContract.DEFAULT_FAN_ANIMATION_SPEED,
                 ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT,
@@ -355,6 +362,8 @@ final class GestureConfig {
                 ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE,
                 ConfigContract.DEFAULT_HONEYCOMB_EMPTY_TAP_CLOSE,
                 new ArrayList<>());
+        result.pressureTriggers = Collections.singletonList(PressureTrigger.defaultTrigger());
+        return result;
     }
 
     static GestureConfig from(Bundle bundle) {
@@ -513,6 +522,11 @@ final class GestureConfig {
         result.bottomLandscapeSecondStageEnabled = bundle.getBoolean(
                 ConfigContract.KEY_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED,
                 ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED);
+        result.bottomHoneycombSettleMs = clamp(bundle.getInt(
+                        ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS),
+                ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS);
         result.customWindowPortraitEnabled = bundle.getBoolean(
                 ConfigContract.KEY_CUSTOM_WINDOW_PORTRAIT_ENABLED,
                 bundle.getBoolean(ConfigContract.KEY_CUSTOM_WINDOW_BOUNDS_ENABLED,
@@ -737,11 +751,6 @@ final class GestureConfig {
         result.honeycombBackgroundDimPercent = clamp(bundle.getInt(
                 ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
                 ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT), 0, 60);
-        result.honeycombRetreatDp = clamp(bundle.getInt(
-                ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),
-                ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
-                ConfigContract.MAX_HONEYCOMB_RETREAT_DP);
         result.honeycombDiscSizePercent = clamp(bundle.getInt(
                 ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
                 ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT),
@@ -770,15 +779,27 @@ final class GestureConfig {
         result.pressureAction = clamp(bundle.getInt(ConfigContract.KEY_PRESSURE_ACTION,
                         ConfigContract.DEFAULT_PRESSURE_ACTION),
                 ConfigContract.PRESSURE_ACTION_HONEYCOMB,
-                ConfigContract.PRESSURE_ACTION_HOME);
+                ConfigContract.PRESSURE_ACTION_SINGLE_TARGET);
+        result.pressureTriggers = Collections.unmodifiableList(parsePressureTriggers(bundle,
+                result.pressureAction));
         result.pressureOpenAsFreeform = bundle.getBoolean(
                 ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
                 ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM);
+        result.pressureHeavyLaunchEnabled = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED);
         result.pressureHapticMode = clamp(bundle.getInt(
                         ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
                         ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE),
                 ConfigContract.PRESSURE_HAPTIC_SYSTEM,
                 ConfigContract.PRESSURE_HAPTIC_CUSTOM);
+        int sensorRateMode = bundle.getInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE);
+        if (sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_BALANCED
+                && sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_ECO) {
+            sensorRateMode = ConfigContract.PRESSURE_SENSOR_RATE_BALANCED;
+        }
+        result.pressureSensorRateMode = sensorRateMode;
         result.pressureGestureEnabled = bundle.getBoolean(
                 ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
                 ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED);
@@ -813,6 +834,9 @@ final class GestureConfig {
                         ConfigContract.DEFAULT_PRESSURE_ORB_THEME),
                 ConfigContract.PRESSURE_ORB_ORBITS,
                 ConfigContract.PRESSURE_ORB_MORPH);
+        result.pressureThemeEnabled = bundle.getBoolean(
+                ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED);
         result.pressureOrbSizePercent = clamp(bundle.getInt(
                         ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
                         ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT),
@@ -967,6 +991,38 @@ final class GestureConfig {
             }
         } catch (Exception ignored) { }
         return targets;
+    }
+
+    private static ArrayList<PressureTrigger> parsePressureTriggers(Bundle bundle,
+                                                                      int legacyAction) {
+        ArrayList<PressureTrigger> triggers = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(bundle.getString(
+                    ConfigContract.KEY_PRESSURE_TRIGGERS, "[]"));
+            for (int i = 0; i < Math.min(ConfigContract.MAX_PRESSURE_TRIGGERS,
+                    array.length()); i++) {
+                PressureTrigger trigger = PressureTrigger.fromJson(array.optJSONObject(i));
+                if (trigger != null && !containsPressureTrigger(triggers, trigger.id)) {
+                    triggers.add(trigger);
+                }
+            }
+        } catch (Exception ignored) { }
+        if (triggers.isEmpty()) {
+            triggers.add(new PressureTrigger(1, true,
+                    bundle.getInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                            ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT),
+                    bundle.getInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                            ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT),
+                    bundle.getInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                            ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT),
+                    legacyAction, null));
+        }
+        return triggers;
+    }
+
+    private static boolean containsPressureTrigger(List<PressureTrigger> triggers, int id) {
+        for (PressureTrigger trigger : triggers) if (trigger.id == id) return true;
+        return false;
     }
 
     private static boolean containsTarget(List<TargetSpec> targets, TargetSpec candidate) {

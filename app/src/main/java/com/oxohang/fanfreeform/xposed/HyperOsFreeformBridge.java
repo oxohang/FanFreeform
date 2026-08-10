@@ -92,6 +92,11 @@ final class HyperOsFreeformBridge {
     private volatile Runnable queuedLaunchArmedCallback;
     private volatile int queuedAfterSuspendTaskId = -1;
     private volatile long queuedLaunchGeneration;
+    private volatile String queuedExternalPackage;
+    private volatile Intent queuedExternalIntent;
+    private volatile GestureConfig queuedExternalConfig;
+    private volatile Runnable queuedExternalCallback;
+    private int queuedLaunchRetries;
 
     HyperOsFreeformBridge(Context context, ClassLoader classLoader, Handler mainHandler) {
         this.context = context;
@@ -122,7 +127,95 @@ final class HyperOsFreeformBridge {
     boolean launchExternalIntent(String packageName, Intent intent, GestureConfig config,
                                  Runnable onLaunchArmed) {
         if (packageName == null || packageName.isEmpty() || intent == null) return false;
+        if (queueExternalLaunchAfterSuspendingCurrent(packageName, intent, config,
+                onLaunchArmed)) return true;
         return launchIntentNow(packageName, intent, config, onLaunchArmed, false, null);
+    }
+    private boolean queueExternalLaunchAfterSuspendingCurrent(String packageName,
+                                                              Intent intent, GestureConfig config,
+                                                              Runnable onLaunchArmed) {
+        int taskId = interactionTaskId();
+        Object info = taskInfo(taskId);
+        if (taskId < 0 || info == null || controller == null
+                || !booleanCall(info, "isNormalState", false)
+                || booleanCall(info, "isMiniState", false) || isPinned(info)
+                || packageName.equals(packageName(info))) {
+            return false;
+        }
+        long generation;
+        synchronized (taskLock) {
+            queuedLaunchTarget = null;
+            queuedExternalPackage = packageName;
+            queuedExternalIntent = intent;
+            queuedExternalConfig = config;
+            queuedExternalCallback = onLaunchArmed;
+            queuedAfterSuspendTaskId = taskId;
+            queuedLaunchRetries = 0;
+            generation = ++queuedLaunchGeneration;
+        }
+        if (!miniTask(taskId, info)) {
+            clearQueuedExternalLaunch(generation);
+            return false;
+        }
+        mainHandler.postDelayed(() -> runQueuedExternalLaunchAfterSuspend(taskId, generation,
+                "suspend timeout"), 700L);
+        Log.i("Queued external freeform until current task is suspended current=" + taskId
+                + " target=" + packageName);
+        return true;
+    }
+
+    private void runQueuedExternalLaunchAfterSuspend(int taskId, long generation,
+                                                     String reason) {
+        String packageName;
+        Intent intent;
+        GestureConfig config;
+        Runnable callback;
+        synchronized (taskLock) {
+            if (generation != queuedLaunchGeneration
+                    || taskId != queuedAfterSuspendTaskId
+                    || queuedExternalPackage == null) return;
+            packageName = queuedExternalPackage;
+            intent = queuedExternalIntent;
+            config = queuedExternalConfig;
+            callback = queuedExternalCallback;
+        }
+        Object info = taskInfo(taskId);
+        if (info == null || !booleanCall(info, "isMiniState", false)) {
+            if (queuedLaunchRetries >= 6) {
+                clearQueuedExternalLaunch(generation);
+                Log.i("Queued external freeform abandoned after retries task=" + taskId);
+                return;
+            }
+            queuedLaunchRetries++;
+            mainHandler.postDelayed(() -> runQueuedExternalLaunchAfterSuspend(taskId,
+                    generation, "suspend retry " + queuedLaunchRetries), 300L);
+            return;
+        }
+        synchronized (taskLock) {
+            if (generation != queuedLaunchGeneration
+                    || taskId != queuedAfterSuspendTaskId || queuedExternalPackage == null) return;
+            queuedExternalPackage = null;
+            queuedExternalIntent = null;
+            queuedExternalConfig = null;
+            queuedExternalCallback = null;
+            queuedAfterSuspendTaskId = -1;
+            queuedLaunchRetries = 0;
+        }
+        Log.i("Starting queued external freeform reason=" + reason
+                + " target=" + packageName);
+        launchIntentNow(packageName, intent, config, callback, false, null);
+    }
+
+    private void clearQueuedExternalLaunch(long generation) {
+        synchronized (taskLock) {
+            if (generation != queuedLaunchGeneration) return;
+            queuedExternalPackage = null;
+            queuedExternalIntent = null;
+            queuedExternalConfig = null;
+            queuedExternalCallback = null;
+            queuedAfterSuspendTaskId = -1;
+            queuedLaunchRetries = 0;
+        }
     }
 
     private boolean queueLaunchAfterSuspendingCurrent(RuntimeTarget target,
@@ -143,6 +236,11 @@ final class HyperOsFreeformBridge {
             queuedLaunchConfig = config;
             queuedLaunchArmedCallback = onLaunchArmed;
             queuedAfterSuspendTaskId = taskId;
+            queuedExternalPackage = null;
+            queuedExternalIntent = null;
+            queuedExternalConfig = null;
+            queuedExternalCallback = null;
+            queuedLaunchRetries = 0;
             generation = ++queuedLaunchGeneration;
         }
         if (!miniTask(taskId, info)) {
@@ -229,7 +327,7 @@ final class HyperOsFreeformBridge {
                                 intent.getComponent().flattenToString())
                         .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, userId)
                         .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, launchOptions);
-                context.sendBroadcast(request);
+                ShortcutHostRuntime.sendSystemUiRequest(context, request);
             } else {
                 context.startActivity(intent, launchOptions);
             }
@@ -264,7 +362,7 @@ final class HyperOsFreeformBridge {
             request.putExtra(ShortcutHostRuntime.EXTRA_INTENT_URI,
                     target.shortcutIntentUri);
         }
-        context.sendBroadcast(request);
+        ShortcutHostRuntime.sendSystemUiRequest(context, request);
         Log.i("Shortcut dispatched in isolated task " + target.packageName
                 + "/" + target.shortcutId);
     }
@@ -470,8 +568,13 @@ final class HyperOsFreeformBridge {
             return;
         }
         if (mini) {
-            runQueuedLaunchAfterSuspend(taskId, queuedLaunchGeneration,
-                    "current task entered mini state");
+            if (queuedExternalPackage != null) {
+                runQueuedExternalLaunchAfterSuspend(taskId, queuedLaunchGeneration,
+                        "current task entered mini state");
+            } else {
+                runQueuedLaunchAfterSuspend(taskId, queuedLaunchGeneration,
+                        "current task entered mini state");
+            }
         }
         if (retainTransition) retainOwnershipDuringModeTransition(taskId);
     }
@@ -821,9 +924,6 @@ final class HyperOsFreeformBridge {
                 if (!tasks.contains(taskId)) {
                     tasks.put(taskId, packageName(info), FreeformTaskRegistry.State.NORMAL);
                 }
-                normalFreeformTaskIds.remove(taskId);
-                if (trackedTaskId == taskId) trackedTaskId = -1;
-                if (externalTrackedTaskId == taskId) externalTrackedTaskId = -1;
             }
             ((Executor) executor).execute(() -> minimizeOnShellThread(taskId));
             Log.i("Native current-freeform-to-mini scheduled task=" + taskId);
@@ -846,10 +946,31 @@ final class HyperOsFreeformBridge {
             target = queuedLaunchTarget;
             config = queuedLaunchConfig;
             callback = queuedLaunchArmedCallback;
+        }
+        Object info = taskInfo(taskId);
+        if (info == null || !booleanCall(info, "isMiniState", false)) {
+            if (queuedLaunchRetries >= 6) {
+                clearQueuedLaunch(generation);
+                Log.i("Queued second freeform abandoned after retries task=" + taskId);
+                return;
+            }
+            queuedLaunchRetries++;
+            mainHandler.postDelayed(() -> runQueuedLaunchAfterSuspend(taskId, generation,
+                    "suspend retry " + queuedLaunchRetries), 300L);
+            return;
+        }
+        synchronized (taskLock) {
+            if (generation != queuedLaunchGeneration
+                    || taskId != queuedAfterSuspendTaskId || queuedLaunchTarget == null) return;
             queuedLaunchTarget = null;
             queuedLaunchConfig = null;
             queuedLaunchArmedCallback = null;
+            queuedExternalPackage = null;
+            queuedExternalIntent = null;
+            queuedExternalConfig = null;
+            queuedExternalCallback = null;
             queuedAfterSuspendTaskId = -1;
+            queuedLaunchRetries = 0;
         }
         Log.i("Starting queued second freeform reason=" + reason
                 + " target=" + target.packageName);
@@ -862,7 +983,12 @@ final class HyperOsFreeformBridge {
             queuedLaunchTarget = null;
             queuedLaunchConfig = null;
             queuedLaunchArmedCallback = null;
+            queuedExternalPackage = null;
+            queuedExternalIntent = null;
+            queuedExternalConfig = null;
+            queuedExternalCallback = null;
             queuedAfterSuspendTaskId = -1;
+            queuedLaunchRetries = 0;
         }
     }
 

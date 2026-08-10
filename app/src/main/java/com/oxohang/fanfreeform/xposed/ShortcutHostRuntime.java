@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.content.pm.LauncherApps;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.ShortcutInfo;
+import android.app.BroadcastOptions;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -17,6 +18,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 import android.os.Process;
 import android.os.SystemClock;
 import android.os.UserHandle;
@@ -39,6 +41,7 @@ import java.util.concurrent.Executors;
 
 final class ShortcutHostRuntime {
     static final String MIUI_HOME = "com.miui.home";
+    static final String SYSTEM_UI = "com.android.systemui";
     static final String ACTION_START_SHORTCUT = "com.oxohang.fanfreeform.START_SHORTCUT";
     static final String ACTION_START_ACTIVITY = "com.oxohang.fanfreeform.START_ACTIVITY";
     static final String ACTION_START_LAUNCHER_SHORTCUT =
@@ -69,6 +72,18 @@ final class ShortcutHostRuntime {
 
     private ShortcutHostRuntime() { }
 
+    /** Sends an internal SystemUI-to-MiuiHome request with sender identity sharing enabled. */
+    static void sendSystemUiRequest(Context context, Intent request) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Bundle options = BroadcastOptions.makeBasic()
+                    .setShareIdentityEnabled(true)
+                    .toBundle();
+            context.sendBroadcast(request, null, options);
+        } else {
+            context.sendBroadcast(request);
+        }
+    }
+
     static synchronized void install(Context context) {
         if (installed) return;
         Context appContext = context.getApplicationContext();
@@ -83,6 +98,11 @@ final class ShortcutHostRuntime {
         filter.addAction(ACTION_START_LAUNCHER_SHORTCUT);
         appContext.registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context receiverContext, Intent intent) {
+                if (!BroadcastSenderValidator.isFromPackage(
+                        receiverContext, this, SYSTEM_UI)) {
+                    Log.i("Ignored shortcut host request from unauthorized sender");
+                    return;
+                }
                 if (ACTION_START_ACTIVITY.equals(intent.getAction())) {
                     startActivity(receiverContext, intent);
                 } else if (ACTION_START_LAUNCHER_SHORTCUT.equals(intent.getAction())) {
@@ -92,7 +112,7 @@ final class ShortcutHostRuntime {
                 }
             }
         }, filter, Context.RECEIVER_EXPORTED);
-        appContext.getContentResolver().registerContentObserver(ConfigContract.URI, false,
+        appContext.getContentResolver().registerContentObserver(ConfigContract.CATALOG_URI, false,
                 new android.database.ContentObserver(MAIN_HANDLER) {
                     @Override public void onChange(boolean selfChange) {
                         requestCatalogRefresh(appContext, CATALOG_DEBOUNCE_MS);
@@ -247,6 +267,7 @@ final class ShortcutHostRuntime {
             }
             appendLauncherShortcuts(context, out, seen, iconKeys, icons);
             flushShortcutIcons(context, iconKeys, icons);
+            prunePublishedIconVersions(out);
             Bundle extras = new Bundle();
             extras.putString(ConfigContract.KEY_SHORTCUT_CATALOG, out.toString());
             context.getContentResolver().call(ConfigContract.URI, "report_shortcuts", null, extras);
@@ -327,7 +348,7 @@ final class ShortcutHostRuntime {
         }
     }
 
-    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+    private static synchronized void queueShortcutIcon(Context context, ArrayList<String> keys,
                                           ArrayList<Bitmap> icons, String key, long version,
                                           Drawable drawable) {
         if (drawable == null) return;
@@ -342,7 +363,21 @@ final class ShortcutHostRuntime {
         queueShortcutIcon(context, keys, icons, key, version, bitmap);
     }
 
-    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+    private static void prunePublishedIconVersions(JSONArray catalog) {
+        java.util.HashSet<String> current = new java.util.HashSet<>();
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject item = catalog.optJSONObject(i);
+            if (item != null) {
+                current.add(item.optString("package", "") + "\n"
+                        + item.optString("id", ""));
+            }
+        }
+        synchronized (publishedIconVersions) {
+            publishedIconVersions.keySet().retainAll(current);
+        }
+    }
+
+    private static synchronized void queueShortcutIcon(Context context, ArrayList<String> keys,
                                           ArrayList<Bitmap> icons, String key, long version,
                                           Bitmap bitmap) {
         if (bitmap == null || key == null || key.isEmpty()) return;

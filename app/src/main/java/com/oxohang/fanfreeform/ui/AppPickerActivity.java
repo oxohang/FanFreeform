@@ -3,6 +3,8 @@ package com.oxohang.fanfreeform.ui;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.database.ContentObserver;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -20,12 +22,13 @@ import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.AppTarget;
+import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 
@@ -55,6 +58,10 @@ public final class AppPickerActivity extends Activity {
     public static final int MODE_APPS = 0;
     public static final int MODE_SHORTCUTS = 1;
     public static final int MODE_APPS_AND_SHORTCUTS = 2;
+    private static final int APP_CATEGORY_ALL = 0;
+    private static final int APP_CATEGORY_USER = 1;
+    private static final int APP_CATEGORY_SYSTEM = 2;
+    private static final int APP_CATEGORY_DUAL = 3;
     private final ArrayList<Entry> all = new ArrayList<>();
     private final ArrayList<Entry> filtered = new ArrayList<>();
     private final ExecutorService loadExecutor = Executors.newSingleThreadExecutor();
@@ -74,14 +81,30 @@ public final class AppPickerActivity extends Activity {
     private EditText searchInput;
     private Button appsTab;
     private Button shortcutsTab;
+    private HorizontalScrollView appCategoryScroll;
+    private TextView categoryHint;
+    private TextView allCategory;
+    private TextView userCategory;
+    private TextView systemCategory;
+    private TextView dualCategory;
     private boolean multi;
     private int maximum;
+    private int appCategory = APP_CATEGORY_USER;
     private final LinkedHashSet<AppTarget> selectedTargets = new LinkedHashSet<>();
+    private ContentObserver catalogObserver;
+    private Runnable catalogTimeout;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         store = new ConfigStore(this);
+        catalogObserver = new ContentObserver(mainHandler) {
+            @Override public void onChange(boolean selfChange) {
+                loadApps();
+            }
+        };
+        getContentResolver().registerContentObserver(
+                ConfigContract.CATALOG_URI, false, catalogObserver);
         int requestedMode = getIntent().getIntExtra(EXTRA_MODE, MODE_APPS);
         combinedMode = requestedMode == MODE_APPS_AND_SHORTCUTS;
         mode = combinedMode ? MODE_APPS : requestedMode;
@@ -99,15 +122,24 @@ public final class AppPickerActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, 20), Ui.dp(this, 12), Ui.dp(this, 20), 0);
+        root.setPadding(Ui.dp(this, 18), Ui.dp(this, 10), Ui.dp(this, 18), 0);
         root.setBackgroundColor(0xfff4f5fa);
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = new TextView(this);
+        back.setText("‹");
+        back.setTextColor(Ui.TEXT);
+        back.setTextSize(38);
+        back.setGravity(Gravity.CENTER);
+        back.setContentDescription("返回");
+        back.setOnClickListener(view -> finish());
+        titleRow.addView(back, new LinearLayout.LayoutParams(
+                Ui.dp(this, 42), Ui.dp(this, 52)));
         titleText = new TextView(this);
         titleText.setTextColor(Ui.TEXT);
-        titleText.setTextSize(26);
+        titleText.setTextSize(25);
         titleText.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleText.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 16));
+        titleText.setPadding(Ui.dp(this, 2), Ui.dp(this, 12), 0, Ui.dp(this, 16));
         titleRow.addView(titleText, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView refresh = new TextView(this);
@@ -146,9 +178,13 @@ public final class AppPickerActivity extends Activity {
             root.addView(tabs);
         }
 
+        buildAppCategories(root);
+
         searchInput = new EditText(this);
         searchInput.setSingleLine(true);
         searchInput.setTextSize(16);
+        searchInput.setHintTextColor(Ui.MUTED);
+        searchInput.setHint("搜索应用");
         searchInput.setPadding(Ui.dp(this, 16), 0, Ui.dp(this, 16), 0);
         searchInput.setBackground(Ui.rounded(this, Color.WHITE, 16));
         root.addView(searchInput, new LinearLayout.LayoutParams(
@@ -157,13 +193,14 @@ public final class AppPickerActivity extends Activity {
         if (multi) {
             LinearLayout actions = new LinearLayout(this);
             actions.setGravity(Gravity.CENTER_VERTICAL);
-            actions.setPadding(0, Ui.dp(this, 8), 0, 0);
+            actions.setPadding(Ui.dp(this, 12), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+            actions.setBackground(Ui.rounded(this, Color.WHITE, 16));
             selectionCount = new TextView(this);
             selectionCount.setTextColor(Ui.MUTED);
             selectionCount.setTextSize(13);
             actions.addView(selectionCount, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            Button allButton = compactButton("全选结果");
+            Button allButton = compactButton("全选当前分类");
             allButton.setOnClickListener(view -> selectFiltered());
             actions.addView(allButton);
             Button inverse = compactButton("反选");
@@ -208,6 +245,97 @@ public final class AppPickerActivity extends Activity {
             }
             @Override public void afterTextChanged(Editable s) { }
         });
+    }
+
+    private void buildAppCategories(LinearLayout root) {
+        appCategoryScroll = new HorizontalScrollView(this);
+        appCategoryScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout categories = new LinearLayout(this);
+        categories.setOrientation(LinearLayout.HORIZONTAL);
+        categories.setPadding(0, Ui.dp(this, 2), 0, Ui.dp(this, 8));
+        allCategory = categoryButton("全部", APP_CATEGORY_ALL);
+        userCategory = categoryButton("用户应用", APP_CATEGORY_USER);
+        systemCategory = categoryButton("系统应用", APP_CATEGORY_SYSTEM);
+        dualCategory = categoryButton("双开应用", APP_CATEGORY_DUAL);
+        categories.addView(allCategory, categoryParams());
+        categories.addView(userCategory, categoryParams());
+        categories.addView(systemCategory, categoryParams());
+        categories.addView(dualCategory, categoryParams());
+        appCategoryScroll.addView(categories, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(appCategoryScroll);
+
+        categoryHint = new TextView(this);
+        categoryHint.setTextColor(Ui.MUTED);
+        categoryHint.setTextSize(12);
+        categoryHint.setPadding(Ui.dp(this, 2), 0, 0, Ui.dp(this, 8));
+        root.addView(categoryHint);
+    }
+
+    private TextView categoryButton(String label, int category) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setGravity(Gravity.CENTER);
+        button.setTextSize(13);
+        button.setTypeface(null, android.graphics.Typeface.BOLD);
+        button.setPadding(Ui.dp(this, 15), 0, Ui.dp(this, 15), 0);
+        button.setMinWidth(Ui.dp(this, 82));
+        button.setOnClickListener(view -> {
+            appCategory = category;
+            updateCategoryUi();
+            filter(searchText);
+        });
+        return button;
+    }
+
+    private LinearLayout.LayoutParams categoryParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 38));
+        params.leftMargin = Ui.dp(this, 8);
+        return params;
+    }
+
+    private void updateCategoryUi() {
+        if (appCategoryScroll == null) return;
+        boolean visible = mode == MODE_APPS;
+        appCategoryScroll.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (categoryHint != null) categoryHint.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) return;
+        allCategory.setText("全部 " + all.size());
+        userCategory.setText("用户应用 " + countCategory(APP_CATEGORY_USER));
+        systemCategory.setText("系统应用 " + countCategory(APP_CATEGORY_SYSTEM));
+        dualCategory.setText("双开应用 " + countCategory(APP_CATEGORY_DUAL));
+        styleCategory(allCategory, appCategory == APP_CATEGORY_ALL);
+        styleCategory(userCategory, appCategory == APP_CATEGORY_USER);
+        styleCategory(systemCategory, appCategory == APP_CATEGORY_SYSTEM);
+        styleCategory(dualCategory, appCategory == APP_CATEGORY_DUAL);
+        categoryHint.setText(categoryDescription());
+    }
+
+    private int countCategory(int category) {
+        int count = 0;
+        for (Entry entry : all) {
+            if (matchesCategory(entry, category)) count++;
+        }
+        return count;
+    }
+
+    private void styleCategory(TextView button, boolean selected) {
+        button.setTextColor(selected ? Color.WHITE : Ui.ACCENT);
+        button.setBackground(Ui.rounded(this, selected ? Ui.ACCENT : 0xffeef0ff, 13));
+    }
+
+    private String categoryDescription() {
+        switch (appCategory) {
+            case APP_CATEGORY_SYSTEM:
+                return "只显示带启动入口的系统应用";
+            case APP_CATEGORY_DUAL:
+                return "只显示从小米桌面读取到的双开应用";
+            case APP_CATEGORY_USER:
+                return "只显示普通用户应用";
+            default:
+                return "用户应用、系统应用和双开应用一览";
+        }
     }
 
     private void toggle(AppTarget target) {
@@ -302,8 +430,11 @@ public final class AppPickerActivity extends Activity {
                 if (!seen.add(component.flattenToString())) continue;
                 CharSequence labelValue = result.loadLabel(pm);
                 String label = labelValue == null ? result.activityInfo.packageName : labelValue.toString();
+                boolean systemApp = isSystemApplication(result.activityInfo.applicationInfo);
+                String secondary = result.activityInfo.packageName
+                        + (systemApp ? " · 系统应用" : "");
                 entries.add(new Entry(new AppTarget(component.flattenToString()), label,
-                        result.activityInfo.packageName, pm2 -> result.loadIcon(pm2)));
+                        secondary, systemApp, pm2 -> result.loadIcon(pm2)));
             }
             for (ConfigStore.ActivityCatalogEntry activity : store.getActivityCatalog()) {
                 ComponentName component = ComponentName.unflattenFromString(activity.component);
@@ -313,7 +444,7 @@ public final class AppPickerActivity extends Activity {
                 try {
                     String packageName = component.getPackageName();
                     entries.add(new Entry(new AppTarget(activity.component, activity.userId),
-                            activity.label, packageName + " · 双开",
+                            activity.label, packageName + " · 双开", false,
                             pm2 -> pm2.getApplicationIcon(packageName)));
                 } catch (Exception ignored) { }
             }
@@ -330,6 +461,7 @@ public final class AppPickerActivity extends Activity {
                     entries.add(new Entry(target, shortcut.label,
                             shortcut.packageName + (shortcut.launcherShortcut
                                     ? " · 桌面快捷方式" : " · 快捷方式"),
+                            false,
                             pm2 -> ShortcutIconLoader.load(AppPickerActivity.this,
                                     shortcut.packageName, shortcut.shortcutId,
                                     shortcut.userId)));
@@ -337,6 +469,13 @@ public final class AppPickerActivity extends Activity {
             }
         }
         return entries;
+    }
+
+    private static boolean isSystemApplication(ApplicationInfo info) {
+        if (info == null) return false;
+        int flags = info.flags;
+        return (flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                || (flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
     }
 
     private Drawable loadIconFor(Entry entry) {
@@ -351,8 +490,11 @@ public final class AppPickerActivity extends Activity {
         String needle = text.trim().toLowerCase(Locale.ROOT);
         filtered.clear();
         for (Entry entry : all) {
-            if (needle.isEmpty() || entry.label.toLowerCase(Locale.ROOT).contains(needle)
-                    || entry.secondary.toLowerCase(Locale.ROOT).contains(needle)) filtered.add(entry);
+            boolean categoryMatches = mode != MODE_APPS || matchesCategory(entry, appCategory);
+            boolean textMatches = needle.isEmpty()
+                    || entry.label.toLowerCase(Locale.ROOT).contains(needle)
+                    || entry.secondary.toLowerCase(Locale.ROOT).contains(needle);
+            if (categoryMatches && textMatches) filtered.add(entry);
         }
         ArrayList<AppTarget> selectedOrder = new ArrayList<>(selectedTargets);
         Collator collator = Collator.getInstance(Locale.CHINA);
@@ -367,23 +509,55 @@ public final class AppPickerActivity extends Activity {
         if (empty != null) {
             boolean show = filtered.isEmpty();
             empty.setVisibility(show ? View.VISIBLE : View.GONE);
-            if (show) {
-                empty.setText(mode == MODE_SHORTCUTS
-                        ? "暂未读取到可用快捷方式。正在从小米桌面刷新，稍后可点右上角“刷新”。"
-                        : "没有找到匹配的应用。");
-            }
+            if (show) empty.setText(emptyText(needle));
         }
+        updateCategoryUi();
         adapter.notifyDataSetChanged();
+    }
+
+    private boolean matchesCategory(Entry entry, int category) {
+        if (category == APP_CATEGORY_ALL) return true;
+        if (category == APP_CATEGORY_DUAL) return entry.target.userId != 0;
+        if (category == APP_CATEGORY_SYSTEM) {
+            return entry.target.userId == 0 && entry.systemApp;
+        }
+        return entry.target.userId == 0 && !entry.systemApp;
+    }
+
+    private String emptyText(String needle) {
+        if (mode == MODE_SHORTCUTS) {
+            return "暂未读取到可用快捷方式。\n请先在小米桌面刷新快捷方式目录。";
+        }
+        if (!needle.isEmpty()) return "当前分类没有匹配的应用。";
+        return "当前分类暂无应用。\n可以切换上方分类或点击右上角刷新。";
     }
 
     private void refreshCatalog() {
         if (mode == MODE_APPS) {
             store.requestActivityCatalog();
-            mainHandler.postDelayed(this::loadApps, 900L);
+            loadApps();
+            scheduleCatalogTimeout();
             return;
         }
         store.requestShortcutCatalog();
-        mainHandler.postDelayed(this::loadApps, 900L);
+        loadApps();
+        scheduleCatalogTimeout();
+    }
+
+    private void scheduleCatalogTimeout() {
+        if (catalogTimeout != null) mainHandler.removeCallbacks(catalogTimeout);
+        catalogTimeout = () -> {
+            if (destroyed) return;
+            boolean empty = mode == MODE_APPS
+                    ? store.getActivityCatalog().isEmpty()
+                    : store.getShortcutCatalog().isEmpty();
+            if (empty) {
+                if (mode == MODE_APPS) store.requestActivityCatalog();
+                else store.requestShortcutCatalog();
+                loadApps();
+            }
+        };
+        mainHandler.postDelayed(catalogTimeout, 2000L);
     }
 
     private void switchMode(int nextMode) {
@@ -399,11 +573,11 @@ public final class AppPickerActivity extends Activity {
 
     private void updateModeUi() {
         if (titleText != null) {
-            titleText.setText(combinedMode ? "选择应用与快捷方式"
-                    : mode == MODE_SHORTCUTS ? "添加快捷方式" : "添加应用");
+            titleText.setText(mode == MODE_SHORTCUTS ? "选择快捷方式" : "选择应用");
         }
         if (searchInput != null) searchInput.setHint(
                 mode == MODE_SHORTCUTS ? "搜索快捷方式" : "搜索应用");
+        updateCategoryUi();
         if (appsTab != null) {
             appsTab.setTextColor(mode == MODE_APPS ? Color.WHITE : Ui.ACCENT);
             appsTab.setBackground(Ui.rounded(this,
@@ -426,13 +600,16 @@ public final class AppPickerActivity extends Activity {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Ui.dp(AppPickerActivity.this, 14), Ui.dp(AppPickerActivity.this, 10), Ui.dp(AppPickerActivity.this, 14), Ui.dp(AppPickerActivity.this, 10));
-            row.setBackground(Ui.rounded(AppPickerActivity.this, Color.WHITE, 16));
             Entry entry = getItem(position);
+            row.setBackground(Ui.rounded(AppPickerActivity.this,
+                    selectedTargets.contains(entry.target) ? 0xfff0f1ff : Color.WHITE,
+                    16));
             row.setClickable(true);
             row.setFocusable(false);
             row.setOnClickListener(view -> selectEntry(entry));
-            ImageView icon = new ImageView(AppPickerActivity.this);
-            icon.setImageDrawable(entry.icon != null ? entry.icon : placeholderIcon);
+            IconBadgeView icon = new IconBadgeView(AppPickerActivity.this);
+            icon.setIcon(entry.icon != null ? entry.icon : placeholderIcon,
+                    entry.target.isShortcut(), entry.target.userId != 0);
             row.addView(icon, new LinearLayout.LayoutParams(Ui.dp(AppPickerActivity.this, 44), Ui.dp(AppPickerActivity.this, 44)));
             LinearLayout text = new LinearLayout(AppPickerActivity.this);
             text.setOrientation(LinearLayout.VERTICAL);
@@ -487,6 +664,11 @@ public final class AppPickerActivity extends Activity {
     @Override
     protected void onDestroy() {
         destroyed = true;
+        if (catalogObserver != null) {
+            try { getContentResolver().unregisterContentObserver(catalogObserver); }
+            catch (Throwable ignored) { }
+            catalogObserver = null;
+        }
         loadGeneration++;
         mainHandler.removeCallbacksAndMessages(null);
         if (loadTask != null) loadTask.cancel(true);
@@ -498,12 +680,15 @@ public final class AppPickerActivity extends Activity {
         final AppTarget target;
         final String label;
         final String secondary;
+        final boolean systemApp;
         final IconLoader iconLoader;
         Drawable icon;
-        Entry(AppTarget target, String label, String secondary, IconLoader iconLoader) {
+        Entry(AppTarget target, String label, String secondary, boolean systemApp,
+              IconLoader iconLoader) {
             this.target = target;
             this.label = label;
             this.secondary = secondary;
+            this.systemApp = systemApp;
             this.iconLoader = iconLoader;
         }
     }

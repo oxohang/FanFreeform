@@ -47,7 +47,7 @@ final class FullscreenAppLauncher {
                     request.putExtra(ShortcutHostRuntime.EXTRA_INTENT_URI,
                             target.shortcutIntentUri);
                 }
-                context.sendBroadcast(request);
+                ShortcutHostRuntime.sendSystemUiRequest(context, request);
             } else if (target.component == null) {
                 return false;
             } else if (target.userId != 0) {
@@ -57,7 +57,7 @@ final class FullscreenAppLauncher {
                                 target.component.flattenToString())
                         .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, target.userId)
                         .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, bundle);
-                context.sendBroadcast(request);
+                ShortcutHostRuntime.sendSystemUiRequest(context, request);
             } else {
                 Intent intent = Intent.makeMainActivity(target.component)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK

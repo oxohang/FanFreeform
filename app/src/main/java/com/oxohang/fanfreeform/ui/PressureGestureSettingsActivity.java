@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -19,6 +20,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -29,18 +31,22 @@ import android.widget.Toast;
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
 import com.oxohang.fanfreeform.config.PressureHapticFeedback;
+import com.oxohang.fanfreeform.config.PressureTrigger;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @SuppressLint("SetTextI18n")
 public final class PressureGestureSettingsActivity extends Activity {
     private ConfigStore store;
     private SharedPreferences prefs;
-    private SensorManager sensorManager;
     private Sensor pressureSensor;
-
+    private LinearLayout triggerContainer;
+    private TextView triggerCount;
     private PressurePreviewView preview;
     private TextView calibrationStatus;
-    private TextView actionSummary;
     private TextView orbThemeSummary;
+    private TextView sensorRateSummary;
     private TextView pressureTargetsSummary;
     private Button calibrationButton;
     private Switch enabledToggle;
@@ -52,7 +58,7 @@ public final class PressureGestureSettingsActivity extends Activity {
         super.onCreate(state);
         store = new ConfigStore(this);
         prefs = store.preferences();
-        sensorManager = getSystemService(SensorManager.class);
+        SensorManager sensorManager = getSystemService(SensorManager.class);
         pressureSensor = sensorManager == null ? null
                 : sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
         getWindow().setStatusBarColor(0xfff4f5fa);
@@ -77,10 +83,11 @@ public final class PressureGestureSettingsActivity extends Activity {
             calibrationHandler.removeCallbacks(calibrationStatusPoll);
             calibrationHandler.post(calibrationStatusPoll);
         }
-        updateActionSummary();
+        renderTriggers();
         updateOrbThemeSummary();
         updatePressureTargetsSummary();
         updateCalibrationStatus();
+        if (preview != null) preview.update();
     }
 
     @Override protected void onDestroy() {
@@ -89,22 +96,27 @@ public final class PressureGestureSettingsActivity extends Activity {
     }
 
     private View buildContent() {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xfff4f5fa);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(0xfff4f5fa);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, 20), Ui.dp(this, 14), Ui.dp(this, 20), Ui.dp(this, 36));
+        root.setPadding(Ui.dp(this, 20), Ui.dp(this, 14), Ui.dp(this, 20), Ui.dp(this, 104));
         scroll.addView(root);
+        frame.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout header = row();
         TextView back = text("‹", 38, Ui.TEXT, Typeface.NORMAL);
         back.setGravity(Gravity.CENTER);
+        back.setContentDescription("返回");
         back.setOnClickListener(view -> finish());
         header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
         header.addView(text("按压手势", 26, Ui.TEXT, Typeface.BOLD));
         root.addView(header);
-        TextView subtitle = text("轻触确认位置，重按触发动作；仅竖屏生效",
+        TextView subtitle = text("多个触发区域共用一次气压校准；点击区域卡片进入独立设置",
                 14, Ui.MUTED, Typeface.NORMAL);
         subtitle.setPadding(Ui.dp(this, 44), 0, 0, Ui.dp(this, 16));
         root.addView(subtitle);
@@ -128,64 +140,73 @@ public final class PressureGestureSettingsActivity extends Activity {
         });
         enableRow.addView(enabledToggle);
         enableCard.addView(enableRow);
+        LinearLayout rateRow = row();
+        rateRow.addView(labels("气压采样频率",
+                "自动按手机气压计上限适配；平衡更省电"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        sensorRateSummary = text(sensorRateLabel(prefs.getInt(
+                ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE)),
+                14, Ui.ACCENT, Typeface.BOLD);
+        rateRow.addView(sensorRateSummary);
+        rateRow.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
+        rateRow.setOnClickListener(view -> showSensorRateDialog());
+        enableCard.addView(rateRow);
         root.addView(enableCard);
 
-        LinearLayout actionCard = card();
-        actionCard.addView(text("单重按", 18, Ui.TEXT, Typeface.BOLD));
-        LinearLayout actionRow = row();
-        LinearLayout actionLabels = labels("执行动作", "识别到一个气压上升波形后执行");
-        actionRow.addView(actionLabels, new LinearLayout.LayoutParams(0,
+        LinearLayout triggerCard = card();
+        LinearLayout triggerHeader = row();
+        LinearLayout triggerLabels = labels("触发区域", "每个区域可单独设置位置、动作和启动方式");
+        triggerHeader.addView(triggerLabels, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        actionSummary = text("", 14, Ui.ACCENT, Typeface.BOLD);
-        actionRow.addView(actionSummary);
-        actionRow.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
-        actionRow.setOnClickListener(view -> showPressureActionDialog());
-        actionCard.addView(actionRow);
-        root.addView(actionCard, cardParams());
+        triggerCount = text("", 13, Ui.ACCENT, Typeface.BOLD);
+        triggerHeader.addView(triggerCount);
+        triggerCard.addView(triggerHeader);
+        triggerContainer = new LinearLayout(this);
+        triggerContainer.setOrientation(LinearLayout.VERTICAL);
+        triggerCard.addView(triggerContainer);
+        root.addView(triggerCard, cardParams());
 
-        LinearLayout orbThemeCard = card();
-        orbThemeCard.addView(text("按压动效主题", 18, Ui.TEXT, Typeface.BOLD));
-        LinearLayout orbThemeRow = row();
-        orbThemeRow.addView(labels("点阵动效", "按压时显示网页参考中的九种状态之一"),
+        LinearLayout themeCard = card();
+        themeCard.addView(text("按压主题", 18, Ui.TEXT, Typeface.BOLD));
+        themeCard.addView(toggleRow("主题动效", "按压时显示主题浮球，关闭后仍保留触发功能；默认开启",
+                ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED));
+        LinearLayout themeRow = row();
+        themeRow.addView(labels("点阵主题", "选择按压时显示的状态动画"),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         orbThemeSummary = text("", 14, Ui.ACCENT, Typeface.BOLD);
-        orbThemeRow.addView(orbThemeSummary);
-        orbThemeRow.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
-        orbThemeRow.setOnClickListener(view -> showOrbThemeDialog());
-        orbThemeCard.addView(orbThemeRow);
-        orbThemeCard.addView(slider("动效大小", ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
+        themeRow.addView(orbThemeSummary);
+        themeRow.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
+        themeRow.setOnClickListener(view -> showOrbThemeDialog());
+        themeCard.addView(themeRow);
+        themeCard.addView(slider("动效大小", ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
                 ConfigContract.MIN_PRESSURE_ORB_SIZE_PERCENT,
                 ConfigContract.MAX_PRESSURE_ORB_SIZE_PERCENT,
                 prefs.getInt(ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
                         ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT), 1,
                 value -> value + "%", () -> { }));
-        root.addView(orbThemeCard, cardParams());
+        root.addView(themeCard, cardParams());
 
-        LinearLayout launchCard = card();
-        launchCard.addView(text("应用启动", 18, Ui.TEXT, Typeface.BOLD));
-        launchCard.addView(toggleRow("以小窗打开应用", "关闭时使用全屏打开；默认关闭",
-                ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
-                ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM));
-        LinearLayout pressureTargetsRow = row();
-        pressureTargetsRow.addView(labels("圆形应用快捷选择",
-                "按压手势自己的独立应用与快捷方式清单"),
+        LinearLayout targetCard = card();
+        targetCard.addView(text("圆形应用快捷选择", 18, Ui.TEXT, Typeface.BOLD));
+        LinearLayout targetRow = row();
+        targetRow.addView(labels("应用与快捷方式清单", "供触发区域选择“圆形应用”时使用"),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         pressureTargetsSummary = text("", 14, Ui.ACCENT, Typeface.BOLD);
-        pressureTargetsRow.addView(pressureTargetsSummary);
-        pressureTargetsRow.addView(text("设置 ›", 14, Ui.ACCENT, Typeface.BOLD));
-        pressureTargetsRow.setOnClickListener(view -> {
-            android.content.Intent intent = new android.content.Intent(this,
-                    TargetManagerActivity.class);
-            intent.putExtra(TargetManagerActivity.EXTRA_KIND,
-                    TargetManagerActivity.KIND_PRESSURE);
+        targetRow.addView(pressureTargetsSummary);
+        targetRow.addView(text("设置 ›", 14, Ui.ACCENT, Typeface.BOLD));
+        targetRow.setOnClickListener(view -> {
+            Intent intent = new Intent(this, TargetManagerActivity.class);
+            intent.putExtra(TargetManagerActivity.EXTRA_KIND, TargetManagerActivity.KIND_PRESSURE);
             startActivity(intent);
         });
-        launchCard.addView(pressureTargetsRow);
-        root.addView(launchCard, cardParams());
+        targetCard.addView(targetRow);
+        root.addView(targetCard, cardParams());
 
         LinearLayout hapticCard = card();
         hapticCard.addView(text("按压触感", 18, Ui.TEXT, Typeface.BOLD));
-        hapticCard.addView(text("只在气压越过校准阈值时播放一段系统按键触感；总开关仍受“启用手势”页面的震动开关控制。",
+        hapticCard.addView(text("只在气压越过校准阈值时播放一次重按反馈；总开关仍受“启用手势”控制。",
                 13, Ui.MUTED, Typeface.NORMAL));
         hapticCard.addView(toggleRow("重按系统反馈", "气压越过校准阈值时播放一次系统按键触感",
                 ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
@@ -197,8 +218,8 @@ public final class PressureGestureSettingsActivity extends Activity {
         root.addView(hapticCard, cardParams());
 
         LinearLayout previewCard = card();
-        previewCard.addView(text("圆形按压范围", 18, Ui.TEXT, Typeface.BOLD));
-        previewCard.addView(text("位置和大小使用屏幕百分比，按压识别仅在竖屏生效",
+        previewCard.addView(text("触发区域预览", 18, Ui.TEXT, Typeface.BOLD));
+        previewCard.addView(text("圆形位置使用屏幕百分比，按压识别仅在竖屏生效",
                 13, Ui.MUTED, Typeface.NORMAL));
         preview = new PressurePreviewView(this);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
@@ -211,29 +232,10 @@ public final class PressureGestureSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION));
         root.addView(previewCard, cardParams());
 
-        LinearLayout tuning = card();
-        tuning.addView(text("按压参数", 18, Ui.TEXT, Typeface.BOLD));
-        tuning.addView(slider("圆心水平位置", ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
-                0, 100, prefs.getInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
-                        ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT), 1,
-                value -> value + "%", () -> preview.update()));
-        tuning.addView(slider("圆心垂直位置", ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
-                0, 100, prefs.getInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
-                        ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT), 1,
-                value -> value + "%", () -> preview.update()));
-        tuning.addView(slider("圆形范围半径", ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
-                ConfigContract.MIN_PRESSURE_RADIUS_PERCENT,
-                ConfigContract.MAX_PRESSURE_RADIUS_PERCENT,
-                prefs.getInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
-                        ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT), 1,
-                value -> value + "% 短边", () -> preview.update()));
-        root.addView(tuning, cardParams());
-
         LinearLayout calibration = card();
         calibration.addView(text("气压校准", 18, Ui.TEXT, Typeface.BOLD));
-        calibration.addView(text("开始后请在当前屏幕实际设置的按压圆形范围内完成 5 次按压，" +
-                "不要按页面中的预览图。每次只记录按压期间的正向气压变化；气压变低的样本会被剔除，" +
-                "最后用有效样本的最低值和中间值取平均作为阈值。校准期间会自动显示实际圆形位置。",
+        calibration.addView(text("开始后请在当前屏幕任一启用的实际触发圆形范围内完成 5 次按压，" +
+                "不要按页面中的预览图。每次只记录按压期间的正向气压变化；气压变低的样本会被剔除。",
                 13, Ui.MUTED, Typeface.NORMAL));
         calibrationStatus = text("", 14, Ui.TEXT, Typeface.BOLD);
         calibrationStatus.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 6));
@@ -243,9 +245,8 @@ public final class PressureGestureSettingsActivity extends Activity {
             if (calibrationActive) cancelCalibration(true);
             else startCalibration();
         });
-        calibration.addView(calibrationButton,
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                        Ui.dp(this, 50)));
+        calibration.addView(calibrationButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)));
         Button reset = button("清除校准结果");
         reset.setTextColor(Ui.MUTED);
         reset.setOnClickListener(view -> new AlertDialog.Builder(this)
@@ -254,40 +255,110 @@ public final class PressureGestureSettingsActivity extends Activity {
                 .setNegativeButton("取消", null)
                 .setPositiveButton("清除", (dialog, which) -> clearCalibration())
                 .show());
-        calibration.addView(reset,
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                        Ui.dp(this, 50)));
+        calibration.addView(reset, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)));
         root.addView(calibration, cardParams());
 
+        TextView add = text("＋", 32, android.graphics.Color.WHITE, Typeface.NORMAL);
+        add.setGravity(Gravity.CENTER);
+        add.setContentDescription("新增按压触发区域");
+        add.setBackground(Ui.rounded(this, Ui.ACCENT, 30));
+        add.setElevation(Ui.dp(this, 8));
+        add.setOnClickListener(view -> addTrigger());
+        FrameLayout.LayoutParams addParams = new FrameLayout.LayoutParams(
+                Ui.dp(this, 58), Ui.dp(this, 58), Gravity.END | Gravity.BOTTOM);
+        addParams.rightMargin = Ui.dp(this, 24);
+        addParams.bottomMargin = Ui.dp(this, 26);
+        frame.addView(add, addParams);
+
+        renderTriggers();
         updateCalibrationStatus();
-        updateActionSummary();
         updateOrbThemeSummary();
         updatePressureTargetsSummary();
         preview.update();
-        return scroll;
+        return frame;
     }
 
-    private void showPressureActionDialog() {
-        String[] choices = {"蜂窝应用", "圆形应用快捷选择", "返回主屏幕"};
-        String key = ConfigContract.KEY_PRESSURE_ACTION;
-        int current = prefs.getInt(key, ConfigContract.DEFAULT_PRESSURE_ACTION);
-        current = Math.max(0, Math.min(choices.length - 1, current));
+    private void renderTriggers() {
+        if (triggerContainer == null) return;
+        List<PressureTrigger> triggers = store.getPressureTriggers();
+        triggerContainer.removeAllViews();
+        if (triggerCount != null) {
+            triggerCount.setText(triggers.size() + " / " + ConfigContract.MAX_PRESSURE_TRIGGERS);
+        }
+        for (int index = 0; index < triggers.size(); index++) {
+            PressureTrigger trigger = triggers.get(index);
+            if (index > 0) triggerContainer.addView(Ui.divider(this));
+            LinearLayout item = row();
+            item.setOnClickListener(view -> openTrigger(trigger.id));
+            item.addView(labels("触发区域 " + (index + 1),
+                    (trigger.enabled ? "已启用" : "已关闭") + " · "
+                            + trigger.centerXPercent + "%," + trigger.centerYPercent + "% · "
+                            + pressureActionLabel(trigger.action)),
+                    new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            Switch toggle = new Switch(this);
+            toggle.setChecked(trigger.enabled);
+            toggle.setOnCheckedChangeListener((button, checked) -> {
+                updateTrigger(trigger.withEnabled(checked));
+                if (preview != null) preview.update();
+            });
+            item.addView(toggle);
+            item.addView(text("›", 28, Ui.ACCENT, Typeface.NORMAL));
+            triggerContainer.addView(item);
+        }
+        if (preview != null) preview.update();
+    }
+
+    private void updateTrigger(PressureTrigger updated) {
+        ArrayList<PressureTrigger> triggers = new ArrayList<>(store.getPressureTriggers());
+        for (int i = 0; i < triggers.size(); i++) {
+            if (triggers.get(i).id == updated.id) {
+                triggers.set(i, updated);
+                store.setPressureTriggers(triggers);
+                renderTriggers();
+                return;
+            }
+        }
+    }
+
+    private void addTrigger() {
+        if (store.getPressureTriggers().size() >= ConfigContract.MAX_PRESSURE_TRIGGERS) {
+            Toast.makeText(this, "最多添加 " + ConfigContract.MAX_PRESSURE_TRIGGERS + " 个触发区域",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        PressureTrigger trigger = store.addPressureTrigger();
+        openTrigger(trigger.id);
+    }
+
+    private void openTrigger(int id) {
+        startActivity(new Intent(this, PressureTriggerSettingsActivity.class)
+                .putExtra(PressureTriggerSettingsActivity.EXTRA_TRIGGER_ID, id));
+    }
+
+    private void showSensorRateDialog() {
+        String[] choices = {
+                "平衡（约15Hz）", "省电（约8Hz）"};
+        int mode = prefs.getInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE);
+        int selectedIndex = mode == ConfigContract.PRESSURE_SENSOR_RATE_ECO ? 1 : 0;
         new AlertDialog.Builder(this)
-                .setTitle("选择重按动作")
-                .setSingleChoiceItems(choices, current, (dialog, which) -> {
-                    store.putInt(key, which);
-                    updateActionSummary();
+                .setTitle("气压采样频率")
+                .setSingleChoiceItems(choices, selectedIndex, (dialog, which) -> {
+                    int value = which == 1 ? ConfigContract.PRESSURE_SENSOR_RATE_ECO
+                            : ConfigContract.PRESSURE_SENSOR_RATE_BALANCED;
+                    store.putInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE, value);
+                    if (sensorRateSummary != null) sensorRateSummary.setText(sensorRateLabel(value));
                     dialog.dismiss();
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void updateActionSummary() {
-        if (actionSummary == null) return;
-        int action = prefs.getInt(ConfigContract.KEY_PRESSURE_ACTION,
-                ConfigContract.DEFAULT_PRESSURE_ACTION);
-        actionSummary.setText(pressureActionLabel(action));
+    private String sensorRateLabel(int mode) {
+        if (mode == ConfigContract.PRESSURE_SENSOR_RATE_BALANCED) return "平衡 15Hz";
+        if (mode == ConfigContract.PRESSURE_SENSOR_RATE_ECO) return "省电 8Hz";
+        return "平衡 15Hz";
     }
 
     private void showOrbThemeDialog() {
@@ -318,21 +389,19 @@ public final class PressureGestureSettingsActivity extends Activity {
 
     private static String[] orbThemeChoices() {
         return new String[]{
-                "旋转点阵 · Working",
-                "经纬球体 · Searching",
-                "魔方解题 · Solving",
-                "流动波形 · Listening",
-                "连接网络 · Connecting",
-                "交织编织 · Weaving",
-                "飘带组合 · Composing",
-                "呼吸圆环 · Thinking",
-                "形态变换 · Shaping"
+                "旋转点阵 · Working", "经纬球体 · Searching", "魔方解题 · Solving",
+                "流动波形 · Listening", "连接网络 · Connecting", "交织编织 · Weaving",
+                "飘带组合 · Composing", "呼吸圆环 · Thinking", "形态变换 · Shaping"
         };
     }
 
-    private static String pressureActionLabel(int action) {
-        if (action == ConfigContract.PRESSURE_ACTION_CIRCULAR) return "圆形快捷选择";
+    public static String pressureActionLabel(int action) {
+        if (action == ConfigContract.PRESSURE_ACTION_CIRCULAR) return "圆形应用快捷选择";
         if (action == ConfigContract.PRESSURE_ACTION_HOME) return "返回主屏幕";
+        if (action == ConfigContract.PRESSURE_ACTION_LOCK) return "锁屏";
+        if (action == ConfigContract.PRESSURE_ACTION_SCREENSHOT) return "截图";
+        if (action == ConfigContract.PRESSURE_ACTION_BACK) return "返回";
+        if (action == ConfigContract.PRESSURE_ACTION_SINGLE_TARGET) return "打开单一应用/快捷键";
         return "蜂窝应用";
     }
 
@@ -345,8 +414,9 @@ public final class PressureGestureSettingsActivity extends Activity {
     }
 
     private void updatePressureTargetsSummary() {
-        if (pressureTargetsSummary == null) return;
-        pressureTargetsSummary.setText(store.getPressureTargets().size() + " 个");
+        if (pressureTargetsSummary != null) {
+            pressureTargetsSummary.setText(store.getPressureTargets().size() + " 个");
+        }
     }
 
     private void startCalibration() {
@@ -375,7 +445,7 @@ public final class PressureGestureSettingsActivity extends Activity {
         calibrationActive = true;
         calibrationButton.setText("取消校准");
         preview.setCalibrationActive(true);
-        calibrationStatus.setText("请在当前屏幕的实际圆形范围内完成第 1/5 次按压");
+        calibrationStatus.setText("请在当前屏幕任一启用的实际触发区域内完成第 1/5 次按压");
         calibrationStatus.setTextColor(Ui.ACCENT);
         calibrationHandler.removeCallbacks(calibrationStatusPoll);
         calibrationHandler.post(calibrationStatusPoll);
@@ -399,39 +469,33 @@ public final class PressureGestureSettingsActivity extends Activity {
     }
 
     private void pollCalibrationStatus() {
-        if (calibrationActive) {
-            boolean active = prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
-                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE);
-            if (!active) {
-                calibrationActive = false;
-                if (preview != null) preview.setCalibrationActive(false);
-                if (calibrationButton != null) {
-                    calibrationButton.setText("重新开始 5 次校准");
-                }
-                updateCalibrationStatus();
-                return;
-            }
-            int attempts = prefs.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
-                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS);
-            boolean lastValid = prefs.getBoolean(
-                    ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
-                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_VALID);
-            float lastDelta = prefs.getFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA,
-                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA);
-            if (attempts <= 0) {
-                calibrationStatus.setText("请在当前屏幕的实际圆形范围内完成第 1/5 次按压");
-            } else if (lastValid) {
-                calibrationStatus.setText("第 " + attempts + "/5 次有效，气压升高 "
-                        + String.format(java.util.Locale.US, "%.3f", lastDelta)
-                        + " hPa。请进行下一次按压");
-            } else {
-                calibrationStatus.setText("第 " + attempts
-                        + "/5 次无效：气压没有升高，已剔除。请进行下一次按压");
-            }
-            calibrationStatus.setTextColor(Ui.ACCENT);
-            calibrationHandler.postDelayed(calibrationStatusPoll, 250L);
+        if (!calibrationActive) return;
+        boolean active = prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE);
+        if (!active) {
+            calibrationActive = false;
+            if (preview != null) preview.setCalibrationActive(false);
+            if (calibrationButton != null) calibrationButton.setText("重新开始 5 次校准");
+            updateCalibrationStatus();
             return;
         }
+        int attempts = prefs.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS);
+        boolean lastValid = prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_VALID);
+        float lastDelta = prefs.getFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA,
+                ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA);
+        if (attempts <= 0) {
+            calibrationStatus.setText("请在当前屏幕任一启用的实际触发区域内完成第 1/5 次按压");
+        } else if (lastValid) {
+            calibrationStatus.setText("第 " + attempts + "/5 次有效，气压升高 "
+                    + String.format(java.util.Locale.US, "%.3f", lastDelta)
+                    + " hPa。请进行下一次按压");
+        } else {
+            calibrationStatus.setText("第 " + attempts + "/5 次无效：气压没有升高，已剔除。请进行下一次按压");
+        }
+        calibrationStatus.setTextColor(Ui.ACCENT);
+        calibrationHandler.postDelayed(calibrationStatusPoll, 250L);
     }
 
     private void clearCalibration() {
@@ -472,8 +536,7 @@ public final class PressureGestureSettingsActivity extends Activity {
         if (active) {
             int attempts = prefs.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
                     ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS);
-            calibrationStatus.setText("正在进行实际屏幕校准：第 " + Math.min(5, attempts + 1)
-                    + "/5 次按压");
+            calibrationStatus.setText("正在进行实际屏幕校准：第 " + Math.min(5, attempts + 1) + "/5 次按压");
             calibrationStatus.setTextColor(Ui.ACCENT);
             return;
         }
@@ -501,10 +564,9 @@ public final class PressureGestureSettingsActivity extends Activity {
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(0, Ui.dp(this, 14), 0, 0);
         LinearLayout header = row();
-        TextView titleView = text(title, 15, Ui.TEXT, Typeface.BOLD);
+        header.addView(text(title, 15, Ui.TEXT, Typeface.BOLD),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView valueView = text(labeler.label(current), 14, Ui.ACCENT, Typeface.BOLD);
-        header.addView(titleView, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         header.addView(valueView);
         group.addView(header);
         SeekBar seek = new SeekBar(this);
@@ -515,8 +577,7 @@ public final class PressureGestureSettingsActivity extends Activity {
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
             @Override public void onStopTrackingTouch(SeekBar seekBar) { }
-            @Override public void onProgressChanged(SeekBar seekBar, int progress,
-                                                    boolean fromUser) {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 int value = Math.min(max, min + progress * safeStep);
                 valueView.setText(labeler.label(value));
                 if (fromUser) {
@@ -537,16 +598,13 @@ public final class PressureGestureSettingsActivity extends Activity {
         private final Paint centerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private boolean calibrationCapture;
-        private boolean pressInside;
 
         PressurePreviewView(Context context) {
             super(context);
-            setFocusable(true);
             screenPaint.setStyle(Paint.Style.FILL);
             screenPaint.setColor(0xfff7f8fc);
             circlePaint.setStyle(Paint.Style.STROKE);
             circlePaint.setStrokeWidth(Ui.dp(context, 3));
-            circlePaint.setColor(Ui.ACCENT);
             PathEffect dash = new DashPathEffect(new float[]{Ui.dp(context, 8), Ui.dp(context, 5)}, 0);
             circlePaint.setPathEffect(dash);
             centerPaint.setStyle(Paint.Style.FILL);
@@ -556,12 +614,7 @@ public final class PressureGestureSettingsActivity extends Activity {
             labelPaint.setTextAlign(Paint.Align.CENTER);
         }
 
-        void setCalibrationActive(boolean active) {
-            calibrationCapture = active;
-            pressInside = false;
-            invalidate();
-        }
-
+        void setCalibrationActive(boolean active) { calibrationCapture = active; invalidate(); }
         void update() { invalidate(); }
 
         @Override protected void onDraw(Canvas canvas) {
@@ -573,19 +626,22 @@ public final class PressureGestureSettingsActivity extends Activity {
             float bottom = getHeight() * 0.94f;
             canvas.drawRoundRect(left, top, right, bottom, Ui.dp(getContext(), 22),
                     Ui.dp(getContext(), 22), screenPaint);
-            float cx = left + (right - left) * prefs.getInt(
-                    ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
-                    ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT) / 100f;
-            float cy = top + (bottom - top) * prefs.getInt(
-                    ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
-                    ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT) / 100f;
-            float radius = Math.min(right - left, bottom - top)
-                    * prefs.getInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
-                    ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT) / 100f;
-            if (pressInside) circlePaint.setColor(0xff287d4d);
-            else circlePaint.setColor(Ui.ACCENT);
-            canvas.drawCircle(cx, cy, radius, circlePaint);
-            canvas.drawCircle(cx, cy, Ui.dp(getContext(), 5), centerPaint);
+            List<PressureTrigger> triggers = store.getPressureTriggers();
+            float scaleX = right - left;
+            float scaleY = bottom - top;
+            float radiusScale = Math.min(scaleX, scaleY);
+            for (int index = 0; index < triggers.size(); index++) {
+                PressureTrigger trigger = triggers.get(index);
+                circlePaint.setColor(trigger.enabled ? Ui.ACCENT : 0xff9da3b4);
+                float cx = left + scaleX * trigger.centerXPercent / 100f;
+                float cy = top + scaleY * trigger.centerYPercent / 100f;
+                float radius = radiusScale * trigger.radiusPercent / 100f;
+                canvas.drawCircle(cx, cy, radius, circlePaint);
+                centerPaint.setColor(trigger.enabled ? 0x555a67f2 : 0x335f6475);
+                canvas.drawCircle(cx, cy, Ui.dp(getContext(), 5), centerPaint);
+                labelPaint.setColor(trigger.enabled ? Ui.MUTED : 0xff9da3b4);
+                canvas.drawText(String.valueOf(index + 1), cx, cy + Ui.dp(getContext(), 4), labelPaint);
+            }
             canvas.drawText(calibrationCapture ? "实际屏幕校准中（此处不是校准区域）" : "按压范围预览",
                     getWidth() / 2f, bottom - Ui.dp(getContext(), 12), labelPaint);
         }

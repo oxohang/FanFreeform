@@ -2,7 +2,9 @@
 .idea/
 local.properties
 **/build/
-*.iml
+.codex-build/
+release-archive/
+releases/
 captures/
+*.iml
 .DS_Store
-

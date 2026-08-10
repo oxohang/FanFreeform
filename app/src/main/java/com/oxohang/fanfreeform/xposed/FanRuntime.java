@@ -33,9 +33,11 @@ import android.view.WindowManager;
 import android.view.WindowMetrics;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
+import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.PressureGesturePolicy;
 import com.oxohang.fanfreeform.config.PressureHapticFeedback;
 import com.oxohang.fanfreeform.config.PressurePulseRecognizer;
+import com.oxohang.fanfreeform.config.PressureTrigger;
 import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 
 import java.util.ArrayList;
@@ -47,9 +49,15 @@ import java.util.Map;
 import de.robv.android.xposed.XposedHelpers;
 
 final class FanRuntime {
-    private static final long BOTTOM_HONEYCOMB_SETTLE_MS = 80L;
     private static final float BOTTOM_HONEYCOMB_SETTLE_DP = 8f;
     private static final float BOTTOM_HONEYCOMB_FAN_GAP_DP = 10f;
+    private static final long PRESSURE_CANDIDATE_TIMEOUT_MS = 5000L;
+    private static final long PRESSURE_SELECTION_SENSOR_IDLE_MS = 180L;
+    private static final long PRESSURE_CALIBRATION_INACTIVITY_TIMEOUT_MS = 120_000L;
+    private static final long SYSTEM_RECENTS_FAST_WATCH_MS = 5000L;
+    private static final long SYSTEM_RECENTS_SLOW_WATCH_MS = 120_000L;
+    private static final long SYSTEM_RECENTS_IDLE_WATCH_MS = 10_000L;
+    private static final long SYSTEM_RECENTS_MAX_WATCH_MS = 10L * 60L * 1000L;
     private enum State {
         IDLE, ARMED, SIDE_ARMED, CLAIMED, ACTIVE, HONEYCOMB,
         TASKS_LOADING, TASKS, CANCELLED
@@ -77,6 +85,8 @@ final class FanRuntime {
     private final InputSourceCoordinator inputSources = new InputSourceCoordinator();
     private final float density;
     private final float directionDecisionDistance;
+    private final float cornerTapSlop;
+    private final long cornerTapTimeoutMs;
     private final float sideDirectionSlop;
     private final float sideVerticalFloor;
     private final Rect cachedDisplayBounds = new Rect();
@@ -89,11 +99,13 @@ final class FanRuntime {
     private volatile List<RuntimeTarget> honeycombTargets = Collections.emptyList();
     private volatile List<RuntimeTarget> sideTargets = Collections.emptyList();
     private volatile List<RuntimeTarget> pressureTargets = Collections.emptyList();
+    private volatile Map<Integer, RuntimeTarget> pressureActionTargets = Collections.emptyMap();
     private List<RuntimeTarget> activeTargets = Collections.emptyList();
     private State state = State.IDLE;
     private volatile int configRetryCount;
     private volatile boolean configRetryScheduled;
     private volatile boolean configLoadQueued;
+    private volatile boolean configReloadPending;
     private volatile boolean cornerFallbackAvailable;
     private long lastOnDemandConfigReload;
     private GestureGeometry.Corner corner;
@@ -101,6 +113,8 @@ final class FanRuntime {
     private float downY;
     private int selected = -1;
     private boolean startedWithTriggerCapture;
+    private float capturedCornerTapMaxDistance;
+    private long capturedCornerTapDownTime;
     private boolean cornerTapIsOutsideWindow;
     private boolean sideTapIsOutsideWindow;
     private boolean sideBackRecognized;
@@ -109,6 +123,7 @@ final class FanRuntime {
     private boolean imeDismissTap;
     private boolean capturedImeDismissTap;
     private long ignoredCaptureDownTime = -1L;
+    private long ignoredPassthroughDownTime = -1L;
     private long systemPanelInputDownTime = -1L;
     private boolean activeSideList;
     private boolean activeSideFanList;
@@ -138,34 +153,52 @@ final class FanRuntime {
     private final Sensor pressureSensor;
     private boolean pressureSensorListening;
     private boolean pressureSensorHighRate;
+    private int pressureSensorMaxDelayUs = 31250;
     private boolean pressureHasSample;
     private float pressureLatestValue;
     private boolean pressureCandidate;
     private boolean pressureClaimed;
     private boolean pressureHoneycombActive;
+    private boolean pressureHoneycombSessionActive;
+    private boolean pressureHoneycombSelectionMoved;
     private boolean pressureCircularActive;
+    private boolean pressureOverlayCaptureSuppressed;
+    private PressureTrigger activePressureTrigger;
+    private PressureTrigger pressureSelectionTrigger;
+    private PressureTrigger pressureCalibrationTrigger;
     private float bottomSelectionPressureBaseline;
+    private boolean bottomPressureBaselinePending;
     private boolean bottomSelectionPressureArmed;
     private boolean bottomSelectionPressureConsumed;
     private RuntimeTarget bottomHoneycombSelectedTarget;
     private boolean bottomHoneycombPressureArmed;
     private boolean bottomHoneycombPressureConsumed;
+    private float pressureSelectionPressureBaseline;
+    private boolean pressureSelectionPressureBaselinePending;
+    private RuntimeTarget pressureSelectionPressureTarget;
+    private boolean pressureSelectionPressureArmed;
+    private boolean pressureSelectionPressureConsumed;
     private float pressureDownX;
     private float pressureDownY;
     private float pressureCurrentX;
     private float pressureCurrentY;
+    private boolean pressureInputFromCornerCapture;
     private float pressureBaseline;
     /** The sensor is on-demand, so the first sample after touch must become the baseline. */
     private boolean pressureBaselinePending;
     private Object pressureInputMonitor;
     private final PressurePulseRecognizer pressurePulseRecognizer =
             new PressurePulseRecognizer();
+    private final Runnable pressureCandidateTimeout = this::onPressureCandidateTimeout;
+    private final Runnable pressureSelectionSensorStop = this::stopIdlePressureSelectionSensor;
     private boolean pressureCalibrationPressActive;
     private boolean pressureCalibrationMovedOutside;
     private float pressureCalibrationBaseline;
     private float pressureCalibrationPeakDelta;
     private int pressureCalibrationAttempts;
     private final List<Float> pressureCalibrationDeltas = new ArrayList<>();
+    private boolean pressureCalibrationTimedOut;
+    private final Runnable pressureCalibrationTimeout = this::onPressureCalibrationTimeout;
     private final SensorEventListener pressureSensorListener = new SensorEventListener() {
         @Override public void onSensorChanged(SensorEvent event) {
             if (event.sensor.getType() != Sensor.TYPE_PRESSURE || event.values.length == 0) {
@@ -195,6 +228,10 @@ final class FanRuntime {
                     handlePressureSignal(signal, true, true);
                 }
             }
+            if (bottomPressureBaselinePending) {
+                bottomSelectionPressureBaseline = value;
+                bottomPressureBaselinePending = false;
+            }
             if (bottomSelectionPressureArmed && !bottomSelectionPressureConsumed
                     && state == State.ACTIVE && corner != null
                     && !activeSideList && !pressureCircularActive
@@ -213,6 +250,20 @@ final class FanRuntime {
                         bottomSelectionPressureBaseline, value);
                 if (delta >= config.pressureThreshold) {
                     triggerBottomHoneycombPressure();
+                }
+            }
+            if (pressureSelectionPressureArmed && !pressureSelectionPressureConsumed
+                    && pressureSelectionIsActive() && pressureSelectionPressureTarget != null
+                    && config.pressureThreshold > 0f) {
+                if (pressureSelectionPressureBaselinePending) {
+                    pressureSelectionPressureBaseline = value;
+                    pressureSelectionPressureBaselinePending = false;
+                } else {
+                    float delta = PressureGesturePolicy.positiveDelta(
+                            pressureSelectionPressureBaseline, value);
+                    if (delta >= config.pressureThreshold) {
+                        triggerPressureSelectionPressure();
+                    }
                 }
             }
         }
@@ -238,6 +289,7 @@ final class FanRuntime {
     private long authoritativePanelStateVersion;
     private volatile long systemPanelTouchBlockUntil;
     private int lastHapticSelection = -1;
+    private GestureGeometry.FanLayout cachedFanLayout;
     private float activeHoneycombReturnThreshold;
     private boolean geometryRefreshQueued;
     private long lastGeometryRefreshUptime;
@@ -259,10 +311,16 @@ final class FanRuntime {
         pressureSensorManager = context.getSystemService(SensorManager.class);
         pressureSensor = pressureSensorManager == null ? null
                 : pressureSensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        if (pressureSensor != null) {
+            int maxDelay = pressureSensor.getMaxDelay();
+            pressureSensorMaxDelayUs = maxDelay > 0 ? maxDelay : 31250;
+        }
         refreshDisplayGeometry();
         ViewConfiguration viewConfiguration = ViewConfiguration.get(context);
-        directionDecisionDistance = Math.max(viewConfiguration.getScaledTouchSlop(), 10 * density);
-        sideDirectionSlop = viewConfiguration.getScaledTouchSlop();
+        cornerTapSlop = viewConfiguration.getScaledTouchSlop();
+        cornerTapTimeoutMs = ViewConfiguration.getLongPressTimeout();
+        directionDecisionDistance = Math.max(cornerTapSlop, 10 * density);
+        sideDirectionSlop = cornerTapSlop;
         sideVerticalFloor = 24 * density;
         overlay = new FanOverlayController(context, mainHandler);
         honeycombOverlay = new HoneycombOverlayController(context, mainHandler);
@@ -287,7 +345,7 @@ final class FanRuntime {
         outsideGestures = new OutsideGestureRecognizer(mainHandler,
                 viewConfiguration, density, this::performOutsideAction);
         requestConfigReload();
-        context.getContentResolver().registerContentObserver(ConfigContract.URI, false,
+        context.getContentResolver().registerContentObserver(ConfigContract.RUNTIME_URI, false,
                 new ContentObserver(mainHandler) {
                     @Override public void onChange(boolean selfChange) { requestConfigReload(); }
                 });
@@ -305,6 +363,7 @@ final class FanRuntime {
                         BlurredWallpaperCache.clear();
                     }
                     if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                        systemRecentsWatchVersion++;
                         wheelSessionActive = false;
                         mainHandler.post(overlay::removeNow);
                         mainHandler.post(honeycombOverlay::removeNow);
@@ -377,12 +436,14 @@ final class FanRuntime {
     void completeNativeInputRegistration() {
         inputSources.completeNativeRegistration();
         updateInterfaceStatusAsync();
+        mainHandler.post(this::refreshTriggerCapture);
         Log.i("Input capability native_input=ready corner_fallback=inactive");
     }
 
     void failNativeInputRegistration() {
         inputSources.failNativeRegistration();
         updateInterfaceStatusAsync();
+        mainHandler.post(this::refreshTriggerCapture);
         Log.i("Input capability native_input=failed corner_fallback="
                 + (cornerFallbackAvailable ? "ready" : "waiting"));
     }
@@ -707,28 +768,58 @@ final class FanRuntime {
         }
     }
 
+    /** Copies the vendor input event and processes it on the main gesture looper. */
+    void postMotionEvent(MotionEvent event, Object inputMonitor) {
+        if (event == null) return;
+        final MotionEvent copy = MotionEvent.obtain(event);
+        mainHandler.post(() -> {
+            try {
+                onMotion(copy, inputMonitor);
+            } finally {
+                copy.recycle();
+            }
+        });
+    }
+
     private void handleMotion(MotionEvent event, Object inputMonitor) {
         int action = event.getActionMasked();
+        if (triggerCapture.isInjectedEvent(event)) return;
+        if (event.getDownTime() == ignoredPassthroughDownTime) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                ignoredPassthroughDownTime = -1L;
+            }
+            return;
+        }
+        if (triggerCapture.isPassthroughInProgress()) {
+            ignoredPassthroughDownTime = event.getDownTime();
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                ignoredPassthroughDownTime = -1L;
+            }
+            return;
+        }
         if (action == MotionEvent.ACTION_DOWN) {
             ensureDisplayGeometryCurrent();
+            pressureSelectionTrigger = null;
             bottomSelectionPressureBaseline = pressureLatestValue;
+            bottomPressureBaselinePending = false;
             bottomSelectionPressureArmed = false;
             bottomSelectionPressureConsumed = false;
             bottomHoneycombSelectedTarget = null;
             bottomHoneycombPressureArmed = false;
             bottomHoneycombPressureConsumed = false;
+            preparePressureSelectionForTouch();
         }
         int width = displayBounds().width();
         int height = displayBounds().height();
         float x = event.getX();
         float y = event.getY();
 
-        if (triggerCapture.isInjectedEvent(event)) return;
+        updateCapturedCornerTap(event, x, y);
         if (config.pressureCalibrationActive) {
             handlePressureCalibrationMotion(event, width, height);
             return;
         }
-        if (pressureInteractionBlocked()) {
+        if (pressureCandidate && pressureInteractionStateBlocked()) {
             cancelPressureGesture();
             pressureDebugOverlay.remove();
         }
@@ -772,7 +863,13 @@ final class FanRuntime {
         if (state == State.HONEYCOMB) {
             if (action == MotionEvent.ACTION_MOVE) {
                 float distance = GestureGeometry.distance(downX, downY, x, y);
-                if (!pressureHoneycombActive && honeycombGestureState.shouldExit(distance,
+                if (pressureHoneycombActive && !pressureHoneycombSelectionMoved) {
+                    if (distance <= directionDecisionDistance) return;
+                    pressureHoneycombSelectionMoved = true;
+                    Log.i("Pressure honeycomb selection unlocked after finger movement");
+                }
+                if (!pressureHoneycombSessionActive && !pressureHoneycombActive
+                        && honeycombGestureState.shouldExit(distance,
                         activeHoneycombReturnThreshold)) {
                     honeycombOverlay.removeNow();
                     state = State.ACTIVE;
@@ -802,7 +899,14 @@ final class FanRuntime {
                 return;
             }
             if (action == MotionEvent.ACTION_UP) {
-                honeycombOverlay.externalUp(x, y, false);
+                boolean allowPressureSelection = !pressureHoneycombActive
+                        || pressureHoneycombSelectionMoved
+                        || GestureGeometry.distance(downX, downY, x, y)
+                        > directionDecisionDistance;
+                if (pressureHoneycombActive && allowPressureSelection) {
+                    pressureHoneycombSelectionMoved = true;
+                }
+                honeycombOverlay.externalUp(x, y, !allowPressureSelection);
                 resetFan(false);
             }
             return;
@@ -887,7 +991,8 @@ final class FanRuntime {
                     systemSides.right, sideSafeTop, sideSafeBottom, 96 * density)
                     : null;
             GestureGeometry.Corner downSide = listSide;
-            if (!triggerCapture.isCapturing() && canStartBottom()) {
+            if (!inputSources.usesNativeInput() && !triggerCapture.isCapturing()
+                    && canStartBottom()) {
                 triggerCapture.update(true, config.hotWidthPercent, config.hotHeightPercent,
                         0, 0);
             }
@@ -914,6 +1019,28 @@ final class FanRuntime {
                     && !insideTrackedOrIme(x, y, tracked, ime);
             boolean imeActive = imeVisible || ime != null;
             if (imeActive || freeformActive) downSide = null;
+            PressureTrigger pressureTriggerAtDown = pressureGestureReady()
+                    ? pressureTriggerAt(x, y, width, height, false) : null;
+            if (pressureTriggerAtDown != null
+                    && beginPressureCandidate(x, y, inputMonitor,
+                    pressureTriggerAtDown)) {
+                boolean capturedByCorner = triggerCapture.isCapturing()
+                        && downCorner != null;
+                pressureInputFromCornerCapture = capturedByCorner;
+                if (capturedByCorner) {
+                    if (outsideEnabled && tracked != null && outsideTracked) {
+                        Insets reserves = sideGestureReserves();
+                        outsideGestures.onDown(x, y, tracked, width,
+                                reserves.left, reserves.right, event.getEventTime());
+                        imeDismissTap = imeActive;
+                    } else {
+                        beginCapturedCornerTap(x, y, event.getDownTime());
+                    }
+                }
+                Log.i("Pressure trigger reserved overlapping corner/side gesture area id="
+                        + pressureTriggerAtDown.id);
+                return;
+            }
             if (outsideEnabled && outsideTracked && imeActive) {
                 imeDismissTap = true;
                 if (systemEdgeSide == null) pilfer(inputMonitor);
@@ -945,12 +1072,6 @@ final class FanRuntime {
                         + " threshold=" + config.sideTriggerPercent + "% range="
                         + Math.round(sideSafeTop) + ".." + Math.round(sideSafeBottom));
                 return;
-            }
-            boolean existingGestureHasPriority = (systemEdgeSide != null && canStartSide())
-                    || (downSide != null && canStartSide())
-                    || (downCorner != null && canStartBottom());
-            if (!existingGestureHasPriority) {
-                beginPressureCandidate(x, y, width, height, event.getDownTime(), inputMonitor);
             }
             if (tracked != null) {
                 if (!outsideTracked) return;
@@ -1051,6 +1172,7 @@ final class FanRuntime {
             if (!triggerCapture.isCapturing()) pilfer(inputMonitor);
             outsideGestures.onCancel();
             state = State.CLAIMED;
+            cancelCapturedCornerTap();
             Log.i("Fan input claimed after inward-upward direction distance="
                     + Math.round(distance) + " capture="
                     + (triggerCapture.isCapturing() ? "window" : "pilfer"));
@@ -1087,6 +1209,7 @@ final class FanRuntime {
 
         if (action == MotionEvent.ACTION_UP) {
             cancelBottomHoneycombSettle();
+            boolean capturedApplicationTap = shouldPassthroughCapturedCornerTap(event);
             if (state == State.ACTIVE) {
                 if (activeSideList || pressureCircularActive) {
                     updateSideListSelection(x, y);
@@ -1109,10 +1232,13 @@ final class FanRuntime {
                         overlay.confirmAndHide(selected);
                         boolean landscape = isLandscape();
                         boolean fullscreen = pressureCircularActive
-                                ? !config.pressureOpenAsFreeform
+                                ? !(pressureSelectionTrigger != null
+                                ? pressureSelectionTrigger.openAsFreeform
+                                : config.pressureOpenAsFreeform)
                                 : activeSideList
                                 ? config.sideFullscreenFor(landscape)
                                 : config.bottomFullscreenFor(landscape);
+                        if (pressureCircularActive) clearPressureSelectionPressure(true);
                         if (fullscreen) {
                             launchFullscreenTarget(target, false);
                         } else {
@@ -1127,7 +1253,8 @@ final class FanRuntime {
                     Log.i("Fan released without icon hit; launch cancelled");
                 }
             } else if (state == State.IDLE) {
-                finishOutsideTap(x, y, event.getEventTime(), inputMonitor);
+                if (capturedApplicationTap) replayCapturedCornerTap();
+                else finishOutsideTap(x, y, event.getEventTime(), inputMonitor);
             } else if (state == State.ARMED && cornerTapIsOutsideWindow) {
                 finishOutsideTap(x, y, event.getEventTime(), inputMonitor);
             } else if (state == State.SIDE_ARMED && sideTapIsOutsideWindow) {
@@ -1142,12 +1269,9 @@ final class FanRuntime {
                     if (!sideSequenceCaptured) pilfer(inputMonitor);
                     finishOutsideTap(x, y, event.getEventTime(), inputMonitor);
                 }
-            } else if (state == State.ARMED && startedWithTriggerCapture
-                    && GestureGeometry.distance(downX, downY, x, y)
-                    <= directionDecisionDistance) {
-                int displayId = context.getDisplay() == null
-                        ? 0 : context.getDisplay().getDisplayId();
-                triggerCapture.passthroughTap(downX, downY, displayId);
+            } else if ((state == State.ARMED || state == State.CANCELLED
+                    || state == State.CLAIMED) && capturedApplicationTap) {
+                replayCapturedCornerTap();
             }
             if (state == State.IDLE) cancelPressureGesture();
             resetFan();
@@ -1218,6 +1342,11 @@ final class FanRuntime {
 
                     @Override public void onSelectionChanged(RuntimeTarget target) {
                         if (!config.bottomSecondPressureLaunchFor(isLandscape())) return;
+                        if (target == null) {
+                            bottomHoneycombSelectedTarget = null;
+                            bottomHoneycombPressureArmed = false;
+                            return;
+                        }
                         bottomHoneycombSelectedTarget = target;
                         bottomSelectionPressureBaseline = pressureLatestValue;
                         bottomHoneycombPressureArmed = true;
@@ -1241,34 +1370,50 @@ final class FanRuntime {
         if (!config.honeycombEnabledFor(isLandscape()) || honeycombTargets.isEmpty()) {
             return false;
         }
+        clearPressureSelectionPressure(true);
         pressureHoneycombActive = false;
+        pressureHoneycombSessionActive = true;
+        pressureSelectionTrigger = activePressureTrigger;
+        pressureHoneycombSelectionMoved = persistent;
+        pressureOverlayCaptureSuppressed = true;
         honeycombGestureState.enter();
-        overlay.hide();
+        overlay.removeNow();
         selected = -1;
         activeSideList = false;
         outsideCapture.remove();
+        triggerCapture.remove();
         outsideGestures.clearAll();
         downX = pressureDownX;
         downY = pressureDownY;
         corner = null;
         boolean shown = honeycombOverlay.show(honeycombTargets, null, x, y, config, persistent,
-                new HoneycombOverlayController.Listener() {
+                !persistent, new HoneycombOverlayController.Listener() {
                     @Override public void onLaunch(RuntimeTarget target) {
-                        if (config.pressureOpenAsFreeform) {
-                            freeform.launch(target, config,
-                                    FanRuntime.this::refreshOutsideCapture);
-                            refreshOutsideCaptureAfterLaunch();
-                        } else {
-                            launchHoneycombFullscreenTarget(target);
-                        }
+                        launchPressureTarget(target, false, pressureSelectionTrigger);
+                        resetFan(false);
+                        refreshTriggerCapture();
+                    }
+
+                    @Override public void onSelectionChanged(RuntimeTarget target) {
+                        if (target == null) clearPressureSelectionPressure(false);
+                        else armPressureSelectionPressure(target);
                     }
 
                     @Override public void onClosed() {
+                        clearPressureSelectionPressure(true);
+                        pressureHoneycombSessionActive = false;
+                        pressureHoneycombSelectionMoved = false;
+                        pressureOverlayCaptureSuppressed = false;
+                        if (pressureHoneycombActive) resetFan(false);
+                        refreshTriggerCapture();
                         refreshOutsideCapture();
                     }
                 });
         if (!shown) {
             honeycombGestureState.reset();
+            pressureHoneycombSessionActive = false;
+            pressureOverlayCaptureSuppressed = false;
+            refreshTriggerCapture();
             return false;
         }
         activeHoneycombReturnThreshold = Math.min(width, height)
@@ -1277,10 +1422,13 @@ final class FanRuntime {
             pressureHoneycombActive = false;
             honeycombGestureState.reset();
             state = State.IDLE;
+            honeycombOverlay.externalMove(x, y);
         } else {
             pressureHoneycombActive = true;
             state = State.HONEYCOMB;
-            honeycombOverlay.externalMove(x, y);
+            // Do not select the icon under the pressure point. The user must move the
+            // finger after the honeycomb appears before selection and second pressure
+            // detection become active.
         }
         Log.i("Honeycomb activated by pressure targets=" + honeycombTargets.size()
                 + " anchor=" + Math.round(x) + "," + Math.round(y)
@@ -1502,20 +1650,32 @@ final class FanRuntime {
         }
         if (config.haptic) vibrateTick();
         long version = ++systemRecentsWatchVersion;
-        mainHandler.postDelayed(() -> watchSystemRecents(version, 0, false), 100L);
+        long startedAt = android.os.SystemClock.uptimeMillis();
+        mainHandler.postDelayed(() -> watchSystemRecents(
+                version, 0, false, startedAt), 100L);
     }
 
-    private void watchSystemRecents(long version, int attempts, boolean wasVisible) {
+    private void watchSystemRecents(long version, int attempts, boolean wasVisible,
+                                    long startedAt) {
         if (version != systemRecentsWatchVersion) return;
+        long elapsed = android.os.SystemClock.uptimeMillis() - startedAt;
         boolean visible = systemRecentsLauncher.isVisible();
+        if (elapsed > SYSTEM_RECENTS_MAX_WATCH_MS) {
+            refreshOutsideCapture();
+            Log.i("System recents watch reached hard timeout; polling stopped");
+            return;
+        }
         if (visible) {
+            long delay = elapsed < SYSTEM_RECENTS_FAST_WATCH_MS ? 450L
+                    : elapsed < SYSTEM_RECENTS_SLOW_WATCH_MS ? 1500L
+                    : SYSTEM_RECENTS_IDLE_WATCH_MS;
             mainHandler.postDelayed(
-                    () -> watchSystemRecents(version, attempts + 1, true), 450L);
+                    () -> watchSystemRecents(version, attempts + 1, true, startedAt), delay);
             return;
         }
         if (!wasVisible && attempts < 12) {
             mainHandler.postDelayed(
-                    () -> watchSystemRecents(version, attempts + 1, false), 100L);
+                    () -> watchSystemRecents(version, attempts + 1, false, startedAt), 100L);
             return;
         }
         refreshOutsideCapture();
@@ -1531,7 +1691,54 @@ final class FanRuntime {
         this.corner = corner;
         downX = x;
         downY = y;
-        startedWithTriggerCapture = triggerCapture.isCapturing();
+        if (triggerCapture.isCapturing()) beginCapturedCornerTap(x, y, downTime);
+        else cancelCapturedCornerTap();
+    }
+
+    private void beginCapturedCornerTap(float x, float y, long downTime) {
+        startedWithTriggerCapture = true;
+        capturedCornerTapMaxDistance = 0f;
+        capturedCornerTapDownTime = downTime;
+        downX = x;
+        downY = y;
+    }
+
+    private void updateCapturedCornerTap(MotionEvent event, float x, float y) {
+        if (!startedWithTriggerCapture || event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            return;
+        }
+        int action = event.getActionMasked();
+        if (event.getPointerCount() != 1 || action == MotionEvent.ACTION_POINTER_DOWN
+                || action == MotionEvent.ACTION_POINTER_UP) {
+            cancelCapturedCornerTap();
+            return;
+        }
+        capturedCornerTapMaxDistance = Math.max(capturedCornerTapMaxDistance,
+                GestureGeometry.distance(downX, downY, x, y));
+        for (int historyIndex = 0; historyIndex < event.getHistorySize(); historyIndex++) {
+            capturedCornerTapMaxDistance = Math.max(capturedCornerTapMaxDistance,
+                    GestureGeometry.distance(downX, downY,
+                            event.getHistoricalX(0, historyIndex),
+                            event.getHistoricalY(0, historyIndex)));
+        }
+    }
+
+    private boolean shouldPassthroughCapturedCornerTap(MotionEvent event) {
+        if (!startedWithTriggerCapture || event.getPointerCount() != 1) return false;
+        long duration = event.getEventTime() - capturedCornerTapDownTime;
+        return duration >= 0L && duration <= cornerTapTimeoutMs
+                && capturedCornerTapMaxDistance <= cornerTapSlop;
+    }
+
+    private void replayCapturedCornerTap() {
+        int displayId = context.getDisplay() == null ? 0 : context.getDisplay().getDisplayId();
+        triggerCapture.passthroughTap(downX, downY, displayId);
+    }
+
+    private void cancelCapturedCornerTap() {
+        startedWithTriggerCapture = false;
+        capturedCornerTapMaxDistance = 0f;
+        capturedCornerTapDownTime = 0L;
     }
 
     private void armSide(GestureGeometry.Corner side, float x, float y,
@@ -1681,7 +1888,7 @@ final class FanRuntime {
         bottomHoneycombSettleAnchorY = y;
         bottomHoneycombSettleScheduled = true;
         currentHandler.postDelayed(bottomHoneycombSettleTrigger,
-                BOTTOM_HONEYCOMB_SETTLE_MS);
+                Math.max(0L, config.bottomHoneycombSettleMs));
     }
 
     private void triggerSettledBottomHoneycomb() {
@@ -1716,20 +1923,32 @@ final class FanRuntime {
                                 float radius, float iconDiameter,
                                 boolean emitHaptic) {
         int previous = selected;
-        int next = GestureGeometry.selection(corner, x, y, width, height, activeTargets.size(),
-                radius, iconDiameter, 6 * density, config.fanLayoutMode,
-                config.fanCustomOuterCount, config.fanCustomMiddleCount,
-                config.fanCustomInnerCount);
+        if (cachedFanLayout == null || cachedFanLayout.itemCount != activeTargets.size()
+                || cachedFanLayout.width != width || cachedFanLayout.height != height
+                || cachedFanLayout.radius != radius || cachedFanLayout.corner != corner
+                || cachedFanLayout.layoutMode != config.fanLayoutMode
+                || cachedFanLayout.outerCapacity != config.fanCustomOuterCount
+                || cachedFanLayout.middleCapacity != config.fanCustomMiddleCount
+                || cachedFanLayout.innerCapacity != config.fanCustomInnerCount) {
+            cachedFanLayout = GestureGeometry.fanLayout(corner, activeTargets.size(),
+                    width, height, radius, config.fanLayoutMode, config.fanCustomOuterCount,
+                    config.fanCustomMiddleCount, config.fanCustomInnerCount);
+        }
+        int next = cachedFanLayout.selection(x, y, iconDiameter, 6 * density);
         if (emitHaptic && config.haptic && next >= 0 && next != lastHapticSelection) {
             vibrateTick();
         }
         lastHapticSelection = next;
         selected = next;
-        if (previous < 0 && next >= 0 && corner != null
+        if (previous != next && corner != null
                 && config.bottomFirstPressureLaunchFor(isLandscape())
                 && pressureGestureReady()) {
-            bottomSelectionPressureBaseline = pressureLatestValue;
-            bottomSelectionPressureArmed = true;
+            if (next >= 0) {
+                bottomSelectionPressureBaseline = pressureLatestValue;
+                bottomSelectionPressureArmed = true;
+            } else {
+                bottomSelectionPressureArmed = false;
+            }
         }
         overlay.update(selected, x, y);
         return next;
@@ -1789,6 +2008,7 @@ final class FanRuntime {
     private void updateSideListSelection(float x, float y) {
         if (activeSideRingList) {
             overlay.setOpacity(1f);
+            int previous = selected;
             int next = GestureGeometry.sideRingSelection(x, y, activeTargets.size(),
                     sideRingCenterX, sideRingCenterY, sideRingRadius,
                     sideIconDiameter, 10 * density);
@@ -1796,6 +2016,13 @@ final class FanRuntime {
             if (config.haptic && next >= 0 && next != lastHapticSelection) {
                 vibrateTick();
                 lastHapticSelection = next;
+            }
+            if (pressureCircularActive && previous != next) {
+                if (next >= 0 && next < activeTargets.size()) {
+                    armPressureSelectionPressure(activeTargets.get(next));
+                } else {
+                    clearPressureSelectionPressure(false);
+                }
             }
             overlay.update(selected, x, y);
             return;
@@ -1890,7 +2117,7 @@ final class FanRuntime {
     private float selectionRadius(int width, int height) {
         float configured = Math.min(width, height) * config.selectionRadiusPercent / 100f;
         return GestureGeometry.effectiveRadius(activeTargets.size(), configured,
-                28 * density, 6 * density, config.fanLayoutMode,
+                config.iconSizeDp * density, 6 * density, config.fanLayoutMode,
                 config.fanCustomOuterCount, config.fanCustomMiddleCount,
                 config.fanCustomInnerCount);
     }
@@ -1921,7 +2148,7 @@ final class FanRuntime {
         state = State.IDLE;
         corner = null;
         selected = -1;
-        startedWithTriggerCapture = false;
+        cancelCapturedCornerTap();
         cornerTapIsOutsideWindow = false;
         sideTapIsOutsideWindow = false;
         sideBackRecognized = false;
@@ -1946,15 +2173,52 @@ final class FanRuntime {
         sideListEntered = false;
         lastHapticSelection = -1;
         pressureHoneycombActive = false;
+        pressureHoneycombSessionActive = false;
+        pressureHoneycombSelectionMoved = false;
         pressureCircularActive = false;
+        pressureOverlayCaptureSuppressed = false;
+        activePressureTrigger = null;
+        pressureCalibrationTrigger = null;
+        bottomSelectionPressureArmed = false;
+        bottomSelectionPressureConsumed = false;
+        bottomHoneycombPressureArmed = false;
+        bottomHoneycombPressureConsumed = false;
+        bottomHoneycombSelectedTarget = null;
+        bottomPressureBaselinePending = false;
+        clearPressureSelectionPressure(true);
         if (!config.pressureShowPosition) pressureDebugOverlay.remove();
     }
 
+    private void onPressureCandidateTimeout() {
+        if (!pressureCandidate) return;
+        cancelPressureGesture();
+        Log.i("Pressure candidate timed out; sensor and orb released");
+    }
+
+    private void stopIdlePressureSelectionSensor() {
+        if (pressureSelectionPressureArmed || pressureSelectionPressureTarget != null
+                || pressureCandidate || bottomSelectionPressureArmed
+                || bottomHoneycombPressureArmed || config.pressureCalibrationActive) return;
+        setPressureSensorRate(false);
+    }
+
+    private void onPressureCalibrationTimeout() {
+        if (!config.pressureCalibrationActive || pressureCalibrationTimedOut) return;
+        pressureCalibrationTimedOut = true;
+        pressureCalibrationPressActive = false;
+        pressureCalibrationMovedOutside = false;
+        pressureCalibrationTrigger = null;
+        stopPressureSensor();
+        pressureDebugOverlay.remove();
+        finishPressureCalibration();
+        Log.i("Pressure calibration expired after inactivity; sensor released");
+    }
+
     private boolean pressureGestureReady() {
-        return runtimeReady() && pressureSensor != null
-                && !pressureInteractionBlocked()
-                && config.pressureGestureEnabled && config.pressureCalibrated
-                && config.pressureThreshold > 0f;
+        if (!config.pressureGestureEnabled || !config.pressureCalibrated
+                || !(config.pressureThreshold > 0f) || config.pressureTriggers.isEmpty()
+                || pressureSensor == null) return false;
+        return runtimeReady() && !pressureInteractionBlocked();
     }
 
     private boolean pressureSensorConfigured() {
@@ -1967,28 +2231,42 @@ final class FanRuntime {
         if (!pressureSensorConfigured() || isLandscape()
                 || (!config.bottomFirstPressureLaunchFor(false)
                 && !config.bottomSecondPressureLaunchFor(false))) return;
-        startPressureSensor(true);
+        bottomPressureBaselinePending = true;
+        startPressureSensor(false);
     }
 
     private void handlePressureCalibrationMotion(MotionEvent event, int width, int height) {
-        if (pressureInteractionBlocked()) {
+        int action = event.getActionMasked();
+        if (!displayInteractiveUnlocked()) {
             pressureCalibrationPressActive = false;
             pressureCalibrationMovedOutside = false;
+            pressureCalibrationTrigger = null;
+            stopPressureSensor();
             return;
         }
-        int action = event.getActionMasked();
+        if (pressureCalibrationTimedOut || pressureInteractionStateBlocked()
+                || (action == MotionEvent.ACTION_DOWN && inputMethodActive())) {
+            pressureCalibrationPressActive = false;
+            pressureCalibrationMovedOutside = false;
+            pressureCalibrationTrigger = null;
+            setPressureSensorRate(false);
+            return;
+        }
         if (event.getPointerCount() > 1
                 || action == MotionEvent.ACTION_POINTER_DOWN
                 || action == MotionEvent.ACTION_POINTER_UP) {
             pressureCalibrationPressActive = false;
             pressureCalibrationMovedOutside = true;
+            pressureCalibrationTrigger = null;
+            setPressureSensorRate(false);
             return;
         }
         float x = event.getX();
         float y = event.getY();
         if (action == MotionEvent.ACTION_DOWN) {
             pressureCalibrationMovedOutside = false;
-            if (!pressureHasSample || !pressurePointInside(x, y, width, height)) {
+            pressureCalibrationTrigger = pressureTriggerAt(x, y, width, height, false);
+            if (!pressureHasSample || pressureCalibrationTrigger == null) {
                 pressureCalibrationPressActive = false;
                 Log.i("Pressure calibration ignored touch outside configured circle x="
                         + Math.round(x) + " y=" + Math.round(y));
@@ -2003,7 +2281,7 @@ final class FanRuntime {
             return;
         }
         if (pressureCalibrationPressActive && action == MotionEvent.ACTION_MOVE
-                && !pressurePointInside(x, y, width, height)) {
+                && !pressurePointInside(x, y, width, height, pressureCalibrationTrigger)) {
             pressureCalibrationMovedOutside = true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -2013,6 +2291,8 @@ final class FanRuntime {
             }
             pressureCalibrationPressActive = false;
             pressureCalibrationMovedOutside = false;
+            pressureCalibrationTrigger = null;
+            setPressureSensorRate(false);
         }
     }
 
@@ -2030,10 +2310,14 @@ final class FanRuntime {
         Log.i("Pressure calibration sample attempt=" + pressureCalibrationAttempts
                 + " valid=" + valid + " delta=" + safeDelta);
         if (pressureCalibrationAttempts >= 5) finishPressureCalibration();
-        else setPressureSensorRate(false);
+        else {
+            setPressureSensorRate(false);
+            schedulePressureCalibrationTimeout();
+        }
     }
 
     private void finishPressureCalibration() {
+        mainHandler.removeCallbacks(pressureCalibrationTimeout);
         PressureGesturePolicy.CalibrationResult result =
                 PressureGesturePolicy.calibrate(pressureCalibrationDeltas);
         Bundle extras = new Bundle();
@@ -2058,57 +2342,78 @@ final class FanRuntime {
     }
 
     private boolean pressureInteractionBlocked() {
+        return pressureInteractionStateBlocked() || inputMethodActive();
+    }
+
+    private boolean pressureInteractionStateBlocked() {
         return isLandscape() || imeVisible || shadeExpanded || controlCenterExpanded
-                || android.os.SystemClock.uptimeMillis() < systemPanelTouchBlockUntil
-                || inputMethodActive();
+                || android.os.SystemClock.uptimeMillis() < systemPanelTouchBlockUntil;
     }
 
     private void syncPressureDebugOverlay() {
-        if (!config.pressureShowPosition && !config.pressureCalibrationActive
+        boolean positionReady = config.pressureShowPosition && runtimeReady();
+        boolean calibrationReady = config.pressureCalibrationActive
+                && displayInteractiveUnlocked();
+        if (pressureCalibrationTimedOut || (!positionReady && !calibrationReady)
                 || pressureInteractionBlocked()) {
             pressureDebugOverlay.remove();
             return;
         }
-        pressureDebugOverlay.show(config.pressureCenterXPercent,
-                config.pressureCenterYPercent, config.pressureRadiusPercent);
+        if (!config.pressureTriggers.isEmpty()) {
+            pressureDebugOverlay.show(config.pressureTriggers);
+        } else {
+            pressureDebugOverlay.remove();
+        }
     }
 
     private boolean pressurePointInside(float x, float y, int width, int height) {
-        return PressureGesturePolicy.isInsideCircle(x, y, width, height,
-                config.pressureCenterXPercent, config.pressureCenterYPercent,
-                config.pressureRadiusPercent);
+        PressureTrigger trigger = activePressureTrigger;
+        return trigger != null && pressurePointInside(x, y, width, height, trigger);
     }
 
-    private boolean beginPressureCandidate(float x, float y, int width, int height,
-                                           long downTime, Object inputMonitor) {
-        if (!pressureGestureReady()) return false;
-        if (!pressurePointInside(x, y, width, height)) {
-            float centerX = width * config.pressureCenterXPercent / 100f;
-            float centerY = height * config.pressureCenterYPercent / 100f;
-            float radius = Math.min(width, height) * config.pressureRadiusPercent / 100f;
-            Log.i("Pressure touch outside circle x=" + Math.round(x)
-                    + " y=" + Math.round(y) + " display=" + width + "x" + height
-                    + " center=" + Math.round(centerX) + "," + Math.round(centerY)
-                    + " radius=" + Math.round(radius));
-            return false;
+    private boolean pressurePointInside(float x, float y, int width, int height,
+                                        PressureTrigger trigger) {
+        return trigger != null && PressureGesturePolicy.isInsideCircle(x, y, width, height,
+                trigger.centerXPercent, trigger.centerYPercent, trigger.radiusPercent);
+    }
+
+    private PressureTrigger pressureTriggerAt(float x, float y, int width, int height,
+                                               boolean includeDisabled) {
+        for (PressureTrigger trigger : config.pressureTriggers) {
+            if ((includeDisabled || trigger.enabled)
+                    && pressurePointInside(x, y, width, height, trigger)) return trigger;
         }
+        return null;
+    }
+
+    private boolean beginPressureCandidate(float x, float y, Object inputMonitor,
+                                           PressureTrigger trigger) {
+        if (trigger == null) return false;
         pressureCandidate = true;
         pressureClaimed = false;
         pressureDownX = x;
         pressureDownY = y;
         pressureCurrentX = x;
         pressureCurrentY = y;
+        activePressureTrigger = trigger;
         // Do not reuse a sample from an earlier gesture. Sensor listening starts below,
         // and the first sample delivered after this touch establishes a fresh baseline.
         pressureBaseline = 0f;
         pressureBaselinePending = true;
         pressureInputMonitor = inputMonitor;
+        pressureInputFromCornerCapture = inputMonitor == null
+                && triggerCapture.isCapturing();
         pressurePulseRecognizer.start();
-        pressureDebugOverlay.showOrb(config.pressureCenterXPercent,
-                config.pressureCenterYPercent, config.pressureRadiusPercent,
-                config.pressureShowPosition, config.pressureOrbTheme,
-                config.pressureOrbSizePercent);
+        if (config.pressureThemeEnabled) {
+            pressureDebugOverlay.showOrb(trigger.centerXPercent, trigger.centerYPercent,
+                    trigger.radiusPercent, config.pressureShowPosition,
+                    config.pressureOrbTheme, config.pressureOrbSizePercent);
+        } else if (config.pressureShowPosition) {
+            pressureDebugOverlay.show(config.pressureTriggers);
+        }
         setPressureSensorRate(true);
+        mainHandler.removeCallbacks(pressureCandidateTimeout);
+        mainHandler.postDelayed(pressureCandidateTimeout, PRESSURE_CANDIDATE_TIMEOUT_MS);
         Log.i("Pressure candidate armed x=" + Math.round(x) + " y=" + Math.round(y)
                 + " baseline=" + pressureBaseline);
         return true;
@@ -2116,7 +2421,7 @@ final class FanRuntime {
 
     private void updatePressureCandidate(float x, float y, int width, int height) {
         if (!pressureCandidate) return;
-        if (!pressurePointInside(x, y, width, height)) {
+        if (!pressurePointInside(x, y, width, height, activePressureTrigger)) {
             cancelPressureGesture();
             return;
         }
@@ -2125,6 +2430,7 @@ final class FanRuntime {
     }
 
     private void cancelPressureGesture() {
+        mainHandler.removeCallbacks(pressureCandidateTimeout);
         pressurePulseRecognizer.cancel();
         pressureDebugOverlay.hideOrb();
         pressureCandidate = false;
@@ -2132,16 +2438,23 @@ final class FanRuntime {
         pressureInputMonitor = null;
         pressureBaseline = 0f;
         pressureBaselinePending = false;
+        activePressureTrigger = null;
+        pressureInputFromCornerCapture = false;
         setPressureSensorRate(false);
+        pressureSelectionTrigger = null;
     }
 
     private void finishPressureCandidate() {
+        mainHandler.removeCallbacks(pressureCandidateTimeout);
         pressurePulseRecognizer.cancel();
         pressureDebugOverlay.hideOrb();
         pressureCandidate = false;
         pressureInputMonitor = null;
         pressureBaselinePending = false;
+        activePressureTrigger = null;
+        pressureInputFromCornerCapture = false;
         setPressureSensorRate(false);
+        pressureSelectionTrigger = null;
     }
 
     private void handlePressureSignal(PressurePulseRecognizer.Signal signal,
@@ -2150,13 +2463,23 @@ final class FanRuntime {
         if (config.haptic && pressureWave && config.pressureSecondHapticEnabled) {
             vibratePressureStage();
         }
-        executePressureAction(config.pressureAction, touchActive);
+        PressureTrigger trigger = activePressureTrigger;
+        executePressureAction(trigger == null ? config.pressureAction : trigger.action,
+                touchActive, trigger);
     }
 
-    private void executePressureAction(int action, boolean touchActive) {
+    private void executePressureAction(int action, boolean touchActive,
+                                       PressureTrigger trigger) {
         if (!pressureCandidate) return;
+        RuntimeTarget singleTarget = trigger == null ? null
+                : pressureActionTargets.get(trigger.id);
         boolean actionAvailable = action == ConfigContract.PRESSURE_ACTION_HOME
-                || (action == ConfigContract.PRESSURE_ACTION_CIRCULAR
+                || action == ConfigContract.PRESSURE_ACTION_LOCK
+                || action == ConfigContract.PRESSURE_ACTION_SCREENSHOT
+                || action == ConfigContract.PRESSURE_ACTION_BACK
+                || (action == ConfigContract.PRESSURE_ACTION_SINGLE_TARGET
+                ? singleTarget != null
+                : action == ConfigContract.PRESSURE_ACTION_CIRCULAR
                 ? !pressureTargets.isEmpty()
                 : !honeycombTargets.isEmpty()
                 && config.honeycombEnabledFor(isLandscape()));
@@ -2167,12 +2490,21 @@ final class FanRuntime {
             finishPressureCandidate();
             return;
         }
-        if (touchActive && !pilfer(pressureInputMonitor)) {
-            Log.i("Pressure threshold reached but input takeover unavailable");
-            finishPressureCandidate();
-            return;
+        if (touchActive) {
+            boolean inputTaken = pressureInputFromCornerCapture
+                    || pilfer(pressureInputMonitor);
+            if (!inputTaken) {
+                Log.i("Pressure threshold reached but input takeover unavailable");
+                finishPressureCandidate();
+                return;
+            }
+            pressureClaimed = true;
+            cancelCapturedCornerTap();
+            outsideGestures.clearAll();
+            imeDismissTap = false;
+        } else {
+            pressureClaimed = false;
         }
-        pressureClaimed = touchActive;
         boolean activated;
         if (action == ConfigContract.PRESSURE_ACTION_HOME) {
             activated = launchHomeScreen();
@@ -2180,6 +2512,21 @@ final class FanRuntime {
                 finishPressureCandidate();
                 resetFan();
                 Log.i("Pressure gesture returned to home");
+            }
+        } else if (action == ConfigContract.PRESSURE_ACTION_LOCK) {
+            activated = lockScreen();
+            if (activated) finishPressureCandidate();
+        } else if (action == ConfigContract.PRESSURE_ACTION_SCREENSHOT) {
+            activated = takeScreenshot();
+            if (activated) finishPressureCandidate();
+        } else if (action == ConfigContract.PRESSURE_ACTION_BACK) {
+            activated = dispatchBack();
+            if (activated) finishPressureCandidate();
+        } else if (action == ConfigContract.PRESSURE_ACTION_SINGLE_TARGET) {
+            activated = singleTarget != null;
+            if (activated) {
+                launchPressureTarget(singleTarget, false, trigger);
+                finishPressureCandidate();
             }
         } else if (action == ConfigContract.PRESSURE_ACTION_CIRCULAR) {
             activated = activatePressureCircular(pressureCurrentX, pressureCurrentY,
@@ -2217,16 +2564,95 @@ final class FanRuntime {
         }
     }
 
+    private boolean lockScreen() {
+        try {
+            PowerManager power = context.getSystemService(PowerManager.class);
+            if (power == null) return false;
+            XposedHelpers.callMethod(power, "goToSleep", android.os.SystemClock.uptimeMillis());
+            Log.i("Pressure gesture requested screen lock");
+            return true;
+        } catch (Throwable error) {
+            Log.e("Cannot lock screen from pressure gesture", error);
+            return false;
+        }
+    }
+
+    private boolean dispatchBack() {
+        int displayId = context.getDisplay() == null ? 0
+                : context.getDisplay().getDisplayId();
+        triggerCapture.dispatchBack(displayId);
+        return true;
+    }
+
+    private boolean takeScreenshot() {
+        if (takeScreenshotThroughCommandQueue()) return true;
+        int displayId = context.getDisplay() == null ? 0
+                : context.getDisplay().getDisplayId();
+        // SYSRQ is the system screenshot key on AOSP and is a useful fallback on
+        // HyperOS builds where the CommandQueue method was renamed.
+        triggerCapture.dispatchKeyCode(android.view.KeyEvent.KEYCODE_SYSRQ, displayId);
+        Log.i("Pressure gesture requested screenshot fallback");
+        return true;
+    }
+
+    private boolean takeScreenshotThroughCommandQueue() {
+        try {
+            ClassLoader loader = context.getClassLoader();
+            Class<?> dependencyClass = XposedHelpers.findClass(
+                    "com.android.systemui.Dependency", loader);
+            Class<?> commandQueueClass = XposedHelpers.findClass(
+                    "com.android.systemui.statusbar.CommandQueue", loader);
+            Object dependency = XposedHelpers.getStaticObjectField(
+                    dependencyClass, "sDependency");
+            if (dependency == null) return false;
+            Object commandQueue = XposedHelpers.callMethod(
+                    dependency, "getDependencyInner", commandQueueClass);
+            if (commandQueue == null) return false;
+            for (java.lang.reflect.Method method : commandQueue.getClass().getMethods()) {
+                if (!"takeScreenshot".equals(method.getName())) continue;
+                Class<?>[] types = method.getParameterTypes();
+                if (types.length > 5) continue;
+                Object[] args = new Object[types.length];
+                int integerIndex = 0;
+                for (int i = 0; i < types.length; i++) {
+                    Class<?> type = types[i];
+                    if (type == int.class || type == Integer.TYPE) {
+                        args[i] = integerIndex++ == 0 ? 1 : 0;
+                    } else if (type == boolean.class || type == Boolean.TYPE) {
+                        args[i] = true;
+                    } else if (type == long.class || type == Long.TYPE) {
+                        args[i] = 0L;
+                    } else {
+                        args[i] = null;
+                    }
+                }
+                method.setAccessible(true);
+                method.invoke(commandQueue, args);
+                Log.i("Pressure gesture requested screenshot through CommandQueue method="
+                        + method);
+                return true;
+            }
+        } catch (Throwable error) {
+            Log.e("CommandQueue screenshot entry unavailable", error);
+        }
+        return false;
+    }
+
     private boolean activatePressureCircular(float x, float y, int width, int height,
                                                boolean persistent) {
         if (pressureTargets.isEmpty()) return false;
+        PressureTrigger trigger = activePressureTrigger;
+        if (trigger == null) return false;
+        pressureSelectionTrigger = trigger;
         pressureCircularActive = false;
         pressureHoneycombActive = false;
+        pressureOverlayCaptureSuppressed = true;
+        triggerCapture.remove();
         activeTargets = pressureTargets;
         activeSideList = true;
         activeSideFanList = false;
         activeSideRingList = true;
-        corner = width * config.pressureCenterXPercent / 100f <= width / 2f
+        corner = width * trigger.centerXPercent / 100f <= width / 2f
                 ? GestureGeometry.Corner.LEFT
                 : GestureGeometry.Corner.RIGHT;
         downX = pressureDownX;
@@ -2234,12 +2660,12 @@ final class FanRuntime {
         selected = -1;
         outsideCapture.remove();
         outsideGestures.clearAll();
-        float centerX = width * config.pressureCenterXPercent / 100f;
-        float centerY = height * config.pressureCenterYPercent / 100f;
+        float centerX = width * trigger.centerXPercent / 100f;
+        float centerY = height * trigger.centerYPercent / 100f;
         float pressureRadius = Math.min(width, height)
-                * config.pressureRadiusPercent / 100f;
+                * trigger.radiusPercent / 100f;
         sideIconDiameter = Math.max(28 * density,
-                Math.min(config.iconSizeDp * density, 64 * density));
+                Math.min(config.iconSizeDp * density, 96 * density));
         float gap = 10 * density;
         float automaticRadius = GestureGeometry.sideRingRadius(
                 activeTargets.size(), sideIconDiameter, gap);
@@ -2271,15 +2697,27 @@ final class FanRuntime {
                     new FanOverlayController.WheelListener() {
                         @Override public void onLaunch(int index) {
                             if (index < 0 || index >= circularTargets.size()) return;
-                            launchPressureTarget(circularTargets.get(index));
+                            launchPressureTarget(circularTargets.get(index), false,
+                                    pressureSelectionTrigger);
+                            resetFan(false);
+                            refreshTriggerCapture();
                         }
 
                         @Override public void onDismiss() {
+                            clearPressureSelectionPressure(true);
+                            pressureCircularActive = false;
+                            pressureOverlayCaptureSuppressed = false;
+                            refreshTriggerCapture();
                             refreshOutsideCapture();
                         }
 
                         @Override public void onSelectionChanged(int index) {
                             if (config.haptic) vibrateTick();
+                            if (index >= 0 && index < circularTargets.size()) {
+                                armPressureSelectionPressure(circularTargets.get(index));
+                            } else {
+                                clearPressureSelectionPressure(false);
+                            }
                         }
                     });
             state = State.IDLE;
@@ -2295,13 +2733,28 @@ final class FanRuntime {
         overlay.setSelectionTransformLevel(config.selectionTransformLevel);
         state = State.ACTIVE;
         pressureCircularActive = true;
+        triggerCapture.remove();
         lastHapticSelection = -1;
         updateSideListSelection(x, y);
         return true;
     }
 
     private void launchPressureTarget(RuntimeTarget target) {
-        if (config.pressureOpenAsFreeform) {
+        launchPressureTarget(target, false);
+    }
+
+    private void launchPressureTarget(RuntimeTarget target, boolean invertLaunchMode) {
+        clearPressureSelectionPressure(true);
+        launchPressureTarget(target, invertLaunchMode, null);
+    }
+
+    private void launchPressureTarget(RuntimeTarget target, boolean invertLaunchMode,
+                                      PressureTrigger trigger) {
+        clearPressureSelectionPressure(true);
+        boolean openAsFreeform = trigger != null
+                ? trigger.openAsFreeform : config.pressureOpenAsFreeform;
+        if (invertLaunchMode) openAsFreeform = !openAsFreeform;
+        if (openAsFreeform) {
             freeform.launch(target, config, this::refreshOutsideCapture);
             refreshOutsideCaptureAfterLaunch();
         } else {
@@ -2309,17 +2762,104 @@ final class FanRuntime {
         }
     }
 
+    private boolean pressureSelectionIsActive() {
+        return pressureCircularActive || pressureHoneycombActive
+                || honeycombOverlay.isVisible() || overlay.isWheelVisible();
+    }
+
+    private boolean pressureHeavyLaunchEnabledFor(PressureTrigger trigger) {
+        return trigger != null ? trigger.heavyLaunchEnabled
+                : config.pressureHeavyLaunchEnabled;
+    }
+
+    private void preparePressureSelectionForTouch() {
+        boolean pickerActive = pressureSelectionIsActive();
+        if (pickerActive && pressureSelectionPressureTarget != null
+                && pressureHeavyLaunchEnabledFor(pressureSelectionTrigger)
+                && pressureSensorConfigured()) {
+            mainHandler.removeCallbacks(pressureSelectionSensorStop);
+            pressureSelectionPressureBaseline = pressureLatestValue;
+            pressureSelectionPressureBaselinePending = true;
+            pressureSelectionPressureArmed = true;
+            pressureSelectionPressureConsumed = false;
+            setPressureSensorRate(true);
+            return;
+        }
+        clearPressureSelectionPressure(!pickerActive
+                && !config.pressureCalibrationActive);
+    }
+
+    private void armPressureSelectionPressure(RuntimeTarget target) {
+        mainHandler.removeCallbacks(pressureSelectionSensorStop);
+        if (target == null || !pressureHeavyLaunchEnabledFor(pressureSelectionTrigger)
+                || !pressureSensorConfigured()) {
+            clearPressureSelectionPressure(true);
+            return;
+        }
+        pressureSelectionPressureTarget = target;
+        pressureSelectionPressureBaseline = pressureLatestValue;
+        pressureSelectionPressureBaselinePending = true;
+        pressureSelectionPressureArmed = true;
+        pressureSelectionPressureConsumed = false;
+        setPressureSensorRate(true);
+    }
+
+    private void clearPressureSelectionPressure(boolean stopSensor) {
+        mainHandler.removeCallbacks(pressureSelectionSensorStop);
+        pressureSelectionPressureArmed = false;
+        pressureSelectionPressureBaselinePending = false;
+        pressureSelectionPressureTarget = null;
+        pressureSelectionPressureConsumed = false;
+        if (stopSensor) setPressureSensorRate(false);
+        else mainHandler.postDelayed(pressureSelectionSensorStop,
+                PRESSURE_SELECTION_SENSOR_IDLE_MS);
+    }
+
+    private void triggerPressureSelectionPressure() {
+        if (!pressureSelectionPressureArmed || pressureSelectionPressureConsumed
+                || !pressureSelectionIsActive() || pressureSelectionPressureTarget == null) {
+            return;
+        }
+        RuntimeTarget target = pressureSelectionPressureTarget;
+        pressureSelectionPressureConsumed = true;
+        if (config.haptic && config.pressureSecondHapticEnabled) {
+            vibratePressureStage();
+        }
+        honeycombOverlay.removeNow();
+        overlay.removeNow();
+        pressureHoneycombActive = false;
+        pressureCircularActive = false;
+        launchPressureTarget(target, true, pressureSelectionTrigger);
+        outsideGestures.clearAll();
+        resetFan(false);
+        refreshTriggerCapture();
+        Log.i("Pressure selection heavy launch toggled mode package=" + target.packageName);
+    }
+
     private void refreshPressureSensor() {
-        if (config.pressureCalibrationActive && pressureSensor != null) {
+        if (!displayInteractiveUnlocked()) {
+            cancelPressureGesture();
+            stopPressureSensor();
+            return;
+        }
+        if (config.pressureCalibrationActive && !pressureCalibrationTimedOut
+                && pressureSensor != null) {
             startPressureSensor(false);
         } else {
             cancelPressureGesture();
-            stopPressureSensor();
         }
     }
 
+    private int sensorPeriodUs(boolean highRate) {
+        int mode = config == null ? ConfigContract.PRESSURE_SENSOR_RATE_BALANCED
+                : config.pressureSensorRateMode;
+        if (mode == ConfigContract.PRESSURE_SENSOR_RATE_ECO) return 125_000;
+        return 66_667;
+    }
+
     private void startPressureSensor(boolean highRate) {
-        if (pressureSensorManager == null || pressureSensor == null) return;
+        if (!displayInteractiveUnlocked()
+                || pressureSensorManager == null || pressureSensor == null) return;
         if (pressureSensorListening && pressureSensorHighRate == highRate) return;
         if (pressureSensorListening) {
             try { pressureSensorManager.unregisterListener(pressureSensorListener); }
@@ -2329,7 +2869,7 @@ final class FanRuntime {
         try {
             pressureSensorListening = pressureSensorManager.registerListener(
                     pressureSensorListener, pressureSensor,
-                    highRate ? SensorManager.SENSOR_DELAY_GAME : SensorManager.SENSOR_DELAY_NORMAL,
+                    sensorPeriodUs(highRate),
                     mainHandler);
             pressureSensorHighRate = pressureSensorListening && highRate;
         } catch (Throwable error) {
@@ -2341,13 +2881,30 @@ final class FanRuntime {
 
     private void setPressureSensorRate(boolean highRate) {
         if (!highRate) {
-            stopPressureSensor();
+            if (highRatePressureSensorRequired()) {
+                startPressureSensor(true);
+            } else if (bottomSelectionPressureArmed || bottomHoneycombPressureArmed
+                    || (config.pressureCalibrationActive && !pressureCalibrationTimedOut
+                    && displayInteractiveUnlocked())) {
+                startPressureSensor(false);
+            } else {
+                stopPressureSensor();
+            }
             return;
         }
         if (!pressureSensorConfigured() && !config.pressureCalibrationActive) return;
         if (!pressureSensorListening || pressureSensorHighRate != highRate) {
             startPressureSensor(highRate);
         }
+    }
+
+    private boolean highRatePressureSensorRequired() {
+        if (!displayInteractiveUnlocked()) return false;
+        if (pressureCandidate) return true;
+        if (!pressureSensorConfigured()) return false;
+        return pressureSelectionPressureArmed && pressureSelectionPressureTarget != null
+                && pressureHeavyLaunchEnabledFor(pressureSelectionTrigger)
+                && pressureSelectionIsActive();
     }
 
     private void stopPressureSensor() {
@@ -2359,11 +2916,17 @@ final class FanRuntime {
     }
 
     private boolean runtimeReady() {
-        if (!config.enabled
-                || (context.getDisplay() != null && context.getDisplay().getDisplayId() != 0)) return false;
+        return config.enabled && displayInteractiveUnlocked();
+    }
+
+    private boolean displayInteractiveUnlocked() {
+        if (context.getDisplay() != null && context.getDisplay().getDisplayId() != 0) {
+            return false;
+        }
         PowerManager power = context.getSystemService(PowerManager.class);
         KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-        return (power == null || power.isInteractive()) && (keyguard == null || !keyguard.isKeyguardLocked());
+        return (power == null || power.isInteractive())
+                && (keyguard == null || !keyguard.isKeyguardLocked());
     }
 
     private boolean canStartBottom() {
@@ -2393,6 +2956,12 @@ final class FanRuntime {
     }
 
     private void refreshTriggerCapture() {
+        if (inputSources.usesNativeInput() || pressureOverlayCaptureSuppressed
+                || pressureHoneycombActive || pressureCircularActive) {
+            triggerCapture.update(false, config.hotWidthPercent, config.hotHeightPercent,
+                    0, 0);
+            return;
+        }
         triggerCapture.update(canStartBottom(), config.hotWidthPercent, config.hotHeightPercent,
                 0, 0);
     }
@@ -2421,11 +2990,11 @@ final class FanRuntime {
         refreshOutsideCapture();
         mainHandler.postDelayed(this::refreshOutsideCapture, 80L);
         mainHandler.postDelayed(this::refreshOutsideCapture, 240L);
-        mainHandler.postDelayed(this::clearFailedLaunchCapture, 500L);
+        mainHandler.postDelayed(this::clearFailedLaunchCapture, 6100L);
     }
 
     private void clearFailedLaunchCapture() {
-        if (!freeform.abandonStalePendingLaunch(500L)) return;
+        if (!freeform.abandonStalePendingLaunch(6000L)) return;
         outsideCapture.remove();
         outsideGestures.clearAll();
         refreshOutsideCapture();
@@ -2433,7 +3002,7 @@ final class FanRuntime {
     }
 
     private void refreshOutsideCapture() {
-        if (!outsideEnabledForCurrentDisplay()) {
+        if (!runtimeReady() || !outsideEnabledForCurrentDisplay()) {
             outsideCapture.remove();
             outsideGestures.clearAll();
             return;
@@ -2470,7 +3039,8 @@ final class FanRuntime {
                     display.right, Math.min(display.bottom,
                     display.top + statusBarHeight)));
         }
-        if (ime == null && !visibleWindows.isEmpty() && triggerCapture.isCapturing()) {
+        if (ime == null && !visibleWindows.isEmpty()
+                && (triggerCapture.isCapturing() || inputSources.usesNativeInput())) {
             Rect display = displayBounds();
             int hotWidth = Math.round(display.width() * config.hotWidthPercent / 100f);
             int hotHeight = Math.round(display.height() * config.hotHeightPercent / 100f);
@@ -2814,6 +3384,7 @@ final class FanRuntime {
     }
 
     private void reloadConfig() {
+        configReloadPending = false;
         try {
             Bundle bundle = context.getContentResolver().call(ConfigContract.URI, "get", null, null);
             GestureConfig next = GestureConfig.from(bundle);
@@ -2821,6 +3392,7 @@ final class FanRuntime {
             ArrayList<RuntimeTarget> resolvedHoneycomb = new ArrayList<>();
             ArrayList<RuntimeTarget> resolvedSide = new ArrayList<>();
             ArrayList<RuntimeTarget> resolvedPressure = new ArrayList<>();
+            Map<Integer, RuntimeTarget> resolvedPressureActionTargets = new HashMap<>();
             PackageManager packageManager = context.getPackageManager();
             Map<String, RuntimeTarget> targetCache = new HashMap<>();
             for (GestureConfig.TargetSpec target : next.targets) {
@@ -2859,6 +3431,18 @@ final class FanRuntime {
                     Log.e("Configured pressure target is unavailable", error);
                 }
             }
+            for (PressureTrigger trigger : next.pressureTriggers) {
+                if (trigger.target == null) continue;
+                try {
+                    RuntimeTarget runtimeTarget = resolveAppTarget(packageManager,
+                            trigger.target, targetCache);
+                    if (runtimeTarget != null) {
+                        resolvedPressureActionTargets.put(trigger.id, runtimeTarget);
+                    }
+                } catch (Throwable error) {
+                    Log.e("Configured pressure single target is unavailable", error);
+                }
+            }
             if (resolved.size() > next.fanMaxTargets) {
                 resolved.subList(next.fanMaxTargets, resolved.size()).clear();
             }
@@ -2894,6 +3478,8 @@ final class FanRuntime {
                 honeycombTargets = nextHoneycombTargets;
                 sideTargets = nextSideTargets;
                 pressureTargets = nextPressureTargets;
+                pressureActionTargets = Collections.unmodifiableMap(
+                        new HashMap<>(resolvedPressureActionTargets));
                 if (activeTargets.isEmpty()) activeTargets = nextTargets;
                 freeform.updateConfig(next);
                 refreshPressureSensor();
@@ -2932,7 +3518,7 @@ final class FanRuntime {
                         + next.sideLandscapeFullscreen
                         + " bottomFreeform=" + next.bottomPortraitHoneycombFreeform + "/"
                         + next.bottomLandscapeHoneycombFreeform
-                        + " blankSettle=" + BOTTOM_HONEYCOMB_SETTLE_MS
+                        + " blankSettle=" + next.bottomHoneycombSettleMs
                         + "ms returnToFan=" + next.triggerPercent + "% outsideTap="
                         + next.outsideTapWindowMs + "ms outside="
                         + next.outsidePortraitEnabled + "/"
@@ -2942,6 +3528,7 @@ final class FanRuntime {
                         + " threshold=" + next.pressureThreshold
                         + " action=" + next.pressureAction + " freeform="
                         + next.pressureOpenAsFreeform
+                        + " heavyLaunch=" + next.pressureHeavyLaunchEnabled
                         + " circularTargets=" + nextPressureTargets.size());
             });
         } catch (Throwable error) {
@@ -2949,18 +3536,24 @@ final class FanRuntime {
             scheduleConfigRetry();
         } finally {
             configLoadQueued = false;
+            if (configReloadPending) requestConfigReload();
         }
     }
 
     private void syncPressureCalibrationSessions(GestureConfig previous,
                                                  GestureConfig next) {
         if (next.pressureCalibrationActive && !previous.pressureCalibrationActive) {
+            cancelPressureGesture();
+            pressureCalibrationTimedOut = false;
             pressureCalibrationAttempts = 0;
             pressureCalibrationDeltas.clear();
             pressureCalibrationPressActive = false;
             pressureCalibrationMovedOutside = false;
             pressureCalibrationPeakDelta = 0f;
+            schedulePressureCalibrationTimeout();
         } else if (!next.pressureCalibrationActive) {
+            pressureCalibrationTimedOut = false;
+            mainHandler.removeCallbacks(pressureCalibrationTimeout);
             pressureCalibrationPressActive = false;
             pressureCalibrationMovedOutside = false;
             if (previous.pressureCalibrationActive) {
@@ -2970,8 +3563,17 @@ final class FanRuntime {
         }
     }
 
+    private void schedulePressureCalibrationTimeout() {
+        mainHandler.removeCallbacks(pressureCalibrationTimeout);
+        mainHandler.postDelayed(pressureCalibrationTimeout,
+                PRESSURE_CALIBRATION_INACTIVITY_TIMEOUT_MS);
+    }
+
     private synchronized void requestConfigReload() {
-        if (configLoadQueued) return;
+        if (configLoadQueued) {
+            configReloadPending = true;
+            return;
+        }
         configLoadQueued = true;
         configHandler.post(this::reloadConfig);
     }
@@ -3004,6 +3606,34 @@ final class FanRuntime {
         RuntimeTarget cached = cache.get(key);
         if (cached != null) return cached;
         RuntimeTarget resolved = resolveTarget(packageManager, target);
+        if (resolved != null) cache.put(key, resolved);
+        return resolved;
+    }
+
+    private RuntimeTarget resolveAppTarget(PackageManager packageManager, AppTarget target,
+                                           Map<String, RuntimeTarget> cache) throws Exception {
+        String key = target.component + '\u0000' + target.shortcutPackage + '\u0000'
+                + target.shortcutId + '\u0000' + target.shortcutIntentUri + '\u0000'
+                + target.userId;
+        RuntimeTarget cached = cache.get(key);
+        if (cached != null) return cached;
+        RuntimeTarget resolved;
+        if (target.isShortcut()) {
+            resolved = new RuntimeTarget(target.shortcutPackage, target.shortcutId,
+                    target.shortcutIntentUri,
+                    target.shortcutLabel == null || target.shortcutLabel.isEmpty()
+                            ? target.shortcutId : target.shortcutLabel,
+                    ShortcutIconLoader.load(context, target.shortcutPackage,
+                            target.shortcutId, target.userId), target.userId);
+        } else {
+            ComponentName component = target.componentName();
+            if (component == null) return null;
+            ActivityInfo info = packageManager.getActivityInfo(component, 0);
+            CharSequence label = info.loadLabel(packageManager);
+            resolved = new RuntimeTarget(component,
+                    label == null ? component.getPackageName() : label.toString(),
+                    info.loadIcon(packageManager), target.userId);
+        }
         if (resolved != null) cache.put(key, resolved);
         return resolved;
     }

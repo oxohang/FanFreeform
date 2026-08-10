@@ -100,12 +100,12 @@ public final class HoneycombLayoutEditorActivity extends Activity {
                 ConfigContract.DEFAULT_HONEYCOMB_SPACING_DP);
         preview = new HoneycombEditorView(this);
         preview.setBackground(Ui.rounded(this, 0xff15161b, 24));
-        preview.setItems(icons, iconSize, spacing);
+        preview.setItems(icons, targets, iconSize, spacing);
         preview.setOnSwapListener((from, to) -> {
             HoneycombSlotLayout.swap(targets, from, to);
             HoneycombSlotLayout.swap(icons, from, to);
             store.setHoneycombTargets(targets);
-            preview.setItems(icons, iconSize, spacing);
+            preview.setItems(icons, targets, iconSize, spacing);
         });
         root.addView(preview, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -133,7 +133,7 @@ public final class HoneycombLayoutEditorActivity extends Activity {
                 }
                 icons.clear();
                 icons.addAll(loaded);
-                preview.setItems(icons,
+                preview.setItems(icons, targets,
                         store.preferences().getInt(ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                                 ConfigContract.DEFAULT_HONEYCOMB_ICON_SIZE_DP),
                         store.preferences().getInt(ConfigContract.KEY_HONEYCOMB_SPACING_DP,
@@ -177,6 +177,7 @@ public final class HoneycombLayoutEditorActivity extends Activity {
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final int touchSlop;
         private List<Drawable> icons = Collections.emptyList();
+        private List<AppTarget> targets = Collections.emptyList();
         private List<HoneycombSlotLayout.Point> points = Collections.emptyList();
         private float configuredIconDp;
         private float configuredSpacingDp;
@@ -215,8 +216,10 @@ public final class HoneycombLayoutEditorActivity extends Activity {
             setMinimumHeight(Math.round(360f * density));
         }
 
-        void setItems(List<Drawable> values, float iconDp, float spacingDp) {
+        void setItems(List<Drawable> values, List<AppTarget> targetValues,
+                      float iconDp, float spacingDp) {
             icons = new ArrayList<>(values);
+            targets = new ArrayList<>(targetValues);
             configuredIconDp = iconDp;
             configuredSpacingDp = spacingDp;
             recalculate();
@@ -261,7 +264,7 @@ public final class HoneycombLayoutEditorActivity extends Activity {
                 float y = centerY + point.y * scale;
                 if (editing) canvas.drawCircle(x, y, iconRadius + 4f * density, slotPaint);
                 if (index == dragIndex) continue;
-                drawIcon(canvas, icons.get(index), x, y, iconRadius, 255);
+                drawIcon(canvas, icons.get(index), targets.get(index), x, y, iconRadius, 255);
             }
             if (targetIndex >= 0 && targetIndex < points.size() && dragIndex >= 0) {
                 HoneycombSlotLayout.Point target = points.get(targetIndex);
@@ -269,13 +272,13 @@ public final class HoneycombLayoutEditorActivity extends Activity {
                         iconRadius + 7f * density, targetPaint);
             }
             if (dragIndex >= 0 && dragIndex < icons.size()) {
-                drawIcon(canvas, icons.get(dragIndex), dragX, dragY,
+                drawIcon(canvas, icons.get(dragIndex), targets.get(dragIndex), dragX, dragY,
                         iconRadius * 1.12f, 235);
             }
         }
 
-        private void drawIcon(Canvas canvas, Drawable drawable, float x, float y,
-                              float radius, int alpha) {
+        private void drawIcon(Canvas canvas, Drawable drawable, AppTarget target,
+                              float x, float y, float radius, int alpha) {
             canvas.drawCircle(x, y, radius, platePaint);
             if (drawable == null) return;
             oldBounds.set(drawable.getBounds());
@@ -287,6 +290,14 @@ public final class HoneycombLayoutEditorActivity extends Activity {
             drawable.draw(canvas);
             drawable.setAlpha(oldAlpha);
             drawable.setBounds(oldBounds);
+            if (target != null && target.isShortcut()) {
+                IconBadgeRenderer.drawShortcut(canvas, x, y, radius * 2f,
+                        alpha / 255f, density);
+            }
+            if (target != null && target.userId != 0) {
+                IconBadgeRenderer.drawDual(canvas, x, y, radius * 2f,
+                        alpha / 255f, density, target.isShortcut());
+            }
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {

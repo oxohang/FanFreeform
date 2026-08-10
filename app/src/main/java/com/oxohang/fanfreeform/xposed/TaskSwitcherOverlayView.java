@@ -47,6 +47,7 @@ final class TaskSwitcherOverlayView extends View {
     private final RectF destination = new RectF();
     private final RectF wallpaperBounds = new RectF();
     private final RectF cardBounds = new RectF();
+    private Shader fallbackCardShader;
     private List<RecentTaskPreview> tasks = Collections.emptyList();
     private Listener listener;
     private Bitmap wallpaper;
@@ -211,6 +212,9 @@ final class TaskSwitcherOverlayView extends View {
 
     @Override protected void onSizeChanged(int width, int height,
                                            int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        fallbackCardShader = new LinearGradient(0f, 0f, Math.max(1, width),
+                Math.max(1, height), 0xff3b3f52, 0xff171922, Shader.TileMode.CLAMP);
         float contentWidth = layoutMode == ConfigContract.SIDE_TASK_LAYOUT_ICONS
                 ? iconSize : cardWidth;
         float contentHeight = layoutMode == ConfigContract.SIDE_TASK_LAYOUT_ICONS
@@ -311,9 +315,12 @@ final class TaskSwitcherOverlayView extends View {
         if (task.snapshot != null && !task.snapshot.isRecycled()) {
             drawCenterCrop(canvas, task.snapshot, cardBounds);
         } else {
-            cardPaint.setShader(new LinearGradient(cardBounds.left, cardBounds.top,
-                    cardBounds.right, cardBounds.bottom,
-                    0xff3b3f52, 0xff171922, Shader.TileMode.CLAMP));
+            if (fallbackCardShader == null) {
+                fallbackCardShader = new LinearGradient(0f, 0f, Math.max(1, getWidth()),
+                        Math.max(1, getHeight()), 0xff3b3f52, 0xff171922,
+                        Shader.TileMode.CLAMP);
+            }
+            cardPaint.setShader(fallbackCardShader);
             canvas.drawRect(cardBounds, cardPaint);
             cardPaint.setShader(null);
             drawIcon(canvas, task.icon, centerX, centerY,

@@ -62,6 +62,9 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) {
+        // Only the main process should own the runtime and exported receivers; child
+        // processes would otherwise create duplicate sensors, captures and receivers.
+        if (!loadPackageParam.packageName.equals(loadPackageParam.processName)) return;
         if (MIUI_HOME.equals(loadPackageParam.packageName)) {
             hookShortcutHost(loadPackageParam.classLoader);
             hookRecentsClearButton(loadPackageParam.classLoader);
@@ -151,15 +154,22 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
 
     private static void scanRomClassesAsync(ClassLoader classLoader) {
         Context context = systemUiContext;
-        if (context == null) return;
-        new Thread(() -> {
-            List<String> input = findRelevantRomClasses(context, "input");
-            List<String> freeform = findRelevantRomClasses(context, "freeform");
-            Log.i("SystemUI ROM input candidates=" + input);
-            Log.i("SystemUI ROM freeform candidates=" + freeform);
+        boolean needInput = !inputControllerHookInstalled;
+        boolean needFreeform = !freeformControllerHookInstalled;
+        if (context == null || (!needInput && !needFreeform)) return;
+        Thread probe = new Thread(() -> {
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            } catch (Throwable ignored) { }
+            RomClassCandidates candidates = findRelevantRomClasses(
+                    context, needInput, needFreeform);
+            if (needInput) Log.i("SystemUI ROM input candidates=" + candidates.input);
+            if (needFreeform) {
+                Log.i("SystemUI ROM freeform candidates=" + candidates.freeform);
+            }
 
             if (!inputControllerHookInstalled) {
-                for (String candidate : input) {
+                for (String candidate : candidates.input) {
                     if (candidate.contains("$") || !candidate.endsWith("EventController")) {
                         continue;
                     }
@@ -172,7 +182,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                 }
             }
             if (!freeformControllerHookInstalled) {
-                for (String candidate : freeform) {
+                for (String candidate : candidates.freeform) {
                     if (candidate.contains("$")
                             || !candidate.endsWith("FreeformModeController")) continue;
                     Log.i("Retrying freeform hook with ROM candidate=" + candidate);
@@ -180,11 +190,16 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                     if (freeformControllerHookInstalled) break;
                 }
             }
-        }, "hypergesture-rom-probe").start();
+        }, "hypergesture-rom-probe");
+        probe.setDaemon(true);
+        probe.start();
     }
 
-    private static List<String> findRelevantRomClasses(Context context, String role) {
-        LinkedHashSet<String> matches = new LinkedHashSet<>();
+    private static RomClassCandidates findRelevantRomClasses(Context context,
+                                                              boolean needInput,
+                                                              boolean needFreeform) {
+        LinkedHashSet<String> input = new LinkedHashSet<>();
+        LinkedHashSet<String> freeform = new LinkedHashSet<>();
         ApplicationInfo info = context.getApplicationInfo();
         List<String> paths = new ArrayList<>();
         if (info.sourceDir != null) paths.add(info.sourceDir);
@@ -192,21 +207,29 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             Collections.addAll(paths, info.splitSourceDirs);
         }
         for (String path : paths) {
+            if ((!needInput || input.size() >= 80)
+                    && (!needFreeform || freeform.size() >= 80)) break;
             DexFile dex = null;
             try {
                 dex = new DexFile(path);
                 Enumeration<String> entries = dex.entries();
-                while (entries.hasMoreElements() && matches.size() < 80) {
+                while (entries.hasMoreElements()
+                        && ((needInput && input.size() < 80)
+                        || (needFreeform && freeform.size() < 80))) {
                     String name = entries.nextElement();
                     String lower = name.toLowerCase(java.util.Locale.US);
-                    boolean relevant = "input".equals(role)
-                            ? lower.contains("eventcontroller")
+                    if (needInput && input.size() < 80
+                            && lower.contains("eventcontroller")
                             && (lower.contains("mulwin") || lower.contains("multiwin")
-                            || lower.contains("multitask"))
-                            : lower.contains("freeform")
+                            || lower.contains("multitask"))) {
+                        input.add(name);
+                    }
+                    if (needFreeform && freeform.size() < 80
+                            && lower.contains("freeform")
                             && (lower.contains("controller") || lower.contains("animation")
-                            || lower.contains("manager"));
-                    if (relevant) matches.add(name);
+                            || lower.contains("manager"))) {
+                        freeform.add(name);
+                    }
                 }
             } catch (Throwable error) {
                 Log.e("SystemUI ROM class scan failed path=" + path, error);
@@ -216,7 +239,17 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                 }
             }
         }
-        return new ArrayList<>(matches);
+        return new RomClassCandidates(new ArrayList<>(input), new ArrayList<>(freeform));
+    }
+
+    private static final class RomClassCandidates {
+        final List<String> input;
+        final List<String> freeform;
+
+        RomClassCandidates(List<String> input, List<String> freeform) {
+            this.input = input;
+            this.freeform = freeform;
+        }
     }
 
     private static void hookRecentsClearButton(ClassLoader classLoader) {
@@ -625,7 +658,9 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                 @Override public void onReceive(Context receiverContext, Intent intent) {
                     if (!ExternalLaunchContract.ACTION_LAUNCH.equals(intent.getAction())) return;
                     if (!ExternalLaunchContract.FLY_PACKAGE.equals(
-                            intent.getStringExtra(ExternalLaunchContract.EXTRA_SOURCE_PACKAGE))) {
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_SOURCE_PACKAGE))
+                            || !BroadcastSenderValidator.isFromPackage(
+                            receiverContext, this, ExternalLaunchContract.FLY_PACKAGE)) {
                         Log.i("Ignored external launch request from unknown source");
                         return;
                     }
@@ -668,7 +703,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
         if (motionEvent != null) {
             FanRuntime active = runtime;
-            if (active != null) active.onMotion(motionEvent, inputMonitor);
+            if (active != null) active.postMotionEvent(motionEvent, inputMonitor);
             if (!"onEvent".equals(name) && REPORTED_PROXY_METHODS.add(method.toString())) {
                 Log.i("Nonstandard input event callback method=" + method);
             }

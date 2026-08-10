@@ -178,14 +178,11 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(text("分段距离", 18, Ui.TEXT, Typeface.BOLD));
         card.addView(slider("一段扇形距离", ConfigContract.KEY_TRIGGER_PERCENT,
                 6, 24, ConfigContract.DEFAULT_TRIGGER_PERCENT, value -> value + "%"));
-        card.addView(slider("二段蜂窝距离", ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MIN_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MAX_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP, value -> value + "dp"));
-        card.addView(slider("二段回退距离", ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
-                ConfigContract.MAX_HONEYCOMB_RETREAT_DP,
-                ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP, value -> value + "dp"));
+        card.addView(slider("蜂窝停顿时间", ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS,
+                prefs.getInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS), value -> value + " ms"));
         card.addView(slider("图标选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
                 ConfigContract.MIN_SELECTION_RADIUS_PERCENT,
                 ConfigContract.MAX_SELECTION_RADIUS_PERCENT,
@@ -198,7 +195,8 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(navigationRow("扇形排列", "智能排布或自定义内、中、外三排",
                 () -> startActivity(new Intent(this, FanLayoutSettingsActivity.class))));
         card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
-                34, 64, ConfigContract.DEFAULT_ICON_SIZE_DP, value -> value + "dp"));
+                ConfigContract.MIN_ICON_SIZE_DP, ConfigContract.MAX_ICON_SIZE_DP,
+                ConfigContract.DEFAULT_ICON_SIZE_DP, value -> value + "dp"));
         card.addView(slider("扇形目标上限", ConfigContract.KEY_FAN_MAX_TARGETS,
                 3, 24, ConfigContract.DEFAULT_FAN_MAX_TARGETS, value -> value + " 个"));
     }

@@ -16,6 +16,49 @@ final class GestureGeometry {
         }
     }
 
+    /** Precomputed fan layout: all icon centers are stored in primitive arrays.
+     * Reuse one instance per gesture to avoid per-move allocations. */
+    static final class FanLayout {
+        final Corner corner;
+        final int width;
+        final int height;
+        final float radius;
+        final int itemCount;
+        final float[] centerX;
+        final float[] centerY;
+        final int layoutMode;
+        final int outerCapacity;
+        final int middleCapacity;
+        final int innerCapacity;
+
+        FanLayout(Corner corner, int width, int height, float radius, float[] centerX,
+                  float[] centerY, int layoutMode, int outerCapacity,
+                  int middleCapacity, int innerCapacity) {
+            this.corner = corner;
+            this.width = width;
+            this.height = height;
+            this.radius = radius;
+            this.itemCount = Math.min(centerX.length, centerY.length);
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.layoutMode = layoutMode;
+            this.outerCapacity = outerCapacity;
+            this.middleCapacity = middleCapacity;
+            this.innerCapacity = innerCapacity;
+        }
+
+        int selection(float x, float y, float iconDiameter, float tolerance) {
+            float hitRadius = iconDiameter / 2f + tolerance;
+            float hitRadiusSquared = hitRadius * hitRadius;
+            for (int index = 0; index < itemCount; index++) {
+                float dx = x - centerX[index];
+                float dy = y - centerY[index];
+                if (dx * dx + dy * dy <= hitRadiusSquared) return index;
+            }
+            return -1;
+        }
+    }
+
     private GestureGeometry() {}
 
     static Corner cornerAt(float x, float y, int width, int height,
@@ -98,6 +141,23 @@ final class GestureGeometry {
         float vertical = (float) (rowRadius * Math.sin(radians));
         return new Point(corner == Corner.LEFT ? horizontal : width - horizontal,
                 height - vertical);
+    }
+
+    /** Builds the complete fan layout once so per-move hit tests reuse primitive arrays. */
+    static FanLayout fanLayout(Corner corner, int itemCount, int width, int height,
+                               float radius, int layoutMode, int outerCapacity,
+                               int middleCapacity, int innerCapacity) {
+        int safeCount = Math.max(0, itemCount);
+        float[] centerX = new float[safeCount];
+        float[] centerY = new float[safeCount];
+        for (int index = 0; index < safeCount; index++) {
+            Point center = iconCenter(corner, index, safeCount, width, height, radius,
+                    layoutMode, outerCapacity, middleCapacity, innerCapacity);
+            centerX[index] = center.x;
+            centerY[index] = center.y;
+        }
+        return new FanLayout(corner, width, height, radius, centerX, centerY,
+                layoutMode, outerCapacity, middleCapacity, innerCapacity);
     }
 
     private static int[][] fanRows(int itemCount, int layoutMode, int outerCapacity,

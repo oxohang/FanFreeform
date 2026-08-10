@@ -40,6 +40,10 @@ final class SideWheelOverlayView extends View {
     private final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final Path iconClipPath = new Path();
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Rect iconOldBounds = new Rect();
+    private CharSequence fittedLabel;
+    private String fittedLabelSource;
+    private float fittedLabelMaxWidth;
     private final OverScroller scroller;
     private final int touchSlop;
     private final int minimumFlingVelocity;
@@ -69,7 +73,6 @@ final class SideWheelOverlayView extends View {
 
     SideWheelOverlayView(Context context) {
         super(context);
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         ViewConfiguration configuration = ViewConfiguration.get(context);
         touchSlop = configuration.getScaledTouchSlop();
         minimumFlingVelocity = configuration.getScaledMinimumFlingVelocity();
@@ -236,7 +239,7 @@ final class SideWheelOverlayView extends View {
         if (forceCircularIcons) canvas.drawCircle(x, y, radius, iconShadowPaint);
         if (drawable != null) {
             int oldAlpha = drawable.getAlpha();
-            Rect oldBounds = drawable.copyBounds();
+            drawable.copyBounds(iconOldBounds);
             int intrinsicWidth = Math.max(1, drawable.getIntrinsicWidth());
             int intrinsicHeight = Math.max(1, drawable.getIntrinsicHeight());
             float targetSize = diameter * (forceCircularIcons ? 1.16f : 0.94f);
@@ -259,7 +262,7 @@ final class SideWheelOverlayView extends View {
             drawable.draw(canvas);
             canvas.restoreToCount(save);
             drawable.setAlpha(oldAlpha);
-            drawable.setBounds(oldBounds);
+            drawable.setBounds(iconOldBounds);
         }
         if (forceCircularIcons) {
             canvas.drawCircle(x, y, radius - dp(0.5f), iconStrokePaint);
@@ -268,13 +271,23 @@ final class SideWheelOverlayView extends View {
             ShortcutBadgeRenderer.draw(canvas, x, y, diameter, alpha / 255f,
                     getResources().getDisplayMetrics().density);
         }
+        if (target != null && target.userId != 0) {
+            ShortcutBadgeRenderer.drawDual(canvas, x, y, diameter, alpha / 255f,
+                    getResources().getDisplayMetrics().density, target.isShortcut());
+        }
     }
 
     private void drawLabel(Canvas canvas, String label, float iconY,
                            float diameter, boolean active, int alpha) {
         float maxTextWidth = Math.min(dp(180), getWidth() * 0.46f);
-        CharSequence fitted = TextUtils.ellipsize(label, textPaint,
-                maxTextWidth, TextUtils.TruncateAt.END);
+        CharSequence fitted = fittedLabel;
+        if (fittedLabelSource != label || fittedLabelMaxWidth != maxTextWidth) {
+            fittedLabelSource = label;
+            fittedLabelMaxWidth = maxTextWidth;
+            fittedLabel = TextUtils.ellipsize(label, textPaint,
+                    maxTextWidth, TextUtils.TruncateAt.END);
+            fitted = fittedLabel;
+        }
         float textWidth = textPaint.measureText(fitted, 0, fitted.length());
         float boxWidth = textWidth + dp(26);
         float boxHeight = dp(36);

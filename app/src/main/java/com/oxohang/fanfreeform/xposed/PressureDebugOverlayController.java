@@ -14,10 +14,11 @@ import android.view.View;
 import android.view.WindowManager;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
+import com.oxohang.fanfreeform.config.PressureTrigger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
+import java.util.Collections;
 import java.util.List;
 
 /** Overlay for the configured pressure area and the Thinking Orbs renderers. */
@@ -46,6 +47,19 @@ final class PressureDebugOverlayController {
         view.setOrbActive(false);
     }
 
+    void show(List<PressureTrigger> triggers) {
+        List<PressureTrigger> safeTriggers = triggers == null
+                ? Collections.emptyList() : new ArrayList<>(triggers);
+        if (!mainHandler.getLooper().isCurrentThread()) {
+            mainHandler.post(() -> show(safeTriggers));
+            return;
+        }
+        if (!ensureView()) return;
+        view.configureTargets(safeTriggers);
+        view.setTargetVisible(!safeTriggers.isEmpty());
+        view.setOrbActive(false);
+    }
+
     void showOrb(int centerXPercent, int centerYPercent, int radiusPercent,
                  boolean showTarget, int theme, int sizePercent) {
         if (!mainHandler.getLooper().isCurrentThread()) {
@@ -54,7 +68,7 @@ final class PressureDebugOverlayController {
             return;
         }
         if (!ensureView()) return;
-        view.configure(centerXPercent, centerYPercent, radiusPercent);
+        view.configureOrb(centerXPercent, centerYPercent, radiusPercent);
         view.setOrbTheme(theme);
         view.setOrbSizePercent(sizePercent);
         view.setTargetVisible(showTarget);
@@ -106,7 +120,8 @@ final class PressureDebugOverlayController {
     private boolean ensureView() {
         if (windowManager == null) return false;
         if (attached && view != null) return true;
-        PressureDebugOverlayView next = new PressureDebugOverlayView(context);
+        PressureDebugOverlayView next = view == null
+                ? new PressureDebugOverlayView(context) : view;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -114,7 +129,8 @@ final class PressureDebugOverlayController {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         params.setFitInsetsTypes(0);
@@ -127,6 +143,8 @@ final class PressureDebugOverlayController {
             attached = true;
             return true;
         } catch (Throwable error) {
+            view = null;
+            attached = false;
             Log.e("Cannot attach pressure debug overlay", error);
             return false;
         }
@@ -134,7 +152,6 @@ final class PressureDebugOverlayController {
 
     private void removeInternal() {
         PressureDebugOverlayView current = view;
-        view = null;
         if (!attached || current == null || windowManager == null) {
             attached = false;
             return;
@@ -143,6 +160,7 @@ final class PressureDebugOverlayController {
         try {
             windowManager.removeViewImmediate(current);
         } catch (Throwable error) {
+            view = null;
             Log.e("Cannot remove pressure debug overlay", error);
         }
     }
@@ -150,9 +168,33 @@ final class PressureDebugOverlayController {
     private static final class PressureDebugOverlayView extends View {
         private static final float TWO_PI = (float) (Math.PI * 2.0);
         private static final int DOTS_PER_ORBIT = 40;
+        private static final int RUBIK_MOVE_COUNT = 14;
+        private static final int WEB_NODE_COUNT = 41;
+        private static final int MORPH_POINT_COUNT = 160;
+        private static final float[] TRIANGLE_PATH = {
+                0f, -.26f, .24f, .16f, -.24f, .16f
+        };
+        private static final float[] SQUARE_PATH = {
+                0f, -.2f, .2f, -.2f, .2f, .2f, -.2f, .2f, -.2f, -.2f
+        };
         private final Paint targetPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint orbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final ArrayList<Dot> frameDots = new ArrayList<>(512);
+        private final ArrayList<Line> frameLines = new ArrayList<>(256);
+        private final ArrayList<Dot> dotPool = new ArrayList<>(512);
+        private final ArrayList<Line> linePool = new ArrayList<>(256);
+        private final ArrayList<PressureTrigger> targetAreas = new ArrayList<>();
+        private final Move[] rubikMoves = createMoves(RUBIK_MOVE_COUNT);
+        private final float[] rubikStageAmounts = new float[RUBIK_MOVE_COUNT];
+        private final Rotated rubikRotated = new Rotated();
+        private final Projector projectorScratch = new Projector();
+        private final float[] webNodes = new float[WEB_NODE_COUNT * 3];
+        private final float[] morphShape = new float[MORPH_POINT_COUNT * 2];
+        private final float[] morphLengths = new float[MORPH_POINT_COUNT];
+        private float scratchX;
+        private float scratchY;
+        private float scratchZ;
         private int centerXPercent;
         private int centerYPercent;
         private int radiusPercent;
@@ -162,10 +204,10 @@ final class PressureDebugOverlayController {
         private int orbSizePercent = ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT;
         private float orbIntensity = 0.35f;
         private long orbStartedAt;
+        private long lastOrbInvalidateNanos;
 
         PressureDebugOverlayView(Context context) {
             super(context);
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
             targetPaint.setStyle(Paint.Style.STROKE);
             targetPaint.setStrokeWidth(dp(context, 3));
             targetPaint.setColor(0xff5a67f2);
@@ -177,13 +219,35 @@ final class PressureDebugOverlayController {
         }
 
         void configure(int centerXPercent, int centerYPercent, int radiusPercent) {
+            targetAreas.clear();
+            configureOrb(centerXPercent, centerYPercent, radiusPercent);
+        }
+
+        void configureOrb(int centerXPercent, int centerYPercent, int radiusPercent) {
             this.centerXPercent = centerXPercent;
             this.centerYPercent = centerYPercent;
             this.radiusPercent = radiusPercent;
             invalidate();
         }
 
+        void configureTargets(List<PressureTrigger> triggers) {
+            targetAreas.clear();
+            if (triggers != null) {
+                for (PressureTrigger trigger : triggers) {
+                    if (trigger != null) targetAreas.add(trigger);
+                }
+            }
+            if (!targetAreas.isEmpty()) {
+                PressureTrigger first = targetAreas.get(0);
+                centerXPercent = first.centerXPercent;
+                centerYPercent = first.centerYPercent;
+                radiusPercent = first.radiusPercent;
+            }
+            invalidate();
+        }
+
         void setTargetVisible(boolean visible) {
+            if (targetVisible == visible) return;
             targetVisible = visible;
             invalidate();
         }
@@ -193,6 +257,7 @@ final class PressureDebugOverlayController {
         }
 
         void setOrbActive(boolean active) {
+            if (orbActive == active) return;
             if (active && !orbActive) orbStartedAt = SystemClock.uptimeMillis();
             orbActive = active;
             invalidate();
@@ -212,7 +277,6 @@ final class PressureDebugOverlayController {
 
         void setOrbIntensity(float intensity) {
             orbIntensity = Math.max(0f, Math.min(1f, intensity));
-            invalidate();
         }
 
         @Override protected void onDraw(Canvas canvas) {
@@ -220,12 +284,37 @@ final class PressureDebugOverlayController {
             float centerX = getWidth() * centerXPercent / 100f;
             float centerY = getHeight() * centerYPercent / 100f;
             if (targetVisible) {
-                float radius = Math.min(getWidth(), getHeight()) * radiusPercent / 100f;
-                canvas.drawCircle(centerX, centerY, radius, targetPaint);
+                if (targetAreas.isEmpty()) {
+                    drawTarget(canvas, centerX, centerY, radiusPercent, true);
+                } else {
+                    for (PressureTrigger trigger : targetAreas) {
+                        float triggerX = getWidth() * trigger.centerXPercent / 100f;
+                        float triggerY = getHeight() * trigger.centerYPercent / 100f;
+                        drawTarget(canvas, triggerX, triggerY, trigger.radiusPercent,
+                                trigger.enabled);
+                    }
+                }
             }
             if (!orbActive) return;
             drawOrb(canvas, centerX, centerY);
-            postInvalidateOnAnimation();
+            long now = SystemClock.elapsedRealtimeNanos();
+            if (now - lastOrbInvalidateNanos >= 33_333_333L) {
+                lastOrbInvalidateNanos = now;
+                postInvalidateOnAnimation();
+            }
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            orbActive = false;
+            lastOrbInvalidateNanos = 0L;
+            super.onDetachedFromWindow();
+        }
+
+        private void drawTarget(Canvas canvas, float centerX, float centerY,
+                                int radiusPercent, boolean enabled) {
+            targetPaint.setColor(enabled ? 0xff5a67f2 : 0xff9da3b4);
+            float radius = Math.min(getWidth(), getHeight()) * radiusPercent / 100f;
+            canvas.drawCircle(centerX, centerY, radius, targetPaint);
         }
 
         @Override protected void onSizeChanged(int width, int height,
@@ -238,8 +327,10 @@ final class PressureDebugOverlayController {
             float elapsed = (SystemClock.uptimeMillis() - orbStartedAt) / 1000f;
             float size = dp(getContext(), 64f) * orbSizePercent / 100f;
             float time = elapsed * speedForTheme(orbTheme);
-            ArrayList<Dot> dots = new ArrayList<>();
-            ArrayList<Line> lines = new ArrayList<>();
+            ArrayList<Dot> dots = frameDots;
+            ArrayList<Line> lines = frameLines;
+            dots.clear();
+            lines.clear();
             switch (orbTheme) {
                 case ConfigContract.PRESSURE_ORB_GLOBE:
                     drawGlobe(dots, centerX, centerY, size, time);
@@ -298,28 +389,26 @@ final class PressureDebugOverlayController {
                 float band = (.25f + .55f * d) * (d > .5f ? 1f : -1f);
                 for (int point = 0; point < DOTS_PER_ORBIT; point++) {
                     float angle = point / (float) DOTS_PER_ORBIT * TWO_PI;
-                    float[] xyz = {
-                            (e * (float) Math.cos(angle) + j * (float) Math.sin(angle)) * radius,
-                            (nn * (float) Math.cos(angle) + u * (float) Math.sin(angle)) * radius,
-                            (a * (float) Math.sin(angle)) * radius
-                    };
-                    float[] p = projector.project(xyz[0], xyz[1], xyz[2]);
-                    float depth = (p[2] / Math.max(1f, radius) + 1f) / 2f;
-                    dots.add(new Dot(p[0], p[1], p[2], .9f * scale, .72f,
-                            .5f * (.4f + .6f * depth)));
+                    float cosine = (float) Math.cos(angle);
+                    float sine = (float) Math.sin(angle);
+                    projector.map((e * cosine + j * sine) * radius,
+                            (nn * cosine + u * sine) * radius,
+                            a * sine * radius);
+                    float depth = (projector.depth / Math.max(1f, radius) + 1f) / 2f;
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
+                            .9f * scale, .72f, .5f * (.4f + .6f * depth));
                 }
                 for (int particle = 0; particle < 3; particle++) {
                     float angle = time * band + particle / 3f * TWO_PI + z * 6f;
-                    float[] xyz = {
-                            (e * (float) Math.cos(angle) + j * (float) Math.sin(angle)) * radius,
-                            (nn * (float) Math.cos(angle) + u * (float) Math.sin(angle)) * radius,
-                            (a * (float) Math.sin(angle)) * radius
-                    };
-                    float[] p = projector.project(xyz[0], xyz[1], xyz[2]);
-                    float depth = (p[2] / Math.max(1f, radius) + 1f) / 2f;
-                    dots.add(new Dot(p[0], p[1], p[2],
+                    float cosine = (float) Math.cos(angle);
+                    float sine = (float) Math.sin(angle);
+                    projector.map((e * cosine + j * sine) * radius,
+                            (nn * cosine + u * sine) * radius,
+                            a * sine * radius);
+                    float depth = (projector.depth / Math.max(1f, radius) + 1f) / 2f;
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
                             (1.2f + 1.6f * depth) * scale, .3f - .22f * depth,
-                            1f));
+                            1f);
                 }
             }
         }
@@ -338,16 +427,16 @@ final class PressureDebugOverlayController {
                 int longitudes = Math.max(1, Math.round(Math.abs(cosLat) * 29));
                 for (int lon = 0; lon < longitudes; lon++) {
                     float angle = lon / (float) longitudes * TWO_PI;
-                    float[] p = projector.project(cosLat * (float) Math.cos(angle),
+                    projector.map(cosLat * (float) Math.cos(angle),
                             sinLat, cosLat * (float) Math.sin(angle));
-                    float depth = (p[2] + 1f) / 2f;
+                    float depth = (projector.depth + 1f) / 2f;
                     float distance = angularDistance(angle + time * .5f, scan);
                     float active = (float) Math.exp(-(distance * distance) / .18f)
-                            * Math.max(0f, p[2]);
-                    dots.add(new Dot(p[0], p[1], p[2],
+                            * Math.max(0f, projector.depth);
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
                             (.6f + 1.955f * depth + active) * dotScale,
                             .62f - .54f * depth,
-                            .45f + .55f * Math.min(1f, active)));
+                            .45f + .55f * Math.min(1f, active));
                 }
             }
         }
@@ -356,8 +445,7 @@ final class PressureDebugOverlayController {
             float scale = size / 2f * .82f;
             Projector projector = projector(time * .55f,
                     .35f + .1f * (float) Math.sin(time * .9f), cx, cy, scale);
-            Move[] moves = createMoves(14);
-            Stage stage = stage(time, 14, .42f, 1.2f);
+            int activeStage = updateStage(time, rubikStageAmounts, .42f, 1.2f);
             float dotScale = radiusScale(size, .6f) * 1.05f;
             for (int lat = 0; lat <= 9; lat++) {
                 float latitude = (float) (-Math.PI / 2 + lat / 9f * Math.PI);
@@ -366,16 +454,18 @@ final class PressureDebugOverlayController {
                 int longitudes = Math.max(1, Math.round(Math.abs(cosLat) * 24));
                 for (int lon = 0; lon < longitudes; lon++) {
                     float angle = lon / (float) longitudes * TWO_PI;
-                    Rotated rotated = applyMoves(new float[]{
-                            cosLat * (float) Math.cos(angle), sinLat,
-                            cosLat * (float) Math.sin(angle)}, moves, stage);
-                    float[] p = projector.project(rotated.x, rotated.y, rotated.z);
-                    float depth = (p[2] + 1f) / 2f;
-                    dots.add(new Dot(p[0], p[1], p[2],
-                            (.63f + 1.785f * depth + (rotated.active ? .315f : 0f))
+                    applyMoves(cosLat * (float) Math.cos(angle), sinLat,
+                            cosLat * (float) Math.sin(angle), rubikMoves,
+                            rubikStageAmounts, activeStage, rubikRotated);
+                    projector.map(rubikRotated.x, rubikRotated.y, rubikRotated.z);
+                    float depth = (projector.depth + 1f) / 2f;
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
+                            (.63f + 1.785f * depth
+                                    + (rubikRotated.active ? .315f : 0f))
                                     * dotScale,
-                            .62f - .54f * depth - (rotated.active ? .14f : 0f),
-                            1f));
+                            .62f - .54f * depth
+                                    - (rubikRotated.active ? .14f : 0f),
+                            1f);
                 }
             }
         }
@@ -394,15 +484,15 @@ final class PressureDebugOverlayController {
                 int longitudes = Math.max(1, Math.round(Math.abs(cosLat) * 23));
                 for (int lon = 0; lon < longitudes; lon++) {
                     float angle = lon / (float) longitudes * TWO_PI;
-                    float[] p = projector.project(cosLat * (float) Math.cos(angle)
+                    projector.map(cosLat * (float) Math.cos(angle)
                                     * ringScale, sinLat * ringScale,
                             cosLat * (float) Math.sin(angle) * ringScale);
-                    float depth = (p[2] / scale + 1f) / 2f;
+                    float depth = (projector.depth / scale + 1f) / 2f;
                     float active = Math.max(0f, wave);
-                    dots.add(new Dot(p[0], p[1], p[2],
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
                             (.6f + 1.7f * depth) * (1f + .4f * active) * dotScale,
                             .66f - .56f * depth - .1f * active,
-                            1f));
+                            1f);
                 }
             }
         }
@@ -412,12 +502,12 @@ final class PressureDebugOverlayController {
             Projector projector = projector(time * .4f, .3f, cx, cy, 1f);
             float dotScale = radiusScale(size, .6f);
             for (int ghost = 0; ghost < 75; ghost++) {
-                float[] sphere = spherePoint(ghost, 75);
-                float[] p = projector.project(sphere[0] * scale, sphere[1] * scale,
-                        sphere[2] * scale);
-                float depth = (p[2] / scale + 1f) / 2f;
-                dots.add(new Dot(p[0], p[1], p[2], .8f * dotScale, .78f,
-                        .1f + .22f * depth));
+                calculateSpherePoint(ghost, 75);
+                projector.map(scratchX * scale, scratchY * scale, scratchZ * scale);
+                float depth = (projector.depth / scale + 1f) / 2f;
+                addDot(dots, projector.screenX, projector.screenY, projector.depth,
+                        .8f * dotScale, .78f,
+                        .1f + .22f * depth);
             }
             int strands = 3;
             int points = 26;
@@ -431,12 +521,12 @@ final class PressureDebugOverlayController {
                     float wobble = 1f + .075f * (float) Math.sin(d * Math.PI * 3f * 2f
                             + phase * 2f + time * .8f);
                     float radial = a * scale * wobble;
-                    float[] p = projector.project((float) Math.cos(angle) * radial,
+                    projector.map((float) Math.cos(angle) * radial,
                             d * scale * wobble, (float) Math.sin(angle) * radial);
-                    float depth = (p[2] / scale + 1f) / 2f;
-                    dots.add(new Dot(p[0], p[1], p[2],
+                    float depth = (projector.depth / scale + 1f) / 2f;
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
                             (1.2f + 1.8f * depth) * dotScale,
-                            .55f - .45f * depth, fade * (.45f + .55f * depth)));
+                            .55f - .45f * depth, fade * (.45f + .55f * depth));
                 }
             }
         }
@@ -450,12 +540,12 @@ final class PressureDebugOverlayController {
             float dotScale = radiusScale(size, .6f);
             int ghostCount = faceOn ? 0 : 38;
             for (int ghost = 0; ghost < ghostCount; ghost++) {
-                float[] sphere = spherePoint(ghost, ghostCount);
-                float[] p = projector.project(sphere[0] * scale, sphere[1] * scale,
-                        sphere[2] * scale);
-                float depth = (p[2] / scale + 1f) / 2f;
-                dots.add(new Dot(p[0], p[1], p[2], .8f * dotScale, .78f,
-                        .1f + .22f * depth));
+                calculateSpherePoint(ghost, ghostCount);
+                projector.map(scratchX * scale, scratchY * scale, scratchZ * scale);
+                float depth = (projector.depth / scale + 1f) / 2f;
+                addDot(dots, projector.screenX, projector.screenY, projector.depth,
+                        .8f * dotScale, .78f,
+                        .1f + .22f * depth);
             }
             float y = time * .24f * spin;
             float k = faceOn ? -.3f : .55f;
@@ -492,16 +582,16 @@ final class PressureDebugOverlayController {
                     float length = Math.max(1e-6f, (float) Math.sqrt(xx * xx + yy * yy
                             + zz * zz));
                     float radius = bandScale * bandT;
-                    float[] p = projector.project(xx / length * radius,
+                    projector.map(xx / length * radius,
                             yy / length * radius, zz / length * radius);
-                    float depth = (p[2] / scale + 1f) / 2f;
+                    float depth = (projector.depth / scale + 1f) / 2f;
                     float baseRadius = faceOn ? 1.0516f : .935f;
                     float depthRadius = faceOn ? 1.6252f : 1.445f;
-                    dots.add(new Dot(p[0], p[1], p[2],
+                    addDot(dots, projector.screenX, projector.screenY, projector.depth,
                             (baseRadius + depthRadius * depth)
                                     * (1f - .25f * edge) * dotScale,
                             .52f - .44f * depth + (faceOn ? .18f * edge : 0f),
-                            .4f + .6f * depth));
+                            .4f + .6f * depth);
                 }
             }
         }
@@ -510,43 +600,52 @@ final class PressureDebugOverlayController {
                              float size, float time) {
             float scale = size / 2f * .8f;
             Projector projector = projector(time * .12f, .32f, cx, cy, scale);
-            int nodeCount = 41;
-            float[][] nodes = new float[nodeCount][3];
+            int nodeCount = WEB_NODE_COUNT;
+            float[] nodes = webNodes;
             for (int node = 0; node < nodeCount; node++) {
-                float[] sphere = spherePoint(node, nodeCount);
-                float vx = sphere[0] + .3f * (noise2(node * .31f + 9f,
+                calculateSpherePoint(node, nodeCount);
+                float vx = scratchX + .3f * (noise2(node * .31f + 9f,
                         time * .24f) - .5f) * 2f;
-                float vy = sphere[1] + .3f * (noise2(node * .53f + 27f,
+                float vy = scratchY + .3f * (noise2(node * .53f + 27f,
                         time * .21f) - .5f) * 2f;
-                float vz = sphere[2] + .3f * (noise2(node * .77f + 55f,
+                float vz = scratchZ + .3f * (noise2(node * .77f + 55f,
                         time * .27f) - .5f) * 2f;
                 float length = Math.max(1e-6f, (float) Math.sqrt(vx * vx + vy * vy + vz * vz));
-                nodes[node][0] = vx / length;
-                nodes[node][1] = vy / length;
-                nodes[node][2] = vz / length;
+                int offset = node * 3;
+                nodes[offset] = vx / length;
+                nodes[offset + 1] = vy / length;
+                nodes[offset + 2] = vz / length;
             }
             for (int left = 0; left < nodeCount; left++) {
+                int leftOffset = left * 3;
                 for (int right = left + 1; right < nodeCount; right++) {
-                    float dx = nodes[left][0] - nodes[right][0];
-                    float dy = nodes[left][1] - nodes[right][1];
-                    float dz = nodes[left][2] - nodes[right][2];
+                    int rightOffset = right * 3;
+                    float dx = nodes[leftOffset] - nodes[rightOffset];
+                    float dy = nodes[leftOffset + 1] - nodes[rightOffset + 1];
+                    float dz = nodes[leftOffset + 2] - nodes[rightOffset + 2];
                     float distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
                     if (distance >= .72f) continue;
-                    float[] p1 = projector.project(nodes[left][0], nodes[left][1], nodes[left][2]);
-                    float[] p2 = projector.project(nodes[right][0], nodes[right][1], nodes[right][2]);
-                    float depth = (p1[2] + p2[2] + 2f) / 4f;
-                    lines.add(new Line(p1[0], p1[1], p2[0], p2[1], .42f,
+                    projector.map(nodes[leftOffset], nodes[leftOffset + 1],
+                            nodes[leftOffset + 2]);
+                    float x1 = projector.screenX;
+                    float y1 = projector.screenY;
+                    float depth1 = projector.depth;
+                    projector.map(nodes[rightOffset], nodes[rightOffset + 1],
+                            nodes[rightOffset + 2]);
+                    float depth = (depth1 + projector.depth + 2f) / 4f;
+                    addLine(lines, x1, y1, projector.screenX, projector.screenY, .42f,
                             (1f - distance / .72f) * (.3f + .55f * depth),
-                            Math.max(.6f, .8f * radiusScale(size, .6f))));
+                            Math.max(.6f, .8f * radiusScale(size, .6f)));
                 }
             }
             for (int node = 0; node < nodeCount; node++) {
-                float[] p = projector.project(nodes[node][0], nodes[node][1], nodes[node][2]);
-                float depth = (p[2] + 1f) / 2f;
+                int offset = node * 3;
+                projector.map(nodes[offset], nodes[offset + 1], nodes[offset + 2]);
+                float depth = (projector.depth + 1f) / 2f;
                 float grow = 1f + .25f * (float) Math.sin(time * 1.4f + node * 2.7f);
-                dots.add(new Dot(p[0], p[1], p[2],
+                addDot(dots, projector.screenX, projector.screenY, projector.depth,
                         (1.33f + 1.71f * depth) * grow * radiusScale(size, .6f),
-                        .55f - .45f * depth, 1f));
+                        .55f - .45f * depth, 1f);
             }
             for (int signal = 0; signal < 5; signal++) {
                 int tick = (int) Math.floor(time * .55f + signal * 7.31f);
@@ -556,15 +655,17 @@ final class PressureDebugOverlayController {
                         * nodeCount), nodeCount);
                 if (from == to) continue;
                 float amount = fract(time * .55f + signal * 7.31f);
-                float vx = lerp(nodes[from][0], nodes[to][0], amount);
-                float vy = lerp(nodes[from][1], nodes[to][1], amount);
-                float vz = lerp(nodes[from][2], nodes[to][2], amount);
+                int fromOffset = from * 3;
+                int toOffset = to * 3;
+                float vx = lerp(nodes[fromOffset], nodes[toOffset], amount);
+                float vy = lerp(nodes[fromOffset + 1], nodes[toOffset + 1], amount);
+                float vz = lerp(nodes[fromOffset + 2], nodes[toOffset + 2], amount);
                 float length = Math.max(1e-6f, (float) Math.sqrt(vx * vx + vy * vy + vz * vz));
-                float[] p = projector.project(vx / length, vy / length, vz / length);
-                float depth = (p[2] + 1f) / 2f;
-                dots.add(new Dot(p[0], p[1], p[2],
+                projector.map(vx / length, vy / length, vz / length);
+                float depth = (projector.depth + 1f) / 2f;
+                addDot(dots, projector.screenX, projector.screenY, projector.depth,
                         (1.33f * 1.5f + 1.71f * depth) * radiusScale(size, .6f),
-                        .05f, .5f + .5f * depth));
+                        .05f, .5f + .5f * depth);
             }
         }
 
@@ -575,20 +676,25 @@ final class PressureDebugOverlayController {
             float phase = cycle - shapeIndex * phaseLength;
             float blend = phase > 1.4f ? smoothStep((phase - 1.4f) / .9f) : 0f;
             float spread = 1.45f;
-            float[][] shape = new float[160][2];
-            for (int index = 0; index < shape.length; index++) {
-                float progress = index / (float) shape.length;
-                float[] current = shapePoint(shapeIndex, progress);
-                float[] next = shapePoint((shapeIndex + 1) % 3, progress);
-                shape[index][0] = (current[0] + (next[0] - current[0]) * blend) * spread;
-                shape[index][1] = (current[1] + (next[1] - current[1]) * blend) * spread;
+            float[] shape = morphShape;
+            for (int index = 0; index < MORPH_POINT_COUNT; index++) {
+                float progress = index / (float) MORPH_POINT_COUNT;
+                calculateShapePoint(shapeIndex, progress);
+                float currentX = scratchX;
+                float currentY = scratchY;
+                calculateShapePoint((shapeIndex + 1) % 3, progress);
+                int offset = index * 2;
+                shape[offset] = (currentX + (scratchX - currentX) * blend) * spread;
+                shape[offset + 1] = (currentY + (scratchY - currentY) * blend) * spread;
             }
-            float[] lengths = new float[shape.length];
+            float[] lengths = morphLengths;
             float total = 0f;
-            for (int index = 0; index < shape.length; index++) {
-                float[] a = shape[index];
-                float[] b = shape[(index + 1) % shape.length];
-                lengths[index] = (float) Math.hypot(b[0] - a[0], b[1] - a[1]);
+            for (int index = 0; index < MORPH_POINT_COUNT; index++) {
+                int offset = index * 2;
+                int nextOffset = ((index + 1) % MORPH_POINT_COUNT) * 2;
+                lengths[index] = (float) Math.hypot(
+                        shape[nextOffset] - shape[offset],
+                        shape[nextOffset + 1] - shape[offset + 1]);
                 total += lengths[index];
             }
             int dotsCount = Math.max(6, Math.round(34f * .702f));
@@ -598,19 +704,21 @@ final class PressureDebugOverlayController {
             int segment = 0;
             for (int index = 0; index < dotsCount; index++) {
                 float distance = index / (float) dotsCount * total;
-                while (segment < shape.length - 1
+                while (segment < MORPH_POINT_COUNT - 1
                         && accumulated + lengths[segment] < distance) {
                     accumulated += lengths[segment++];
                 }
-                float[] a = shape[segment];
-                float[] b = shape[(segment + 1) % shape.length];
+                int offset = segment * 2;
+                int nextOffset = ((segment + 1) % MORPH_POINT_COUNT) * 2;
                 float local = lengths[segment] == 0f ? 0f
                         : Math.min(1f, (distance - accumulated) / lengths[segment]);
-                float x = a[0] + (b[0] - a[0]) * local;
-                float y = a[1] + (b[1] - a[1]) * local;
-                dots.add(new Dot(cx + x * size * wobble,
+                float x = shape[offset]
+                        + (shape[nextOffset] - shape[offset]) * local;
+                float y = shape[offset + 1]
+                        + (shape[nextOffset + 1] - shape[offset + 1]) * local;
+                addDot(dots, cx + x * size * wobble,
                         cy + y * size * wobble, 0f,
-                        Math.max(.35f, dotRadius * size), .1f, 1f));
+                        Math.max(.35f, dotRadius * size), .1f, 1f);
             }
         }
 
@@ -626,7 +734,7 @@ final class PressureDebugOverlayController {
         }
 
         private void drawDots(Canvas canvas, List<Dot> dots, float minRadius) {
-            dots.sort(Comparator.comparingDouble(dot -> dot.z));
+            sortDotsByDepth(dots);
             boolean dark = isDarkTheme();
             for (Dot dot : dots) {
                 if (dot.alpha < .02f) continue;
@@ -634,6 +742,53 @@ final class PressureDebugOverlayController {
                 orbPaint.setAlpha(alpha(dot.alpha));
                 canvas.drawCircle(dot.x, dot.y, Math.max(minRadius, dot.radius), orbPaint);
             }
+        }
+
+        private static void sortDotsByDepth(List<Dot> dots) {
+            for (int gap = dots.size() / 2; gap > 0; gap /= 2) {
+                for (int index = gap; index < dots.size(); index++) {
+                    Dot value = dots.get(index);
+                    int insertion = index;
+                    while (insertion >= gap) {
+                        Dot previous = dots.get(insertion - gap);
+                        if (previous.z < value.z
+                                || (previous.z == value.z
+                                && previous.order <= value.order)) break;
+                        dots.set(insertion, previous);
+                        insertion -= gap;
+                    }
+                    dots.set(insertion, value);
+                }
+            }
+        }
+
+        private void addDot(List<Dot> dots, float x, float y, float z, float radius,
+                            float white, float alpha) {
+            int index = dots.size();
+            Dot dot;
+            if (index < dotPool.size()) {
+                dot = dotPool.get(index);
+            } else {
+                dot = new Dot();
+                dotPool.add(dot);
+            }
+            dot.set(x, y, z, radius, white, alpha);
+            dot.order = index;
+            dots.add(dot);
+        }
+
+        private void addLine(List<Line> lines, float x1, float y1, float x2, float y2,
+                             float white, float alpha, float width) {
+            int index = lines.size();
+            Line line;
+            if (index < linePool.size()) {
+                line = linePool.get(index);
+            } else {
+                line = new Line();
+                linePool.add(line);
+            }
+            line.set(x1, y1, x2, y2, white, alpha, width);
+            lines.add(line);
         }
 
         private float minRadiusForTheme() {
@@ -670,22 +825,24 @@ final class PressureDebugOverlayController {
             }
         }
 
-        private static Projector projector(float yaw, float tilt,
-                                           float centerX, float centerY, float scale) {
-            return new Projector(yaw, tilt, centerX, centerY, scale);
+        private Projector projector(float yaw, float tilt,
+                                    float centerX, float centerY, float scale) {
+            projectorScratch.set(yaw, tilt, centerX, centerY, scale);
+            return projectorScratch;
         }
 
         private static float radiusScale(float size, float power) {
             return (float) Math.pow(size / 300f, power);
         }
 
-        private static float[] spherePoint(int index, int count) {
+        private void calculateSpherePoint(int index, int count) {
             float golden = (float) (Math.PI * (3.0 - Math.sqrt(5.0)));
             float y = 1f - 2f * (index + .5f) / count;
             float radius = (float) Math.sqrt(Math.max(0f, 1f - y * y));
             float theta = index * golden;
-            return new float[]{radius * (float) Math.cos(theta), y,
-                    radius * (float) Math.sin(theta)};
+            scratchX = radius * (float) Math.cos(theta);
+            scratchY = y;
+            scratchZ = radius * (float) Math.sin(theta);
         }
 
         private static float noise(float x, float y) {
@@ -739,10 +896,11 @@ final class PressureDebugOverlayController {
             return moves;
         }
 
-        private static Stage stage(float time, int count, float amount, float rest) {
+        private static int updateStage(float time, float[] values,
+                                       float amount, float rest) {
+            int count = values.length;
             float cycle = 2f * count * amount + rest;
             float current = time % cycle;
-            float[] values = new float[count];
             Arrays.fill(values, 0f);
             int active = -1;
             if (current < 2f * count * amount) {
@@ -760,21 +918,19 @@ final class PressureDebugOverlayController {
                     active = reverse;
                 }
             }
-            return new Stage(values, active);
+            return active;
         }
 
-        private static Rotated applyMoves(float[] vector, Move[] moves, Stage stage) {
-            float x = vector[0];
-            float y = vector[1];
-            float z = vector[2];
+        private static void applyMoves(float x, float y, float z, Move[] moves,
+                                       float[] amounts, int activeMove, Rotated out) {
             boolean active = false;
             for (int index = 0; index < moves.length; index++) {
-                if (stage.amount[index] <= 0f) continue;
+                if (amounts[index] <= 0f) continue;
                 Move move = moves[index];
                 float coordinate = move.axis == 0 ? x : move.axis == 1 ? y : z;
                 if (coordinate < move.low || coordinate >= move.high) continue;
-                if (index == stage.active) active = true;
-                float angle = move.angle * stage.amount[index];
+                if (index == activeMove) active = true;
+                float angle = move.angle * amounts[index];
                 float cos = (float) Math.cos(angle);
                 float sin = (float) Math.sin(angle);
                 if (move.axis == 0) {
@@ -791,41 +947,51 @@ final class PressureDebugOverlayController {
                     x = nextX;
                 }
             }
-            return new Rotated(x, y, z, active);
+            out.set(x, y, z, active);
         }
 
-        private static float[] shapePoint(int shape, float progress) {
+        private void calculateShapePoint(int shape, float progress) {
             if (shape == 0) {
                 float angle = (float) (-Math.PI / 2 + progress * TWO_PI);
-                return new float[]{(float) Math.cos(angle) * .24f,
-                        (float) Math.sin(angle) * .24f};
+                scratchX = (float) Math.cos(angle) * .24f;
+                scratchY = (float) Math.sin(angle) * .24f;
+                scratchZ = 0f;
+                return;
             }
             if (shape == 1) {
-                return pointOnPath(new float[][]{{0f, -.26f}, {.24f, .16f},
-                        {-.24f, .16f}}, progress);
+                calculatePointOnPath(TRIANGLE_PATH, progress);
+            } else {
+                calculatePointOnPath(SQUARE_PATH, progress);
             }
-            return pointOnPath(new float[][]{{0f, -.2f}, {.2f, -.2f}, {.2f, .2f},
-                    {-.2f, .2f}, {-.2f, -.2f}}, progress);
         }
 
-        private static float[] pointOnPath(float[][] path, float progress) {
+        private void calculatePointOnPath(float[] path, float progress) {
+            int pointCount = path.length / 2;
             float total = 0f;
-            float[] lengths = new float[path.length];
-            for (int index = 0; index < path.length; index++) {
-                float[] a = path[index];
-                float[] b = path[(index + 1) % path.length];
-                lengths[index] = (float) Math.hypot(b[0] - a[0], b[1] - a[1]);
-                total += lengths[index];
+            for (int index = 0; index < pointCount; index++) {
+                int offset = index * 2;
+                int nextOffset = ((index + 1) % pointCount) * 2;
+                total += (float) Math.hypot(path[nextOffset] - path[offset],
+                        path[nextOffset + 1] - path[offset + 1]);
             }
             float distance = progress * total;
             int segment = 0;
-            while (segment < path.length - 1 && distance > lengths[segment]) {
-                distance -= lengths[segment++];
+            float segmentLength;
+            while (true) {
+                int offset = segment * 2;
+                int nextOffset = ((segment + 1) % pointCount) * 2;
+                segmentLength = (float) Math.hypot(path[nextOffset] - path[offset],
+                        path[nextOffset + 1] - path[offset + 1]);
+                if (segment >= pointCount - 1 || distance <= segmentLength) break;
+                distance -= segmentLength;
+                segment++;
             }
-            float[] a = path[segment];
-            float[] b = path[(segment + 1) % path.length];
-            float amount = lengths[segment] == 0f ? 0f : distance / lengths[segment];
-            return new float[]{lerp(a[0], b[0], amount), lerp(a[1], b[1], amount)};
+            int offset = segment * 2;
+            int nextOffset = ((segment + 1) % pointCount) * 2;
+            float amount = segmentLength == 0f ? 0f : distance / segmentLength;
+            scratchX = lerp(path[offset], path[nextOffset], amount);
+            scratchY = lerp(path[offset + 1], path[nextOffset + 1], amount);
+            scratchZ = 0f;
         }
 
         private static float dp(Context context, float value) {
@@ -833,15 +999,18 @@ final class PressureDebugOverlayController {
         }
 
         private static final class Projector {
-            final float sinTilt;
-            final float cosTilt;
-            final float sinYaw;
-            final float cosYaw;
-            final float centerX;
-            final float centerY;
-            final float scale;
+            float sinTilt;
+            float cosTilt;
+            float sinYaw;
+            float cosYaw;
+            float centerX;
+            float centerY;
+            float scale;
+            float screenX;
+            float screenY;
+            float depth;
 
-            Projector(float yaw, float tilt, float centerX, float centerY, float scale) {
+            void set(float yaw, float tilt, float centerX, float centerY, float scale) {
                 sinTilt = (float) Math.sin(tilt);
                 cosTilt = (float) Math.cos(tilt);
                 sinYaw = (float) Math.sin(yaw);
@@ -851,24 +1020,26 @@ final class PressureDebugOverlayController {
                 this.scale = scale;
             }
 
-            float[] project(float x, float y, float z) {
+            void map(float x, float y, float z) {
                 float p = x * cosYaw + z * sinYaw;
                 float g = -x * sinYaw + z * cosYaw;
-                float screenY = y * cosTilt - g * sinTilt;
-                float depth = y * sinTilt + g * cosTilt;
-                return new float[]{centerX + p * scale, centerY - screenY * scale, depth};
+                float projectedY = y * cosTilt - g * sinTilt;
+                screenX = centerX + p * scale;
+                screenY = centerY - projectedY * scale;
+                depth = y * sinTilt + g * cosTilt;
             }
         }
 
         private static final class Dot {
-            final float x;
-            final float y;
-            final float z;
-            final float radius;
-            final float white;
-            final float alpha;
+            float x;
+            float y;
+            float z;
+            float radius;
+            float white;
+            float alpha;
+            int order;
 
-            Dot(float x, float y, float z, float radius, float white, float alpha) {
+            void set(float x, float y, float z, float radius, float white, float alpha) {
                 this.x = x;
                 this.y = y;
                 this.z = z;
@@ -879,16 +1050,16 @@ final class PressureDebugOverlayController {
         }
 
         private static final class Line {
-            final float x1;
-            final float y1;
-            final float x2;
-            final float y2;
-            final float white;
-            final float alpha;
-            final float width;
+            float x1;
+            float y1;
+            float x2;
+            float y2;
+            float white;
+            float alpha;
+            float width;
 
-            Line(float x1, float y1, float x2, float y2,
-                 float white, float alpha, float width) {
+            void set(float x1, float y1, float x2, float y2,
+                     float white, float alpha, float width) {
                 this.x1 = x1;
                 this.y1 = y1;
                 this.x2 = x2;
@@ -913,23 +1084,13 @@ final class PressureDebugOverlayController {
             }
         }
 
-        private static final class Stage {
-            final float[] amount;
-            final int active;
-
-            Stage(float[] amount, int active) {
-                this.amount = amount;
-                this.active = active;
-            }
-        }
-
         private static final class Rotated {
-            final float x;
-            final float y;
-            final float z;
-            final boolean active;
+            float x;
+            float y;
+            float z;
+            boolean active;
 
-            Rotated(float x, float y, float z, boolean active) {
+            void set(float x, float y, float z, boolean active) {
                 this.x = x;
                 this.y = y;
                 this.z = z;

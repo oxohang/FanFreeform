@@ -7,6 +7,12 @@ public final class ConfigContract {
 
     public static final String AUTHORITY = "com.oxohang.fanfreeform.config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/state");
+    /** Runtime configuration changes; observed by SystemUI/MiuiHome hook runtimes. */
+    public static final Uri RUNTIME_URI = Uri.parse("content://" + AUTHORITY + "/runtime");
+    /** App/shortcut catalog changes; observed by the app picker UI. */
+    public static final Uri CATALOG_URI = Uri.parse("content://" + AUTHORITY + "/catalog");
+    /** Interface status/heartbeat changes; observed by the dashboard. */
+    public static final Uri STATUS_URI = Uri.parse("content://" + AUTHORITY + "/status");
     public static final String PREFS = "fan_config";
     public static final String KEY_ENABLED = "enabled";
     public static final String KEY_HAPTIC = "haptic";
@@ -46,6 +52,8 @@ public final class ConfigContract {
             "bottom_portrait_second_pressure_launch";
     public static final String KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM =
             "bottom_landscape_honeycomb_freeform";
+    public static final String KEY_BOTTOM_HONEYCOMB_SETTLE_MS =
+            "bottom_honeycomb_settle_ms";
     public static final String KEY_SIDE_GESTURE_ENABLED = "side_gesture_enabled";
     public static final String KEY_SIDE_PORTRAIT_ENABLED = "side_portrait_enabled";
     public static final String KEY_SIDE_LANDSCAPE_ENABLED = "side_landscape_enabled";
@@ -151,6 +159,8 @@ public final class ConfigContract {
     public static final String KEY_HONEYCOMB_ENABLED = "honeycomb_enabled";
     public static final String KEY_HONEYCOMB_COMPONENTS = "honeycomb_components";
     public static final String KEY_HONEYCOMB_MODE = "honeycomb_mode";
+    /** @deprecated Dead setting: the current state machine no longer consumes it. */
+    @Deprecated
     public static final String KEY_HONEYCOMB_TRIGGER_DP = "honeycomb_trigger_dp";
     public static final String KEY_HONEYCOMB_ICON_SIZE_DP = "honeycomb_icon_size_dp";
     public static final String KEY_HONEYCOMB_SPACING_DP = "honeycomb_spacing_dp";
@@ -195,6 +205,8 @@ public final class ConfigContract {
     public static final String KEY_HONEYCOMB_LIVE_BLUR_DP = "honeycomb_live_blur_dp";
     public static final String KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT =
             "honeycomb_background_dim_percent";
+    /** @deprecated Dead setting: the current state machine no longer consumes it. */
+    @Deprecated
     public static final String KEY_HONEYCOMB_RETREAT_DP = "honeycomb_retreat_dp";
     public static final String KEY_HONEYCOMB_DISC_SIZE_PERCENT =
             "honeycomb_disc_size_percent";
@@ -215,13 +227,18 @@ public final class ConfigContract {
     public static final String KEY_PRESSURE_SHOW_POSITION =
             "pressure_show_position";
     public static final String KEY_PRESSURE_ORB_THEME = "pressure_orb_theme";
+    public static final String KEY_PRESSURE_THEME_ENABLED = "pressure_theme_enabled";
     public static final String KEY_PRESSURE_ORB_SIZE_PERCENT =
             "pressure_orb_size_percent";
     public static final String KEY_PRESSURE_ACTION = "pressure_action";
     public static final String KEY_PRESSURE_OPEN_AS_FREEFORM =
             "pressure_open_as_freeform";
+    public static final String KEY_PRESSURE_HEAVY_LAUNCH_ENABLED =
+            "pressure_heavy_launch_enabled";
+    public static final String KEY_PRESSURE_TRIGGERS = "pressure_triggers";
     public static final String KEY_PRESSURE_COMPONENTS = "pressure_components";
     public static final String KEY_PRESSURE_HAPTIC_MODE = "pressure_haptic_mode";
+    public static final String KEY_PRESSURE_SENSOR_RATE_MODE = "pressure_sensor_rate_mode";
     public static final String KEY_PRESSURE_FIRST_HAPTIC_ENABLED =
             "pressure_first_haptic_enabled";
     public static final String KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS =
@@ -246,6 +263,11 @@ public final class ConfigContract {
     public static final int PRESSURE_ACTION_HONEYCOMB = 0;
     public static final int PRESSURE_ACTION_CIRCULAR = 1;
     public static final int PRESSURE_ACTION_HOME = 2;
+    public static final int PRESSURE_ACTION_LOCK = 3;
+    public static final int PRESSURE_ACTION_SCREENSHOT = 4;
+    public static final int PRESSURE_ACTION_BACK = 5;
+    public static final int PRESSURE_ACTION_SINGLE_TARGET = 6;
+    public static final int MAX_PRESSURE_TRIGGERS = 8;
     public static final int PRESSURE_HAPTIC_SYSTEM = 0;
     public static final int PRESSURE_HAPTIC_CUSTOM = 1;
     public static final int PRESSURE_ORB_ORBITS = 0;
@@ -308,6 +330,9 @@ public final class ConfigContract {
     public static final boolean DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH = false;
     public static final boolean DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH = false;
     public static final boolean DEFAULT_BOTTOM_LANDSCAPE_SECOND_STAGE_ENABLED = false;
+    public static final int DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS = 80;
+    public static final int MIN_BOTTOM_HONEYCOMB_SETTLE_MS = 0;
+    public static final int MAX_BOTTOM_HONEYCOMB_SETTLE_MS = 400;
     public static final boolean DEFAULT_SIDE_GESTURE_ENABLED = true;
     public static final boolean DEFAULT_SIDE_PORTRAIT_ENABLED = true;
     public static final boolean DEFAULT_SIDE_LANDSCAPE_ENABLED = false;
@@ -393,6 +418,8 @@ public final class ConfigContract {
     public static final int DEFAULT_HOT_HEIGHT_PERCENT = 8;
     public static final int MAX_HOT_HEIGHT_PERCENT = 20;
     public static final int DEFAULT_ICON_SIZE_DP = 37;
+    public static final int MIN_ICON_SIZE_DP = 34;
+    public static final int MAX_ICON_SIZE_DP = 96;
     public static final boolean DEFAULT_CUSTOM_WINDOW_BOUNDS_ENABLED = true;
     public static final boolean DEFAULT_CUSTOM_WINDOW_PORTRAIT_ENABLED = true;
     public static final boolean DEFAULT_CUSTOM_WINDOW_LANDSCAPE_ENABLED = false;
@@ -510,12 +537,17 @@ public final class ConfigContract {
     public static final boolean DEFAULT_PRESSURE_CALIBRATED = false;
     public static final boolean DEFAULT_PRESSURE_SHOW_POSITION = false;
     public static final int DEFAULT_PRESSURE_ORB_THEME = PRESSURE_ORB_ORBITS;
+    public static final boolean DEFAULT_PRESSURE_THEME_ENABLED = true;
     public static final int DEFAULT_PRESSURE_ORB_SIZE_PERCENT = 100;
     public static final int MIN_PRESSURE_ORB_SIZE_PERCENT = 50;
     public static final int MAX_PRESSURE_ORB_SIZE_PERCENT = 200;
     public static final int DEFAULT_PRESSURE_ACTION = PRESSURE_ACTION_HONEYCOMB;
     public static final boolean DEFAULT_PRESSURE_OPEN_AS_FREEFORM = false;
+    public static final boolean DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED = false;
     public static final int DEFAULT_PRESSURE_HAPTIC_MODE = PRESSURE_HAPTIC_SYSTEM;
+    public static final int PRESSURE_SENSOR_RATE_BALANCED = 1;
+    public static final int PRESSURE_SENSOR_RATE_ECO = 3;
+    public static final int DEFAULT_PRESSURE_SENSOR_RATE_MODE = PRESSURE_SENSOR_RATE_BALANCED;
     public static final boolean DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED = false;
     public static final int DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS = 16;
     public static final int MIN_PRESSURE_FIRST_HAPTIC_DURATION_MS = 5;

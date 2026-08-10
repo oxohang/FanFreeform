@@ -50,12 +50,18 @@ final class RecentTaskRepository {
                 if (packageName.equals(context.getPackageName())
                         || packageName.equals("com.android.systemui")
                         || packageName.equals("com.miui.home")) continue;
-                ApplicationInfo app = packageManager.getApplicationInfo(packageName, 0);
-                CharSequence label = packageManager.getApplicationLabel(app);
-                Drawable icon = packageManager.getApplicationIcon(app);
-                Bitmap snapshot = includeSnapshots ? loadSnapshot(task.taskId) : null;
-                result.add(new RecentTaskPreview(task.taskId, packageName, label,
-                        snapshot, icon));
+                // A single unavailable package must not abort the whole list.
+                try {
+                    ApplicationInfo app = packageManager.getApplicationInfo(packageName, 0);
+                    CharSequence label = packageManager.getApplicationLabel(app);
+                    Drawable icon = packageManager.getApplicationIcon(app);
+                    Bitmap snapshot = includeSnapshots ? loadSnapshot(task.taskId) : null;
+                    result.add(new RecentTaskPreview(task.taskId, packageName, label,
+                            snapshot, icon));
+                } catch (Throwable itemError) {
+                    Log.i("Skipping unavailable recent task package=" + packageName
+                            + " error=" + itemError.getClass().getSimpleName());
+                }
             }
         } catch (Throwable error) {
             Log.e("Cannot load running task previews", error);
@@ -77,34 +83,40 @@ final class RecentTaskRepository {
     @SuppressLint("MissingPermission")
     boolean launch(RecentTaskPreview task) {
         if (task == null) return false;
+        Bundle centered = FullscreenAppLauncher.centeredScaleOptions(context).toBundle();
+        if (launchViaRecents(task, centered)) return true;
+        if (launchViaRecents(task, ActivityOptions.makeBasic().toBundle())) return true;
+        try {
+            activityManager.moveTaskToFront(task.taskId,
+                    ActivityManager.MOVE_TASK_WITH_HOME);
+            Log.i("Recent task moved to front id=" + task.taskId);
+            return true;
+        } catch (Throwable finalFallback) {
+            Log.e("Cannot launch recent task id=" + task.taskId, finalFallback);
+            return false;
+        }
+    }
+
+    private boolean launchViaRecents(RecentTaskPreview task, Bundle options) {
         try {
             Object service = activityTaskManagerService();
-            Bundle centeredOptions = FullscreenAppLauncher.centeredScaleOptions(context)
-                    .toBundle();
-            Object result = startFromRecents(service, task.taskId, centeredOptions);
-            Log.i("Recent task launched with centered animation id="
-                    + task.taskId + " result=" + result);
-            return true;
-        } catch (Throwable primary) {
-            try {
-                Object service = activityTaskManagerService();
-                Object result = startFromRecents(service, task.taskId,
-                        ActivityOptions.makeBasic().toBundle());
-                Log.i("Recent task launched with basic animation id="
-                        + task.taskId + " result=" + result);
-                return true;
-            } catch (Throwable basicFallback) {
-                try {
-                    activityManager.moveTaskToFront(task.taskId,
-                            ActivityManager.MOVE_TASK_WITH_HOME);
-                    Log.i("Recent task moved to front id=" + task.taskId);
-                    return true;
-                } catch (Throwable finalFallback) {
-                    Log.e("Cannot launch recent task id=" + task.taskId, finalFallback);
-                    return false;
-                }
+            Object result = startFromRecents(service, task.taskId, options);
+            if (startResultFailed(result)) {
+                Log.i("Recent task start reported failure id=" + task.taskId
+                        + " result=" + result);
+                return false;
             }
+            Log.i("Recent task launched id=" + task.taskId + " result=" + result);
+            return true;
+        } catch (Throwable error) {
+            Log.i("Recent task start threw id=" + task.taskId
+                    + " error=" + error.getClass().getSimpleName());
+            return false;
         }
+    }
+
+    private static boolean startResultFailed(Object result) {
+        return result instanceof Number && ((Number) result).intValue() < 0;
     }
 
     private static Object startFromRecents(Object service, int taskId, Bundle options) {
@@ -117,10 +129,10 @@ final class RecentTaskRepository {
         try {
             Object service = activityTaskManagerService();
             Object snapshot = XposedHelpers.callMethod(service,
-                    "getTaskSnapshot", taskId, false);
+                    "getTaskSnapshot", taskId, true);
             if (snapshot == null) {
                 snapshot = XposedHelpers.callMethod(service,
-                        "takeTaskSnapshot", taskId, false);
+                        "takeTaskSnapshot", taskId, true);
             }
             if (snapshot == null) return null;
             buffer = (HardwareBuffer) XposedHelpers.callMethod(snapshot,

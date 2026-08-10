@@ -474,4 +474,25 @@ public class GestureGeometryTest {
         assertFalse(GestureGeometry.beyondSideListInward(
                 GestureGeometry.Corner.RIGHT, 850, 740, 180));
     }
+
+    @Test
+    public void fanLayoutMatchesLegacySelectionForAllTargetCounts() {
+        int[] counts = {1, 3, 8, 24, 36};
+        for (GestureGeometry.Corner corner : GestureGeometry.Corner.values()) {
+            for (int count : counts) {
+                GestureGeometry.FanLayout layout = GestureGeometry.fanLayout(
+                        corner, count, 1200, 2600, 560f, 0, 7, 6, 5);
+                org.junit.Assert.assertEquals(count, layout.itemCount);
+                for (int index = 0; index < count; index++) {
+                    float x = layout.centerX[index];
+                    float y = layout.centerY[index];
+                    int legacy = GestureGeometry.selection(corner, x, y, 1200, 2600,
+                            count, 560f, 1f, 0f, 0, 7, 6, 5);
+                    org.junit.Assert.assertEquals(index, legacy);
+                    int cached = layout.selection(x, y, 1f, 0f);
+                    org.junit.Assert.assertEquals(index, cached);
+                }
+            }
+        }
+    }
 }

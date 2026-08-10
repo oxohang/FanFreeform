@@ -20,10 +20,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -152,9 +152,16 @@ public final class TargetManagerActivity extends Activity {
         targetContainer.removeAllViews();
         countText.setText("已选 " + targets.size() + " / " + maximum()
                 + " · 长按图标可调整顺序");
+        if (KIND_FAN.equals(kind)) {
+            countText.setText("已选 " + targets.size() + " / " + maximum()
+                    + (targets.size() <= 3 ? " · 底部扇形至少保留 3 个" : " · 长按图标可调整顺序"));
+        }
         if (snapshot.isEmpty()) {
             TextView empty = text("尚未选择应用，点击右下角 ＋ 添加。",
                     14, Ui.MUTED, Typeface.NORMAL);
+            if (KIND_FAN.equals(kind)) {
+                empty.setText("尚未选择应用，底部扇形至少保留 3 个，点击右下角 ＋ 添加。");
+            }
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(Ui.dp(this, 12), Ui.dp(this, 38), Ui.dp(this, 12),
                     Ui.dp(this, 38));
@@ -189,8 +196,9 @@ public final class TargetManagerActivity extends Activity {
             if (targetContainer.getChildCount() > 0) targetContainer.addView(Ui.divider(this));
             LinearLayout item = row();
             item.setOnDragListener((view, event) -> onDrop(target, event));
-            ImageView icon = new ImageView(this);
-            icon.setImageDrawable(presentation.icon != null ? presentation.icon : placeholderIcon);
+            IconBadgeView icon = new IconBadgeView(this);
+            icon.setIcon(presentation.icon != null ? presentation.icon : placeholderIcon,
+                    target.isShortcut(), target.userId != 0);
             icon.setOnLongClickListener(view -> view.startDragAndDrop(
                     ClipData.newPlainText("target", target.toJson().toString()),
                     new View.DragShadowBuilder(item), target, 0));
@@ -204,6 +212,10 @@ public final class TargetManagerActivity extends Activity {
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             Button remove = compactButton("移除");
             remove.setOnClickListener(view -> {
+                if (KIND_FAN.equals(kind) && targets.size() <= 3) {
+                    Toast.makeText(this, "底部扇形至少保留 3 个应用", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 targets.remove(target);
                 saveTargets();
             });

@@ -12,11 +12,16 @@ import android.os.Process;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class ConfigProvider extends ContentProvider {
     @Override
@@ -32,12 +37,16 @@ public final class ConfigProvider extends ContentProvider {
         if ("get".equals(method)) {
             ConfigStore.seedDefaultsIfNeeded(context, prefs);
             ConfigStore.migrateUnifiedActionsIfNeeded(prefs);
+            ConfigStore.migrateDoubleTapPinIfNeeded(prefs);
             ConfigStore.migrateSideLayoutModeIfNeeded(prefs);
             ConfigStore.migrateSelectedAppNameIfNeeded(prefs);
             ConfigStore.migrateIndependentSideTargetsIfNeeded(prefs);
             ConfigStore.migrateOrientationBehaviorIfNeeded(prefs);
             ConfigStore.migrateHoneycombBackgroundIfNeeded(prefs);
             ConfigStore.migrateHoneycombWallpaperDefaultIfNeeded(prefs);
+            ConfigStore.migratePressureTriggersIfNeeded(prefs);
+            ConfigStore.ensureNativeWindowScaleDefaults(prefs);
+            ConfigStore.migratePressureTargetsIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
@@ -144,6 +153,11 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                             ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM));
+            out.putInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS, clamp(prefs.getInt(
+                    ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                    ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS),
+                    ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                    ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS));
             out.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
             out.putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_ENABLED, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_PORTRAIT_ENABLED,
@@ -489,11 +503,6 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
                     clamp(prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
                             ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT), 0, 60));
-            out.putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP, clamp(prefs.getInt(
-                    ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                    ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),
-                    ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
-                    ConfigContract.MAX_HONEYCOMB_RETREAT_DP));
             out.putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
                     ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT),
@@ -533,6 +542,9 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.DEFAULT_PRESSURE_ORB_THEME),
                     ConfigContract.PRESSURE_ORB_ORBITS,
                     ConfigContract.PRESSURE_ORB_MORPH));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED));
             out.putInt(ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
                     ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT),
@@ -542,17 +554,29 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.KEY_PRESSURE_ACTION,
                     ConfigContract.DEFAULT_PRESSURE_ACTION),
                     ConfigContract.PRESSURE_ACTION_HONEYCOMB,
-                    ConfigContract.PRESSURE_ACTION_HOME));
+                    ConfigContract.PRESSURE_ACTION_SINGLE_TARGET));
             out.putBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
                             ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED));
             out.putString(ConfigContract.KEY_PRESSURE_COMPONENTS, prefs.getString(
                     ConfigContract.KEY_PRESSURE_COMPONENTS, "[]"));
+            out.putString(ConfigContract.KEY_PRESSURE_TRIGGERS, prefs.getString(
+                    ConfigContract.KEY_PRESSURE_TRIGGERS, "[]"));
             out.putInt(ConfigContract.KEY_PRESSURE_HAPTIC_MODE, clamp(prefs.getInt(
                     ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
                     ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE),
                     ConfigContract.PRESSURE_HAPTIC_SYSTEM,
                     ConfigContract.PRESSURE_HAPTIC_CUSTOM));
+            int sensorRateMode = prefs.getInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                    ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE);
+            if (sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_BALANCED
+                    && sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_ECO) {
+                sensorRateMode = ConfigContract.PRESSURE_SENSOR_RATE_BALANCED;
+            }
+            out.putInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE, sensorRateMode);
             out.putBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
                     prefs.getBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
                             ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED));
@@ -597,7 +621,7 @@ public final class ConfigProvider extends ContentProvider {
                             extras.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
                                     false))
                     .apply();
-            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            context.getContentResolver().notifyChange(ConfigContract.RUNTIME_URI, null);
             return Bundle.EMPTY;
         }
         if ("report_pressure_calibration_result".equals(method) && extras != null) {
@@ -617,7 +641,7 @@ public final class ConfigProvider extends ContentProvider {
                     .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE, false)
                     .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS, 5)
                     .apply();
-            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            context.getContentResolver().notifyChange(ConfigContract.RUNTIME_URI, null);
             return Bundle.EMPTY;
         }
         if ("report".equals(method) && extras != null) {
@@ -625,15 +649,16 @@ public final class ConfigProvider extends ContentProvider {
                     .putString(ConfigContract.KEY_INTERFACE_STATUS, extras.getString(ConfigContract.KEY_INTERFACE_STATUS, ""))
                     .putLong(ConfigContract.KEY_INTERFACE_TIME, System.currentTimeMillis())
                     .apply();
-            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            context.getContentResolver().notifyChange(ConfigContract.STATUS_URI, null);
             return Bundle.EMPTY;
         }
         if ("report_shortcuts".equals(method) && extras != null) {
             String catalog = extras.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]");
             if (!catalog.equals(prefs.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]"))) {
                 prefs.edit().putString(ConfigContract.KEY_SHORTCUT_CATALOG, catalog).apply();
-                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+                context.getContentResolver().notifyChange(ConfigContract.CATALOG_URI, null);
             }
+            pruneShortcutIcons(context, catalog);
             return Bundle.EMPTY;
         }
         if (ShortcutIconLoader.METHOD_REPORT.equals(method) && extras != null) {
@@ -659,7 +684,7 @@ public final class ConfigProvider extends ContentProvider {
             String catalog = extras.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]");
             if (!catalog.equals(prefs.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]"))) {
                 prefs.edit().putString(ConfigContract.KEY_ACTIVITY_CATALOG, catalog).apply();
-                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+                context.getContentResolver().notifyChange(ConfigContract.CATALOG_URI, null);
             }
             return Bundle.EMPTY;
         }
@@ -704,6 +729,36 @@ public final class ConfigProvider extends ContentProvider {
         try (FileOutputStream output = new FileOutputStream(file)) {
             icon.compress(Bitmap.CompressFormat.PNG, 100, output);
         } catch (Throwable ignored) { }
+    }
+
+    private static void pruneShortcutIcons(Context context, String catalog) {
+        final JSONArray entries;
+        try {
+            entries = new JSONArray(catalog);
+        } catch (Throwable ignored) {
+            return;
+        }
+        Set<String> expectedFiles = new HashSet<>();
+        for (int index = 0; index < entries.length(); index++) {
+            JSONObject entry = entries.optJSONObject(index);
+            if (entry == null) continue;
+            String packageName = entry.optString("package", "");
+            String shortcutId = entry.optString("id", "");
+            if (packageName.isEmpty() || shortcutId.isEmpty()) continue;
+            int userId = entry.optInt("userId", 0);
+            expectedFiles.add(iconFileName(ShortcutIconLoader.key(
+                    packageName, shortcutId, userId)));
+        }
+        File directory = new File(context.getFilesDir(), "shortcut-icons");
+        File[] files = directory.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isFile() && file.getName().endsWith(".png")
+                    && !expectedFiles.contains(file.getName())) {
+                // This directory contains only generated shortcut icon files.
+                file.delete();
+            }
+        }
     }
 
     private static Bitmap readShortcutIcon(Context context, String key) {

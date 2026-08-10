@@ -12,10 +12,9 @@ import android.view.WindowManager;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 final class OutsideTouchCapture {
+    private static final int MAX_REGIONS = 24;
     private static final int TYPE_APPLICATION_OVERLAY = 2038;
     private static final int TYPE_MAGNIFICATION_OVERLAY = 2027;
     private static final int TYPE_NAVIGATION_BAR_PANEL = 2024;
@@ -84,6 +83,7 @@ final class OutsideTouchCapture {
 
         List<Rect> regions = outsideRegions(display, clippedWindows, clippedIme,
                 leftPassThrough, rightPassThrough);
+        capRegions(regions);
         if (updateAttachedRegions(regions, clippedWindows, clippedIme,
                 leftPassThrough, rightPassThrough)) {
             return;
@@ -202,6 +202,7 @@ final class OutsideTouchCapture {
     }
 
     private void removeNow() {
+        if (!capturing && views.isEmpty()) return;
         activeGeneration++;
         removeViews();
         currentWindows = new ArrayList<>();
@@ -246,18 +247,20 @@ final class OutsideTouchCapture {
             runnable.run();
             return;
         }
-        CountDownLatch completed = new CountDownLatch(1);
-        mainHandler.post(() -> {
-            try {
-                runnable.run();
-            } finally {
-                completed.countDown();
+        mainHandler.post(runnable);
+    }
+
+    private static void capRegions(List<Rect> regions) {
+        while (regions.size() > MAX_REGIONS) {
+            int smallest = 0;
+            for (int i = 1; i < regions.size(); i++) {
+                Rect a = regions.get(i);
+                Rect b = regions.get(smallest);
+                if (a.width() * (long) a.height() < b.width() * (long) b.height()) {
+                    smallest = i;
+                }
             }
-        });
-        try {
-            completed.await(250L, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
+            regions.remove(smallest);
         }
     }
 

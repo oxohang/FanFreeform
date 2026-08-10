@@ -145,6 +145,9 @@ public final class CompatibilityReport {
         // needed for ROM compatibility analysis, so redact the trailing identifier.
         String redacted = raw.replaceAll(
                 "(?i)(shortcut(?: dispatched| started)?[^\\n]*/)[^\\s]+", "$1<redacted>");
+        redacted = redacted.replaceAll(
+                "(?i)((?:intent_?uri|uri|shortcut_id|shortcutId|id)=)[^\\s,;]+",
+                "$1<redacted>");
         line(out, redacted);
     }
 

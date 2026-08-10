@@ -13,8 +13,8 @@ android {
         applicationId = "com.oxohang.fanfreeform"
         minSdk = 30
         targetSdk = 34
-        versionCode = 140
-        versionName = "1.0"
+        versionCode = 150
+        versionName = "1.5"
     }
 
     buildTypes {
@@ -79,7 +79,10 @@ val archiveReleaseApk by tasks.registering {
     }
 }
 
+val archiveApkEnabled = providers.gradleProperty("archiveApk").orNull
+    ?.equals("true", ignoreCase = true) == true
+
 tasks.configureEach {
-    if (name == "assembleDebug") finalizedBy(archiveDebugApk)
-    if (name == "assembleRelease") finalizedBy(archiveReleaseApk)
+    if (archiveApkEnabled && name == "assembleDebug") finalizedBy(archiveDebugApk)
+    if (archiveApkEnabled && name == "assembleRelease") finalizedBy(archiveReleaseApk)
 }

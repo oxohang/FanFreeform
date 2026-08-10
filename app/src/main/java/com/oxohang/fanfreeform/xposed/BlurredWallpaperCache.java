@@ -6,13 +6,14 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
-import android.os.AsyncTask;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class BlurredWallpaperCache {
     interface Callback { void onReady(Bitmap bitmap); }
@@ -20,6 +21,8 @@ final class BlurredWallpaperCache {
     private static final int DOWNSAMPLE = 6;
     private static final int MAX_ENTRIES = 3;
     private static final Object LOCK = new Object();
+    private static final ExecutorService BLUR_EXECUTOR = Executors.newSingleThreadExecutor(
+            runnable -> new Thread(runnable, "fanfreeform-wallpaper-blur"));
     private static final LinkedHashMap<Key, Bitmap> CACHE = new LinkedHashMap<>(
             MAX_ENTRIES, 0.75f, true);
     private static final Map<Key, List<WeakReference<Callback>>> WAITERS =
@@ -57,7 +60,7 @@ final class BlurredWallpaperCache {
             WAITERS.put(key, callbacks);
         }
         Context sourceContext = appContext;
-        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> build(sourceContext, key));
+        BLUR_EXECUTOR.execute(() -> build(sourceContext, key));
         return null;
     }
 

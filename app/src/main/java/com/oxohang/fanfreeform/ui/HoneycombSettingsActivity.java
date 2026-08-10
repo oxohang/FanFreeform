@@ -158,8 +158,16 @@ public final class HoneycombSettingsActivity extends Activity {
                         ConfigContract.DEFAULT_HONEYCOMB_FIXED_Y_PERCENT),
                 value -> value + "%"));
         tuning.addView(slider("应用数量上限", ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
-                1, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS, 36),
+                ConfigContract.MIN_HONEYCOMB_MAX_TARGETS,
+                ConfigContract.MAX_HONEYCOMB_MAX_TARGETS,
+                prefs.getInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
+                        ConfigContract.DEFAULT_HONEYCOMB_MAX_TARGETS),
                 value -> value + " 个"));
+        tuning.addView(slider("蜂窝停顿时间", ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS,
+                prefs.getInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS), value -> value + " ms"));
         tuning.addView(slider("基础图标大小", ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MIN_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MAX_HONEYCOMB_ICON_SIZE_DP,
