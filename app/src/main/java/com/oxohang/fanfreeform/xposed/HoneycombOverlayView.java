@@ -34,16 +34,13 @@ final class HoneycombOverlayView extends View {
         void onLaunch(RuntimeTarget target);
         void onClosed();
         default void onSelectionChanged(RuntimeTarget target) { }
+        default void onInteractionChanged(boolean active) { }
     }
 
     private final float density;
-    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconPlatePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint namePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final Paint namePillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint wallpaperPaint = new Paint(Paint.ANTI_ALIAS_FLAG
-            | Paint.FILTER_BITMAP_FLAG);
-    private final RectF wallpaperBounds = new RectF();
     private final Rect iconOldBounds = new Rect();
     private final Path clipPath = new Path();
     private final RectF iconDrawRect = new RectF();
@@ -91,13 +88,9 @@ final class HoneycombOverlayView extends View {
     private boolean appBackgroundEnabled;
     private boolean liveBlurEnabled;
     private int appBackgroundColor;
-    private int backgroundDimPercent;
-    private Bitmap wallpaper;
-    private int wallpaperBackgroundStyle;
-    private int wallpaperDimPercent;
-    private int wallpaperBlurDp;
     private int discSizePercent;
     private int statusBarHeight;
+    private HoneycombOverlayBackgroundView backgroundLayer;
     private float panX;
     private float panY;
     private float zoom = 1f;
@@ -151,13 +144,8 @@ final class HoneycombOverlayView extends View {
     private boolean selectionRequiresMove;
     private float selectionUnlockX;
     private float selectionUnlockY;
+    private boolean interactionActive;
     private Runnable pendingLaunch;
-    private final BlurredWallpaperCache.Callback wallpaperCallback = bitmap -> post(() -> {
-        if (released || wallpaperBackgroundStyle != com.oxohang.fanfreeform.config
-                .ConfigContract.HONEYCOMB_BACKGROUND_BLUR) return;
-        wallpaper = bitmap;
-        invalidate();
-    });
     private final Runnable holdSelectionUpdate = () -> {
         if (!browseMode && !selectionRequiresMove && pointerValid
                 && !interactionPaused && !closing) {
@@ -173,6 +161,7 @@ final class HoneycombOverlayView extends View {
             @Override public boolean onScaleBegin(ScaleGestureDetector detector) {
                 stopPhysics();
                 scaledDuringGesture = true;
+                setInteractionActive(true);
                 return browseMode && !interactionPaused && !closing;
             }
 
@@ -192,18 +181,20 @@ final class HoneycombOverlayView extends View {
             }
         });
         setFocusableInTouchMode(true);
-        backgroundPaint.setColor(Color.BLACK);
         appBackgroundColor = ForegroundAppBackgroundResolver.fallback(context);
         iconPlatePaint.setColor(0xff17181d);
         namePaint.setColor(Color.WHITE);
         namePaint.setTextSize(15f * density);
         namePaint.setTextAlign(Paint.Align.CENTER);
         namePillPaint.setColor(0xdd20263f);
-        statusBarHeight = 0;
         selectionAnimator.addUpdateListener(value -> {
             selectionProgress = (Float) value.getAnimatedValue();
             invalidate();
         });
+    }
+
+    void setBackgroundLayer(HoneycombOverlayBackgroundView layer) {
+        backgroundLayer = layer;
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
@@ -232,6 +223,8 @@ final class HoneycombOverlayView extends View {
         anchorY = Float.NaN;
         fixedXPercent = config.honeycombFixedXPercent;
         fixedYPercent = config.honeycombFixedYPercent;
+        appBackgroundEnabled = config.honeycombAppBackgroundEnabled;
+        liveBlurEnabled = config.honeycombLiveBlurEnabled;
         followFingerPosition = config.honeycombFollowFinger;
         if (followFingerPosition) {
             // The old full-disc clamp collapsed most bottom/edge trigger points onto
@@ -240,16 +233,7 @@ final class HoneycombOverlayView extends View {
             anchorX = triggerX;
             anchorY = triggerY;
         }
-        appBackgroundEnabled = config.honeycombAppBackgroundEnabled;
-        liveBlurEnabled = config.honeycombLiveBlurEnabled;
-        backgroundDimPercent = config.honeycombBackgroundDimPercent;
-        wallpaperBackgroundStyle = config.honeycombBackgroundStyle;
-        wallpaperDimPercent = config.honeycombDimPercent;
-        wallpaperBlurDp = config.honeycombBlurDp;
         discSizePercent = config.honeycombDiscSizePercent;
-        if (!appBackgroundEnabled && !liveBlurEnabled
-                && wallpaperBackgroundStyle == com.oxohang.fanfreeform.config.ConfigContract
-                .HONEYCOMB_BACKGROUND_BLUR) loadWallpaper();
         applyForegroundColors();
         basePoints = HoneycombGeometry.compactPoints(targets.size(), pitch);
         baseMaximumX = 0f;
@@ -297,6 +281,7 @@ final class HoneycombOverlayView extends View {
         if (released) return;
         appBackgroundColor = color | 0xff000000;
         applyForegroundColors();
+        rebuildIconBitmaps();
         invalidate();
     }
 
@@ -323,22 +308,34 @@ final class HoneycombOverlayView extends View {
                 icon.copyBounds(iconOldBounds);
                 int intrinsicWidth = Math.max(1, icon.getIntrinsicWidth());
                 int intrinsicHeight = Math.max(1, icon.getIntrinsicHeight());
+                float targetSize = forceCircularIcons ? px : px * 0.94f;
                 float scale = forceCircularIcons
-                        ? Math.max(px / (float) intrinsicWidth, px / (float) intrinsicHeight)
-                        : Math.min(px / (float) intrinsicWidth, px / (float) intrinsicHeight);
+                        ? Math.max(targetSize / intrinsicWidth, targetSize / intrinsicHeight)
+                        : Math.min(targetSize / intrinsicWidth, targetSize / intrinsicHeight);
                 int drawWidth = Math.max(1, Math.round(intrinsicWidth * scale));
                 int drawHeight = Math.max(1, Math.round(intrinsicHeight * scale));
                 icon.setBounds((px - drawWidth) / 2, (px - drawHeight) / 2,
                         (px + drawWidth) / 2, (px + drawHeight) / 2);
                 if (forceCircularIcons) {
                     canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+                    iconPlatePaint.setAlpha(255);
+                    canvas.drawCircle(px / 2f, px / 2f, px / 2f, iconPlatePaint);
                     clipPath.reset();
                     clipPath.addCircle(px / 2f, px / 2f, px / 2f, Path.Direction.CW);
-                    canvas.clipPath(clipPath);
                 }
+                int save = canvas.save();
+                if (forceCircularIcons) canvas.clipPath(clipPath);
                 icon.setAlpha(255);
                 icon.draw(canvas);
+                canvas.restoreToCount(save);
                 icon.setBounds(iconOldBounds);
+                if (target.isShortcut()) {
+                    ShortcutBadgeRenderer.draw(canvas, px / 2f, px / 2f, px, 1f, density);
+                }
+                if (target.userId != 0) {
+                    ShortcutBadgeRenderer.drawDual(canvas, px / 2f, px / 2f, px, 1f,
+                            density, target.isShortcut());
+                }
                 next[index] = bitmap;
             } catch (Throwable ignored) { }
         }
@@ -350,11 +347,6 @@ final class HoneycombOverlayView extends View {
             if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
         }
         iconBitmaps = new Bitmap[0];
-    }
-
-    private void loadWallpaper() {
-        wallpaper = BlurredWallpaperCache.getOrRequest(getContext(), wallpaperBlurDp,
-                wallpaperCallback);
     }
 
     private void applyForegroundColors() {
@@ -389,6 +381,9 @@ final class HoneycombOverlayView extends View {
         }
         float deltaX = x - externalLastX;
         float deltaY = y - externalLastY;
+        if (!interactionActive && Math.hypot(deltaX, deltaY) > 0.5f) {
+            setInteractionActive(true);
+        }
         long elapsed = Math.max(1L, now - externalLastTime);
         float oldPanX = panX;
         float oldPanY = panY;
@@ -426,6 +421,7 @@ final class HoneycombOverlayView extends View {
                 && Math.abs(x - externalLastX) < 0.01f
                 && Math.abs(y - externalLastY) < 0.01f;
         externalTracking = false;
+        setInteractionActive(false);
         pointerValid = false;
         lastHoldPanFrameMs = 0L;
         removeCallbacks(holdSelectionUpdate);
@@ -450,6 +446,7 @@ final class HoneycombOverlayView extends View {
 
     void onExternalCancel() {
         externalTracking = false;
+        setInteractionActive(false);
         pointerValid = false;
         selectionRequiresMove = false;
         lastHoldPanFrameMs = 0L;
@@ -461,8 +458,15 @@ final class HoneycombOverlayView extends View {
         invalidate();
     }
 
+    private void setInteractionActive(boolean active) {
+        if (interactionActive == active) return;
+        interactionActive = active;
+        if (listener != null) listener.onInteractionChanged(active);
+    }
+
     void setInteractionPaused(boolean paused) {
         interactionPaused = paused;
+        if (paused) setInteractionActive(false);
         if (paused) {
             stopPhysics();
             pointerValid = false;
@@ -540,6 +544,7 @@ final class HoneycombOverlayView extends View {
         released = true;
         closing = true;
         listener = null;
+        interactionActive = false;
         stopPhysics();
         selectionAnimator.cancel();
         removeCallbacks(holdSelectionUpdate);
@@ -553,35 +558,12 @@ final class HoneycombOverlayView extends View {
         basePoints = Collections.emptyList();
         entryDelays = new float[0];
         recycleIconBitmaps();
-        wallpaper = null;
     }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float visible = (1f - dismissProgress) * (1f - confirmProgress * 0.18f);
-        if (liveBlurEnabled) {
-            if (appBackgroundEnabled) {
-                backgroundPaint.setColor(appBackgroundColor);
-                backgroundPaint.setAlpha(Math.round(92f * visible));
-                canvas.drawRect(0, statusBarHeight, getWidth(), getHeight(), backgroundPaint);
-            }
-            backgroundPaint.setColor(Color.BLACK);
-            backgroundPaint.setAlpha(Math.round(255f * backgroundDimPercent / 100f * visible));
-        } else if (appBackgroundEnabled) {
-            backgroundPaint.setColor(appBackgroundColor);
-            backgroundPaint.setAlpha(Math.round(255f * visible));
-        } else if (wallpaper != null && wallpaperBackgroundStyle
-                == com.oxohang.fanfreeform.config.ConfigContract.HONEYCOMB_BACKGROUND_BLUR) {
-            wallpaperPaint.setAlpha(Math.round(255f * visible));
-            wallpaperBounds.set(0, statusBarHeight, getWidth(), getHeight());
-            canvas.drawBitmap(wallpaper, null, wallpaperBounds, wallpaperPaint);
-            backgroundPaint.setColor(Color.BLACK);
-            backgroundPaint.setAlpha(Math.round(255f * wallpaperDimPercent / 100f * visible));
-        } else {
-            backgroundPaint.setColor(Color.BLACK);
-            backgroundPaint.setAlpha(Math.round(255f * visible));
-        }
-        canvas.drawRect(0, statusBarHeight, getWidth(), getHeight(), backgroundPaint);
+        if (backgroundLayer != null) backgroundLayer.setVisible(visible);
         updateLensFocus();
         updateVisualCenters();
         float centerX = resolvedCenterX();
@@ -590,6 +572,9 @@ final class HoneycombOverlayView extends View {
         float alphaStart = effectRadius * 0.70f;
         float originX = corner == GestureGeometry.Corner.RIGHT ? getWidth() : 0f;
         float originY = getHeight();
+        float cullRadius = effectRadius
+                + iconSize * Math.max(centerScale, edgeScale) * 0.5f;
+        float cullRadiusSquared = cullRadius * cullRadius;
         for (int pass = 0; pass < 2; pass++) {
             for (int index = 0; index < targets.size(); index++) {
                 if (pass == 0 && index == selected) continue;
@@ -604,6 +589,18 @@ final class HoneycombOverlayView extends View {
             float y = originY + (finalCenterY - originY) * spring;
             float dxFromCenter = x - centerX;
             float dyFromCenter = y - centerY;
+            if (index != selected && confirmProgress <= 0f
+                    && dxFromCenter * dxFromCenter + dyFromCenter * dyFromCenter
+                    > cullRadiusSquared) {
+                stableHitX[index] = Float.NaN;
+                stableHitY[index] = Float.NaN;
+                stableHitRadius[index] = 0f;
+                drawnX[index] = Float.NaN;
+                drawnY[index] = Float.NaN;
+                drawnRadius[index] = 0f;
+                drawnScale[index] = 0f;
+                continue;
+            }
             float distance = (float) Math.sqrt(
                     dxFromCenter * dxFromCenter + dyFromCenter * dyFromCenter);
             float scale = HoneycombGeometry.smoothScale(distance, effectRadius,
@@ -613,13 +610,12 @@ final class HoneycombOverlayView extends View {
             float untrimmedRadius = iconSize * scale * 0.5f;
             float edgeVisibility = HoneycombGeometry.edgeVisibility(distance,
                     effectRadius, untrimmedRadius);
-            float inset = HoneycombGeometry.edgeInset(distance, effectRadius,
-                    untrimmedRadius);
+            float inset = untrimmedRadius * (1f - edgeVisibility) * 0.62f;
             if (distance > 1f && inset > 0f) {
                 x -= (x - centerX) / distance * inset;
                 y -= (y - centerY) / distance * inset;
             }
-            scale *= HoneycombGeometry.edgeScale(distance, effectRadius, untrimmedRadius);
+            scale *= 0.22f + 0.78f * edgeVisibility;
             alpha *= edgeVisibility;
             if (alpha > 0.08f && scale > 0.05f) {
                 stableHitX[index] = x;
@@ -796,23 +792,10 @@ final class HoneycombOverlayView extends View {
                             selectionProgress), x, y);
         }
         float radius = diameter * 0.5f;
-        if (forceCircularIcons) {
-            iconPlatePaint.setAlpha(Math.round(255 * alpha));
-            canvas.drawCircle(x, y, radius, iconPlatePaint);
-        }
         iconBitmapPaint.setAlpha(Math.round(255 * alpha));
-        float inset = forceCircularIcons ? 0f : diameter * 0.03f;
-        iconDrawRect.set(x - radius + inset, y - radius + inset,
-                x + radius - inset, y + radius - inset);
+        iconDrawRect.set(x - radius, y - radius, x + radius, y + radius);
         canvas.drawBitmap(bitmap, null, iconDrawRect, iconBitmapPaint);
         if (save >= 0) canvas.restoreToCount(save);
-        if (target.isShortcut()) {
-            ShortcutBadgeRenderer.draw(canvas, x, y, diameter, alpha, density);
-        }
-        if (target.userId != 0) {
-            ShortcutBadgeRenderer.drawDual(canvas, x, y, diameter, alpha, density,
-                    target.isShortcut());
-        }
     }
 
     private void drawSelectedName(Canvas canvas, float visible) {
@@ -881,6 +864,7 @@ final class HoneycombOverlayView extends View {
                 float y = event.getY();
                 if (!dragging && Math.hypot(x - downX, y - downY) > touchSlop) {
                     dragging = true;
+                    setInteractionActive(true);
                     pointerValid = false;
                     select(-1, false);
                 }
@@ -896,6 +880,7 @@ final class HoneycombOverlayView extends View {
             return true;
         }
         if (action == MotionEvent.ACTION_UP) {
+            setInteractionActive(false);
             if (!dragging && !scaledDuringGesture && !scaleDetector.isInProgress()) {
                 pointerX = event.getX();
                 pointerY = event.getY();
@@ -915,6 +900,7 @@ final class HoneycombOverlayView extends View {
             return true;
         }
         if (action == MotionEvent.ACTION_CANCEL) {
+            setInteractionActive(false);
             pointerValid = false;
             recycleVelocityTracker();
             select(-1, false);

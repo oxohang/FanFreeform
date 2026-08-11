@@ -13,6 +13,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,6 +25,7 @@ final class FanTriggerCapture {
     private static final int INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT = 1;
     private static final long TAP_TARGET_SETTLE_MS = 16L;
     private static final long TAP_DURATION_MS = 16L;
+    private static final long GESTURE_HANDOFF_TIMEOUT_MS = 1200L;
     private static final ExecutorService TAP_INJECTOR = Executors.newSingleThreadExecutor(
             runnable -> {
                 Thread thread = new Thread(runnable, "fanfreeform-tap-injector");
@@ -55,7 +58,8 @@ final class FanTriggerCapture {
     private int desiredLeftInset;
     private int desiredRightInset;
     private volatile boolean passthroughInProgress;
-    private boolean captureWindowsTemporarilyUntouchable;
+    private volatile boolean gestureHandoffInProgress;
+    private final List<MotionEvent> capturedEvents = new ArrayList<>();
 
     FanTriggerCapture(Context context, Handler mainHandler, Listener listener) {
         this.context = context;
@@ -89,6 +93,15 @@ final class FanTriggerCapture {
 
     void passthroughTap(float x, float y, int displayId) {
         runOnMain(() -> passthroughTapNow(x, y, displayId));
+    }
+
+    /**
+     * For a fallback window, the DOWN has already been delivered to this window while
+     * the direction arbiter was deciding. Replay that prefix and forward the remaining
+     * stream to the application once the gesture is known not to be a fan swipe.
+     */
+    void passthroughCapturedGesture(int displayId) {
+        runOnMain(() -> passthroughCapturedGestureNow(displayId));
     }
 
     void dispatchBack(int displayId) {
@@ -132,8 +145,11 @@ final class FanTriggerCapture {
     private void passthroughTapNow(float x, float y, int displayId) {
         if (passthroughInProgress) return;
         passthroughInProgress = true;
-        captureWindowsTemporarilyUntouchable = setCaptureTouchable(false);
-        if (!captureWindowsTemporarilyUntouchable) removeNow();
+        // Updating FLAG_NOT_TOUCHABLE in place is asynchronous in WindowManagerService.
+        // A tap injected immediately afterwards can still target this transparent
+        // window, which makes the bottom-corner area look dead. Remove the capture
+        // windows first so input targeting has an unambiguous application target.
+        removeNow();
         long downTime = SystemClock.uptimeMillis() + TAP_TARGET_SETTLE_MS;
         injectedDownTime = downTime;
         injectedUntil = downTime + 1000L;
@@ -164,14 +180,85 @@ final class FanTriggerCapture {
                 + " y=" + Math.round(y));
     }
 
-    private void finishTapPassthrough(boolean accepted) {
-        boolean restored = true;
-        if (captureWindowsTemporarilyUntouchable && desiredEnabled) {
-            restored = setCaptureTouchable(true);
+    private void passthroughCapturedGestureNow(int displayId) {
+        if (passthroughInProgress || !capturing || capturedEvents.isEmpty()) return;
+        passthroughInProgress = true;
+        gestureHandoffInProgress = true;
+        MotionEvent first = capturedEvents.get(0);
+        injectedDownTime = first.getDownTime();
+        injectedUntil = SystemClock.uptimeMillis() + 2000L;
+        List<MotionEvent> prefix = copyCapturedEvents();
+        // Keep receiving the physical stream while the window is being handed off. The
+        // replay is injected while the capture windows are temporarily untouchable, so
+        // WindowManager targets the underlying application instead of this view.
+        if (!setCaptureTouchable(false)) {
+            removeNow();
+            gestureHandoffInProgress = true;
         }
-        captureWindowsTemporarilyUntouchable = false;
+        enqueueGestureEvents(prefix, displayId, false);
+        mainHandler.removeCallbacks(gestureHandoffTimeout);
+        mainHandler.postDelayed(gestureHandoffTimeout, GESTURE_HANDOFF_TIMEOUT_MS);
+        Log.i("Corner non-fan gesture handed off events=" + prefix.size());
+    }
+
+    private final Runnable gestureHandoffTimeout = this::finishGestureHandoff;
+
+    private List<MotionEvent> copyCapturedEvents() {
+        List<MotionEvent> copy = new ArrayList<>(capturedEvents.size());
+        for (MotionEvent event : capturedEvents) copy.add(MotionEvent.obtain(event));
+        return copy;
+    }
+
+    private void enqueueGestureEvent(MotionEvent event, int displayId) {
+        if (!gestureHandoffInProgress) {
+            event.recycle();
+            return;
+        }
+        List<MotionEvent> single = new ArrayList<>(1);
+        single.add(event);
+        enqueueGestureEvents(single, displayId,
+                event.getActionMasked() == MotionEvent.ACTION_UP
+                        || event.getActionMasked() == MotionEvent.ACTION_CANCEL);
+    }
+
+    private void enqueueGestureEvents(List<MotionEvent> events, int displayId,
+                                      boolean terminal) {
+        try {
+            TAP_INJECTOR.execute(() -> {
+                boolean accepted = true;
+                for (MotionEvent event : events) {
+                    try {
+                        accepted &= injectMotionEvent(event, displayId);
+                    } finally {
+                        event.recycle();
+                    }
+                }
+                if (!accepted) {
+                    Log.i("Corner non-fan gesture replay rejected");
+                }
+                if (terminal) mainHandler.post(this::finishGestureHandoff);
+            });
+        } catch (Throwable error) {
+            for (MotionEvent event : events) event.recycle();
+            Log.e("Cannot schedule corner gesture handoff", error);
+            finishGestureHandoff();
+        }
+    }
+
+    private void finishGestureHandoff() {
+        mainHandler.removeCallbacks(gestureHandoffTimeout);
+        gestureHandoffInProgress = false;
         passthroughInProgress = false;
+        clearCapturedEvents();
+        boolean restored = !capturing || !desiredEnabled || setCaptureTouchable(true);
         if (!restored) removeNow();
+        updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent,
+                desiredLeftInset, desiredRightInset);
+        Log.i("Corner non-fan gesture handoff finished");
+    }
+
+    private void finishTapPassthrough(boolean accepted) {
+        passthroughInProgress = false;
         updateNow(desiredEnabled, desiredHotWidthPercent, desiredHotHeightPercent,
                 desiredLeftInset, desiredRightInset);
         Log.i("Corner application tap passthrough accepted=" + accepted
@@ -182,6 +269,18 @@ final class FanTriggerCapture {
                                    float x, float y, int displayId) {
         MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0);
         try {
+            return injectMotionEvent(event, displayId);
+        } catch (Throwable error) {
+            Log.e("Cannot replay application tap action=" + action, error);
+            return false;
+        } finally {
+            event.recycle();
+        }
+    }
+
+    private boolean injectMotionEvent(MotionEvent source, int displayId) {
+        MotionEvent event = MotionEvent.obtain(source);
+        try {
             event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
             try {
                 XposedHelpers.callMethod(event, "setDisplayId", displayId);
@@ -189,13 +288,10 @@ final class FanTriggerCapture {
             Object inputManager = context.getSystemService(Context.INPUT_SERVICE);
             Object result = XposedHelpers.callMethod(inputManager,
                     "injectInputEvent", event, INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT);
-            if (result instanceof Boolean && !((Boolean) result)) {
-                Log.i("Application tap passthrough was rejected action=" + action);
-                return false;
-            }
-            return true;
+            return !(result instanceof Boolean) || (Boolean) result;
         } catch (Throwable error) {
-            Log.e("Cannot replay application tap action=" + action, error);
+            Log.e("Cannot replay application motion action="
+                    + source.getActionMasked(), error);
             return false;
         } finally {
             event.recycle();
@@ -276,13 +372,36 @@ final class FanTriggerCapture {
             try {
                 screenEvent.offsetLocation(event.getRawX() - event.getX(),
                         event.getRawY() - event.getY());
-                listener.onTouch(screenEvent);
+                recordCapturedEvent(screenEvent);
+                if (gestureHandoffInProgress) {
+                    enqueueGestureEvent(MotionEvent.obtain(screenEvent),
+                            context.getDisplay() == null ? 0 : context.getDisplay().getDisplayId());
+                } else {
+                    listener.onTouch(screenEvent);
+                }
             } finally {
                 screenEvent.recycle();
             }
             return true;
         });
         return view;
+    }
+
+    private void recordCapturedEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) clearCapturedEvents();
+        if (capturedEvents.size() < 160) {
+            capturedEvents.add(MotionEvent.obtain(event));
+        } else if (capturedEvents.size() == 160) {
+            // Preserve DOWN and keep the newest motion samples bounded on very long drags.
+            MotionEvent oldestMove = capturedEvents.remove(1);
+            oldestMove.recycle();
+            capturedEvents.add(MotionEvent.obtain(event));
+        }
+        if (!gestureHandoffInProgress
+                && (event.getActionMasked() == MotionEvent.ACTION_UP
+                || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) {
+            clearCapturedEvents();
+        }
     }
 
     private WindowManager.LayoutParams params(int type, int gravity, String title,
@@ -301,6 +420,17 @@ final class FanTriggerCapture {
         params.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         return params;
+    }
+
+    private void removeNow() {
+        mainHandler.removeCallbacks(gestureHandoffTimeout);
+        removeView(leftView);
+        removeView(rightView);
+        leftView = null;
+        rightView = null;
+        capturing = false;
+        gestureHandoffInProgress = false;
+        clearCapturedEvents();
     }
 
     private boolean setCaptureTouchable(boolean touchable) {
@@ -328,13 +458,9 @@ final class FanTriggerCapture {
         }
     }
 
-    private void removeNow() {
-        removeView(leftView);
-        removeView(rightView);
-        leftView = null;
-        rightView = null;
-        capturing = false;
-        captureWindowsTemporarilyUntouchable = false;
+    private void clearCapturedEvents() {
+        for (MotionEvent event : capturedEvents) event.recycle();
+        capturedEvents.clear();
     }
 
     private void removeView(View view) {

@@ -92,7 +92,9 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(Application.class, "attach", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (param.args.length == 0 || !(param.args[0] instanceof Context)) return;
-                    Context context = (Context) param.args[0];
+                    Context baseContext = (Context) param.args[0];
+                    Context context = param.thisObject instanceof Application
+                            ? (Application) param.thisObject : baseContext;
                     systemUiContext = context.getApplicationContext() == null
                             ? context : context.getApplicationContext();
                     Log.attachReporter(systemUiContext);
@@ -617,14 +619,26 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     private static synchronized FanRuntime ensureRuntime(Context context,
                                                          ClassLoader classLoader) {
         if (runtime != null) return runtime;
+        if (context == null) {
+            Log.e("Cannot initialize SystemUI runtime: context is null",
+                    new IllegalStateException("SystemUI context unavailable"));
+            return null;
+        }
         Context appContext = context.getApplicationContext();
         if (appContext == null) appContext = context;
         systemUiContext = appContext;
-        runtime = new FanRuntime(appContext, classLoader);
-        if (freeformController != null) runtime.setFreeformController(freeformController);
+        FanRuntime created;
+        try {
+            created = new FanRuntime(appContext, classLoader);
+        } catch (Throwable error) {
+            Log.e("SystemUI runtime construction failed safely", error);
+            return null;
+        }
+        runtime = created;
+        if (freeformController != null) created.setFreeformController(freeformController);
         installExternalLaunchReceiver(appContext);
         Log.i("SystemUI runtime initialized with corner input fallback");
-        return runtime;
+        return created;
     }
 
     private static synchronized void installNativeInput(Context context, ClassLoader classLoader,
@@ -632,6 +646,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                                                         Class<?> handlerClass,
                                                         String registerMethod) {
         FanRuntime active = ensureRuntime(context, classLoader);
+        if (active == null) return;
         if (eventProxy != null) return;
         if (!active.beginNativeInputRegistration()) return;
         try {
@@ -703,7 +718,9 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
         if (motionEvent != null) {
             FanRuntime active = runtime;
-            if (active != null) active.postMotionEvent(motionEvent, inputMonitor);
+            // Keep the 1.0 input timing for the A/B build: the vendor callback already
+            // owns the gesture event, so avoid adding a main-looper queue turn here.
+            if (active != null) active.onMotion(motionEvent, inputMonitor);
             if (!"onEvent".equals(name) && REPORTED_PROXY_METHODS.add(method.toString())) {
                 Log.i("Nonstandard input event callback method=" + method);
             }

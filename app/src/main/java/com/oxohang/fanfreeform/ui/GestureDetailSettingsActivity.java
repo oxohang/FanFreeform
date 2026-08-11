@@ -214,7 +214,7 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(slider("顶部安全距离", ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 8, 35, ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 value -> value + "%"));
-        card.addView(slider("侧滑触发距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
+        card.addView(slider("侧滑距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
                 ConfigContract.MIN_SIDE_TRIGGER_PERCENT,
                 ConfigContract.MAX_SIDE_TRIGGER_PERCENT,
                 ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT, value -> value + "%"));
@@ -222,13 +222,15 @@ public final class GestureDetailSettingsActivity extends Activity {
                 ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT, value -> value + "%"));
-        card.addView(toggle("蜂窝停留触发", "仅当前方向选择蜂窝布局时生效",
+        card.addView(toggle("侧滑停留触发", "开启后侧滑达到设定距离，手指停住后才打开列表",
                 ConfigContract.KEY_SIDE_HOLD_ENABLED,
                 ConfigContract.DEFAULT_SIDE_HOLD_ENABLED));
-        card.addView(slider("停留时间", ConfigContract.KEY_SIDE_HOLD_DELAY_MS,
+        card.addView(slider("侧滑停留时间", ConfigContract.KEY_SIDE_HOLD_DELAY_MS,
                 ConfigContract.MIN_SIDE_HOLD_DELAY_MS,
                 ConfigContract.MAX_SIDE_HOLD_DELAY_MS,
                 ConfigContract.DEFAULT_SIDE_HOLD_DELAY_MS, value -> value + "ms"));
+        card.addView(text("停留模式先达到侧滑距离，再停留设定时间；移动手指会重新计时。",
+                13, Ui.MUTED, Typeface.NORMAL));
     }
 
     private void buildSideLayout(LinearLayout card) {
@@ -343,7 +345,7 @@ public final class GestureDetailSettingsActivity extends Activity {
 
     private View slider(String title, String key, int min, int max,
                         int defaultValue, Label labeler) {
-        int current = prefs.getInt(key, defaultValue);
+        int current = Math.max(min, Math.min(max, prefs.getInt(key, defaultValue)));
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 2));

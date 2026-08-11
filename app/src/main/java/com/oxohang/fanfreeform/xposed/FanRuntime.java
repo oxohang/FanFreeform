@@ -151,6 +151,12 @@ final class FanRuntime {
     private final Runnable sideHoldTrigger = this::triggerHeldSideList;
     private final SensorManager pressureSensorManager;
     private final Sensor pressureSensor;
+    private final HandlerThread pressureSensorThread;
+    private final Handler pressureSensorHandler;
+    private final Object pressureSampleLock = new Object();
+    private float pendingPressureSample;
+    private boolean pressureSampleDispatchScheduled;
+    private final Runnable dispatchPendingPressureSample = this::dispatchPendingPressureSample;
     private boolean pressureSensorListening;
     private boolean pressureSensorHighRate;
     private int pressureSensorMaxDelayUs = 31250;
@@ -158,6 +164,8 @@ final class FanRuntime {
     private float pressureLatestValue;
     private boolean pressureCandidate;
     private boolean pressureClaimed;
+    private boolean pressureOrbShown;
+    private boolean pressureOrbSuppressedForMotion;
     private boolean pressureHoneycombActive;
     private boolean pressureHoneycombSessionActive;
     private boolean pressureHoneycombSelectionMoved;
@@ -206,70 +214,112 @@ final class FanRuntime {
             }
             float value = event.values[0];
             if (!Float.isFinite(value)) return;
-            pressureLatestValue = value;
-            pressureHasSample = true;
-            if (pressureCalibrationPressActive && !pressureCalibrationMovedOutside) {
-                pressureCalibrationPeakDelta = Math.max(pressureCalibrationPeakDelta,
-                        PressureGesturePolicy.positiveDelta(pressureCalibrationBaseline, value));
-            }
-            if (pressureCandidate) {
-                if (pressureBaselinePending) {
-                    pressureBaseline = value;
-                    pressureBaselinePending = false;
-                    pressureDebugOverlay.setOrbIntensity(0f);
-                    Log.i("Pressure baseline captured after touch=" + pressureBaseline);
-                } else {
-                    float delta = PressureGesturePolicy.positiveDelta(pressureBaseline, value);
-                    pressureDebugOverlay.setOrbIntensity(config.pressureThreshold > 0f
-                            ? Math.min(1f, delta / config.pressureThreshold) : 0f);
-                    PressurePulseRecognizer.Signal signal = pressurePulseRecognizer.onPressure(
-                            delta, config.pressureThreshold,
-                            android.os.SystemClock.uptimeMillis());
-                    handlePressureSignal(signal, true, true);
-                }
-            }
-            if (bottomPressureBaselinePending) {
-                bottomSelectionPressureBaseline = value;
-                bottomPressureBaselinePending = false;
-            }
-            if (bottomSelectionPressureArmed && !bottomSelectionPressureConsumed
-                    && state == State.ACTIVE && corner != null
-                    && !activeSideList && !pressureCircularActive
-                    && selected >= 0 && config.pressureThreshold > 0f) {
-                float delta = PressureGesturePolicy.positiveDelta(
-                        bottomSelectionPressureBaseline, value);
-                if (delta >= config.pressureThreshold) {
-                    triggerBottomSelectionPressure();
-                }
-            }
-            if (bottomHoneycombPressureArmed && !bottomHoneycombPressureConsumed
-                    && state == State.HONEYCOMB && corner != null
-                    && bottomHoneycombSelectedTarget != null
-                    && config.pressureThreshold > 0f) {
-                float delta = PressureGesturePolicy.positiveDelta(
-                        bottomSelectionPressureBaseline, value);
-                if (delta >= config.pressureThreshold) {
-                    triggerBottomHoneycombPressure();
-                }
-            }
-            if (pressureSelectionPressureArmed && !pressureSelectionPressureConsumed
-                    && pressureSelectionIsActive() && pressureSelectionPressureTarget != null
-                    && config.pressureThreshold > 0f) {
-                if (pressureSelectionPressureBaselinePending) {
-                    pressureSelectionPressureBaseline = value;
-                    pressureSelectionPressureBaselinePending = false;
-                } else {
-                    float delta = PressureGesturePolicy.positiveDelta(
-                            pressureSelectionPressureBaseline, value);
-                    if (delta >= config.pressureThreshold) {
-                        triggerPressureSelectionPressure();
-                    }
-                }
-            }
+            postPressureSample(value);
         }
 
         @Override public void onAccuracyChanged(Sensor sensor, int accuracy) { }
     };
+
+    /** Sensor callbacks arrive off the SystemUI looper; keep them out of the touch frame path. */
+    private void postPressureSample(float value) {
+        synchronized (pressureSampleLock) {
+            pendingPressureSample = value;
+            if (pressureSampleDispatchScheduled) return;
+            pressureSampleDispatchScheduled = true;
+        }
+        if (!mainHandler.post(dispatchPendingPressureSample)) {
+            synchronized (pressureSampleLock) {
+                pressureSampleDispatchScheduled = false;
+            }
+        }
+    }
+
+    /** Coalesces pressure samples so a busy SystemUI main looper only sees the newest value. */
+    private void dispatchPendingPressureSample() {
+        float value;
+        synchronized (pressureSampleLock) {
+            value = pendingPressureSample;
+            pressureSampleDispatchScheduled = false;
+        }
+        if (!pressureSensorListening) return;
+        handlePressureSample(value);
+    }
+
+    private void handlePressureSample(float value) {
+        pressureLatestValue = value;
+        pressureHasSample = true;
+        if (pressureCalibrationPressActive && !pressureCalibrationMovedOutside) {
+            pressureCalibrationPeakDelta = Math.max(pressureCalibrationPeakDelta,
+                    PressureGesturePolicy.positiveDelta(pressureCalibrationBaseline, value));
+        }
+        if (pressureCandidate) {
+            if (pressureBaselinePending) {
+                pressureBaseline = value;
+                pressureBaselinePending = false;
+                pressureDebugOverlay.setOrbIntensity(0f);
+                Log.i("Pressure baseline captured after touch=" + pressureBaseline);
+            } else {
+                float delta = PressureGesturePolicy.positiveDelta(pressureBaseline, value);
+                float normalized = config.pressureThreshold > 0f
+                        ? Math.min(1f, delta / config.pressureThreshold) : 0f;
+                if (config.pressureThemeEnabled && !pressureOrbSuppressedForMotion
+                        && config.pressureThreshold > 0f
+                        && delta >= Math.max(0.08f, config.pressureThreshold * 0.12f)) {
+                    if (!pressureOrbShown) {
+                        pressureDebugOverlay.showOrb(activePressureTrigger.centerXPercent,
+                                activePressureTrigger.centerYPercent,
+                                activePressureTrigger.radiusPercent,
+                                config.pressureShowPosition, config.pressureOrbTheme,
+                                config.pressureOrbSizePercent);
+                        pressureOrbShown = true;
+                    }
+                    pressureDebugOverlay.setOrbIntensity(normalized);
+                }
+                PressurePulseRecognizer.Signal signal = pressurePulseRecognizer.onPressure(
+                        delta, config.pressureThreshold,
+                        android.os.SystemClock.uptimeMillis());
+                handlePressureSignal(signal, true, true);
+            }
+        }
+        if (bottomPressureBaselinePending) {
+            bottomSelectionPressureBaseline = value;
+            bottomPressureBaselinePending = false;
+        }
+        if (bottomSelectionPressureArmed && !bottomSelectionPressureConsumed
+                && state == State.ACTIVE && corner != null
+                && !activeSideList && !pressureCircularActive
+                && selected >= 0 && config.pressureThreshold > 0f) {
+            float delta = PressureGesturePolicy.positiveDelta(
+                    bottomSelectionPressureBaseline, value);
+            if (delta >= config.pressureThreshold) {
+                triggerBottomSelectionPressure();
+            }
+        }
+        if (bottomHoneycombPressureArmed && !bottomHoneycombPressureConsumed
+                && state == State.HONEYCOMB && corner != null
+                && bottomHoneycombSelectedTarget != null
+                && config.pressureThreshold > 0f) {
+            float delta = PressureGesturePolicy.positiveDelta(
+                    bottomSelectionPressureBaseline, value);
+            if (delta >= config.pressureThreshold) {
+                triggerBottomHoneycombPressure();
+            }
+        }
+        if (pressureSelectionPressureArmed && !pressureSelectionPressureConsumed
+                && pressureSelectionIsActive() && pressureSelectionPressureTarget != null
+                && config.pressureThreshold > 0f) {
+            if (pressureSelectionPressureBaselinePending) {
+                pressureSelectionPressureBaseline = value;
+                pressureSelectionPressureBaselinePending = false;
+            } else {
+                float delta = PressureGesturePolicy.positiveDelta(
+                        pressureSelectionPressureBaseline, value);
+                if (delta >= config.pressureThreshold) {
+                    triggerPressureSelectionPressure();
+                }
+            }
+        }
+    }
     private boolean bottomHoneycombSettleScheduled;
     private float bottomHoneycombSettleAnchorX;
     private float bottomHoneycombSettleAnchorY;
@@ -306,6 +356,9 @@ final class FanRuntime {
         HandlerThread configThread = new HandlerThread("FanFreeformConfig");
         configThread.start();
         configHandler = new Handler(configThread.getLooper());
+        pressureSensorThread = new HandlerThread("FanFreeformPressureSensor");
+        pressureSensorThread.start();
+        pressureSensorHandler = new Handler(pressureSensorThread.getLooper());
         density = context.getResources().getDisplayMetrics().density;
         windowManager = context.getSystemService(WindowManager.class);
         pressureSensorManager = context.getSystemService(SensorManager.class);
@@ -393,26 +446,34 @@ final class FanRuntime {
         } catch (Throwable error) {
             Log.e("Cannot register user-unlocked configuration reload", error);
         }
-        context.registerComponentCallbacks(new ComponentCallbacks() {
-            @Override public void onConfigurationChanged(Configuration newConfig) {
-                mainHandler.post(() -> {
-                    BlurredWallpaperCache.clear();
-                    overlay.removeNow();
-                    honeycombOverlay.removeNow();
-                    taskSwitcherOverlay.removeNow();
-                    pressureDebugOverlay.remove();
-                    resetFan(false);
-                    refreshGeometryAndCaptures("configuration immediate");
-                    FanRuntime.this.syncPressureDebugOverlay();
-                    mainHandler.post(() -> refreshGeometryAndCaptures(
-                            "configuration next frame"));
-                    mainHandler.postDelayed(() -> refreshGeometryAndCaptures(
-                            "configuration settled"), 180L);
-                });
-            }
+        Context callbackContext = this.context;
+        if (callbackContext != null) try {
+            callbackContext.registerComponentCallbacks(new ComponentCallbacks() {
+                @Override public void onConfigurationChanged(Configuration newConfig) {
+                    mainHandler.post(() -> {
+                        BlurredWallpaperCache.clear();
+                        overlay.removeNow();
+                        honeycombOverlay.removeNow();
+                        taskSwitcherOverlay.removeNow();
+                        pressureDebugOverlay.remove();
+                        resetFan(false);
+                        refreshGeometryAndCaptures("configuration immediate");
+                        FanRuntime.this.syncPressureDebugOverlay();
+                        mainHandler.post(() -> refreshGeometryAndCaptures(
+                                "configuration next frame"));
+                        mainHandler.postDelayed(() -> refreshGeometryAndCaptures(
+                                "configuration settled"), 180L);
+                    });
+                }
 
-            @Override public void onLowMemory() { BlurredWallpaperCache.clear(); }
-        });
+                @Override public void onLowMemory() { BlurredWallpaperCache.clear(); }
+            });
+        } catch (Throwable error) {
+            // A vendor ContextWrapper can reject callback registration during the
+            // SystemUI attach window. Do not let that abort construction after the
+            // input/capture workers have already started.
+            Log.e("Cannot register SystemUI component callbacks; continuing", error);
+        }
         Log.i("Input capability runtime=ready freeform=waiting native_input=waiting"
                 + " corner_fallback=waiting");
     }
@@ -771,6 +832,13 @@ final class FanRuntime {
     /** Copies the vendor input event and processes it on the main gesture looper. */
     void postMotionEvent(MotionEvent event, Object inputMonitor) {
         if (event == null) return;
+        // HyperOS can invoke the registered event handler on SystemUI's main looper.
+        // Posting again in that case adds a full queue turn before the overlay sees the
+        // finger, which is especially visible during a fast honeycomb drag.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            onMotion(event, inputMonitor);
+            return;
+        }
         final MotionEvent copy = MotionEvent.obtain(event);
         mainHandler.post(() -> {
             try {
@@ -824,6 +892,11 @@ final class FanRuntime {
             pressureDebugOverlay.remove();
         }
         if (action != MotionEvent.ACTION_DOWN) updatePressureCandidate(x, y, width, height);
+        if (pressureCandidate && action == MotionEvent.ACTION_MOVE
+                && GestureGeometry.distance(pressureDownX, pressureDownY, x, y)
+                > directionDecisionDistance) {
+            suppressPressureOrbForMotion();
+        }
         if (pressureCandidate && action == MotionEvent.ACTION_UP) {
             pressurePulseRecognizer.onUp();
             cancelPressureGesture();
@@ -1067,6 +1140,10 @@ final class FanRuntime {
                 } else {
                     outsideGestures.onCancel();
                 }
+                // This path is used on the normal desktop/app surface where no
+                // freeform window is being tracked. The side source was already
+                // validated when downSide was calculated, so the list is allowed.
+                sideListAllowed = listSide != null;
                 armSide(downSide, x, y, event.getDownTime(), event.getEventTime());
                 Log.i("Side-distance gesture armed side=" + downSide
                         + " threshold=" + config.sideTriggerPercent + "% range="
@@ -1124,9 +1201,9 @@ final class FanRuntime {
                     corner, downX, downY, x, y, directionDecisionDistance)) {
                 sideBackRecognized = true;
             }
-            float threshold = width * config.sideTriggerPercent / 100f;
+            float configuredSideDistance = width * config.sideTriggerPercent / 100f;
             SideGestureArbitrator.Decision decision = sideGestureArbitrator.update(
-                    corner, downX, downY, x, y, threshold,
+                    corner, downX, downY, x, y, configuredSideDistance,
                     sideDirectionSlop, sideVerticalFloor,
                     config.sideDirectionHorizontal, config.sideDirectionUp,
                     config.sideDirectionDown);
@@ -1140,7 +1217,7 @@ final class FanRuntime {
                 Log.i("Side-distance candidate yielded to native input");
                 return;
             }
-            if (waitForSideHold(x, y, width, inputMonitor)) return;
+            if (waitForSideHold(x, y, inputMonitor)) return;
             cancelSideHold();
             if (!sideListAllowed && sideTapIsOutsideWindow) {
                 sideBackRecognized = true;
@@ -1166,6 +1243,12 @@ final class FanRuntime {
             if (decision == GestureArbitrator.Decision.PENDING) return;
             if (decision == GestureArbitrator.Decision.CANCELLED) {
                 state = State.CANCELLED;
+                if (startedWithTriggerCapture) {
+                    int displayId = context.getDisplay() == null
+                            ? 0 : context.getDisplay().getDisplayId();
+                    triggerCapture.passthroughCapturedGesture(displayId);
+                    cancelCapturedCornerTap();
+                }
                 Log.i("Fan input cancelled outside inward-upward fan direction");
                 return;
             }
@@ -1754,10 +1837,8 @@ final class FanRuntime {
         downY = y;
     }
 
-    private void updateSideHoldCandidate(float x, float y, int width, Object inputMonitor) {
-        if (!config.sideHoldEnabled
-                || currentSideLayoutMode() != ConfigContract.SIDE_LAYOUT_HONEYCOMB
-                || state != State.SIDE_ARMED || corner == null) {
+    private void updateSideHoldCandidate(float x, float y, Object inputMonitor) {
+        if (!config.sideHoldEnabled || state != State.SIDE_ARMED || corner == null) {
             cancelSideHold();
             return;
         }
@@ -1765,20 +1846,16 @@ final class FanRuntime {
             cancelSideHold();
             return;
         }
-        if (!config.honeycombEnabledFor(isLandscape()) || honeycombTargets.isEmpty()) {
-            cancelSideHold();
-            return;
-        }
         float inward = corner == GestureGeometry.Corner.LEFT ? x - downX : downX - x;
-        float distance = GestureGeometry.distance(downX, downY, x, y);
-        float minimum = width * config.sideTriggerPercent / 100f;
-        if (inward <= sideDirectionSlop || distance < minimum) {
+        float minimum = displayBounds().width() * config.sideTriggerPercent / 100f;
+        if (inward < minimum) {
             cancelSideHold();
             return;
         }
         sideHoldCurrentX = x;
         sideHoldCurrentY = y;
         sideHoldInputMonitor = inputMonitor;
+        boolean firstSchedule = !sideHoldScheduled;
         boolean moved = !sideHoldScheduled || Math.hypot(
                 x - sideHoldAnchorX, y - sideHoldAnchorY) > sideDirectionSlop;
         if (!moved) return;
@@ -1795,19 +1872,19 @@ final class FanRuntime {
         sideHoldAnchorY = y;
         sideHoldScheduled = true;
         currentHandler.postDelayed(sideHoldTrigger, config.sideHoldDelayMs);
+        if (firstSchedule) {
+            Log.i("Side dwell timer started distance=" + Math.round(minimum)
+                    + " position=" + Math.round(inward)
+                    + " delay=" + config.sideHoldDelayMs + "ms");
+        }
     }
 
-    private boolean waitForSideHold(float x, float y, int width,
-                                    Object inputMonitor) {
-        if (!config.sideHoldEnabled
-                || currentSideLayoutMode() != ConfigContract.SIDE_LAYOUT_HONEYCOMB) return false;
-        if (!config.honeycombEnabledFor(isLandscape()) || honeycombTargets.isEmpty()) {
-            return false;
-        }
-        updateSideHoldCandidate(x, y, width, inputMonitor);
-        // Hold mode replaces immediate distance activation. Once the shared threshold
-        // is reached, continued movement only restarts the timer; it never opens the
-        // honeycomb until the finger actually settles.
+    private boolean waitForSideHold(float x, float y, Object inputMonitor) {
+        if (!config.sideHoldEnabled || !sideListAllowed) return false;
+        updateSideHoldCandidate(x, y, inputMonitor);
+        // Dwell mode uses the normal side-distance trigger. Once that distance is
+        // crossed, continued movement restarts the timer; the side list opens at the
+        // settled finger position.
         return true;
     }
 
@@ -1815,7 +1892,6 @@ final class FanRuntime {
         sideHoldScheduled = false;
         sideHoldHandler = null;
         if (!config.sideHoldEnabled
-                || currentSideLayoutMode() != ConfigContract.SIDE_LAYOUT_HONEYCOMB
                 || state != State.SIDE_ARMED || corner == null) return;
         if (Math.hypot(sideHoldCurrentX - sideHoldAnchorX,
                 sideHoldCurrentY - sideHoldAnchorY) > sideDirectionSlop * 1.5f) return;
@@ -1828,8 +1904,9 @@ final class FanRuntime {
         }
         sideSequenceCaptured = true;
         outsideGestures.onCancel();
-        activateSideHoneycomb(sideHoldCurrentX, sideHoldCurrentY);
-        Log.i("Side honeycomb opened after hold distance=" + Math.round(
+        activateSideList(sideHoldCurrentX, sideHoldCurrentY,
+                displayBounds().width(), displayBounds().height());
+        Log.i("Side list opened after dwell distance=" + Math.round(
                 GestureGeometry.distance(downX, downY,
                         sideHoldCurrentX, sideHoldCurrentY)));
     }
@@ -2391,6 +2468,8 @@ final class FanRuntime {
         if (trigger == null) return false;
         pressureCandidate = true;
         pressureClaimed = false;
+        pressureOrbShown = false;
+        pressureOrbSuppressedForMotion = false;
         pressureDownX = x;
         pressureDownY = y;
         pressureCurrentX = x;
@@ -2404,11 +2483,10 @@ final class FanRuntime {
         pressureInputFromCornerCapture = inputMonitor == null
                 && triggerCapture.isCapturing();
         pressurePulseRecognizer.start();
-        if (config.pressureThemeEnabled) {
-            pressureDebugOverlay.showOrb(trigger.centerXPercent, trigger.centerYPercent,
-                    trigger.radiusPercent, config.pressureShowPosition,
-                    config.pressureOrbTheme, config.pressureOrbSizePercent);
-        } else if (config.pressureShowPosition) {
+        // Do not start the expensive full-screen theme animation on every down. It is
+        // shown lazily after a real pressure rise, so an ordinary fast swipe stays cheap.
+        pressureDebugOverlay.hideOrb();
+        if (config.pressureShowPosition) {
             pressureDebugOverlay.show(config.pressureTriggers);
         }
         setPressureSensorRate(true);
@@ -2432,6 +2510,8 @@ final class FanRuntime {
     private void cancelPressureGesture() {
         mainHandler.removeCallbacks(pressureCandidateTimeout);
         pressurePulseRecognizer.cancel();
+        pressureOrbShown = false;
+        pressureOrbSuppressedForMotion = false;
         pressureDebugOverlay.hideOrb();
         pressureCandidate = false;
         pressureClaimed = false;
@@ -2447,6 +2527,8 @@ final class FanRuntime {
     private void finishPressureCandidate() {
         mainHandler.removeCallbacks(pressureCandidateTimeout);
         pressurePulseRecognizer.cancel();
+        pressureOrbShown = false;
+        pressureOrbSuppressedForMotion = false;
         pressureDebugOverlay.hideOrb();
         pressureCandidate = false;
         pressureInputMonitor = null;
@@ -2455,6 +2537,15 @@ final class FanRuntime {
         pressureInputFromCornerCapture = false;
         setPressureSensorRate(false);
         pressureSelectionTrigger = null;
+    }
+
+    private void suppressPressureOrbForMotion() {
+        if (pressureOrbSuppressedForMotion) return;
+        pressureOrbSuppressedForMotion = true;
+        if (pressureOrbShown) {
+            pressureOrbShown = false;
+            pressureDebugOverlay.hideOrb();
+        }
     }
 
     private void handlePressureSignal(PressurePulseRecognizer.Signal signal,
@@ -2870,7 +2961,7 @@ final class FanRuntime {
             pressureSensorListening = pressureSensorManager.registerListener(
                     pressureSensorListener, pressureSensor,
                     sensorPeriodUs(highRate),
-                    mainHandler);
+                    pressureSensorHandler);
             pressureSensorHighRate = pressureSensorListening && highRate;
         } catch (Throwable error) {
             pressureSensorListening = false;
@@ -3496,7 +3587,6 @@ final class FanRuntime {
                         + "% icon=" + next.iconSizeDp + "dp side="
                         + next.sideGestureEnabled + "@" + next.sideTriggerPercent
                         + "% sideHold=" + next.sideHoldEnabled + "@"
-                        + next.sideTriggerPercent + "%/"
                         + next.sideHoldDelayMs + "ms"
                         + " sideIcon=" + next.sideIconSizeDp + "dp safeTop="
                         + next.sideTopSafeMarginPercent + "% names="

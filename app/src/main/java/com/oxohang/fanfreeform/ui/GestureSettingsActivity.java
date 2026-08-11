@@ -87,7 +87,7 @@ public final class GestureSettingsActivity extends Activity {
                 () -> openDetail(GestureDetailSettingsActivity.SIDE_PORTRAIT)));
         entries.addView(entry("横屏行为与布局", sideSummary(true),
                 () -> openDetail(GestureDetailSettingsActivity.SIDE_LANDSCAPE)));
-        entries.addView(entry("方向与触发", "安全距离、允许方向、触发距离与停留",
+        entries.addView(entry("方向与触发", "允许方向、触发距离与停留",
                 () -> openDetail(GestureDetailSettingsActivity.SIDE_TRIGGER)));
         entries.addView(entry("应用与布局参数", "已选 "
                         + new ConfigStore(this).getSideTargets().size()

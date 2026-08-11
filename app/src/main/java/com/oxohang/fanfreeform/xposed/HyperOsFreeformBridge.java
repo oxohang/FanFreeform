@@ -476,6 +476,7 @@ final class HyperOsFreeformBridge {
         boolean normal = booleanCall(info, "isNormalState", false);
         boolean mini = booleanCall(info, "isMiniState", false);
         boolean pinned = isPinned(info);
+        boolean taskVisible = isTaskVisible(info);
         String actual = packageName(info);
         boolean retainTransition = false;
         boolean alignShortcutTask = false;
@@ -483,7 +484,8 @@ final class HyperOsFreeformBridge {
         int deferredMatchedAction = ConfigContract.ACTION_NONE;
 
         synchronized (taskLock) {
-            updateVisibleStateLocked(taskId, normal, mini, pinned);
+            updateVisibleStateLocked(taskId,
+                    taskVisible && normal, taskVisible && mini, taskVisible && pinned);
             String expected = pendingPackage;
             boolean inMatchWindow = expected != null
                     && SystemClock.elapsedRealtime() - pendingSince <= MATCH_WINDOW_MS;
@@ -662,7 +664,7 @@ final class HyperOsFreeformBridge {
             boolean normal = booleanCall(info, "isNormalState", false);
             boolean mini = booleanCall(info, "isMiniState", false);
             boolean pinned = isPinned(info);
-            boolean visible = normal || mini || pinned;
+            boolean visible = isTaskVisible(info) && (normal || mini || pinned);
             if (!visible) {
                 synchronized (taskLock) {
                     visibleFreeformTaskIds.remove(taskId);
@@ -671,7 +673,7 @@ final class HyperOsFreeformBridge {
                 continue;
             }
             synchronized (taskLock) {
-                if (normal && !mini && !pinned) {
+                if (visible && normal && !mini && !pinned) {
                     normalFreeformTaskIds.remove(taskId);
                     normalFreeformTaskIds.add(taskId);
                 } else {
@@ -1621,6 +1623,17 @@ final class HyperOsFreeformBridge {
         return booleanCall(info, "isInPinMode", false)
                 || booleanCall(info, "isNormalPinedState", false)
                 || booleanCall(info, "isMiniPinedState", false);
+    }
+
+    private static boolean isTaskVisible(Object info) {
+        try {
+            Object task = XposedHelpers.callMethod(info, "getTaskInfo");
+            return booleanCall(task, "isVisible", true);
+        } catch (Throwable ignored) {
+            // Older ROM task-info implementations do not expose visibility. Preserve
+            // the previous state-based behavior on those versions.
+            return true;
+        }
     }
 
     private String packageName(Object info) {
