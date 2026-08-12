@@ -11,16 +11,28 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import de.robv.android.xposed.XposedBridge;
 
 final class Log {
     private static final String PREFIX = "[FanFreeform] ";
     private static final Object LOCK = new Object();
+    private static final Object RATE_LOCK = new Object();
+    private static final long RATE_LIMIT_MS = 30000L;
+    private static final HashMap<String, Long> LAST_LOG = new HashMap<>();
+    private static final HashMap<String, Integer> SUPPRESSED = new HashMap<>();
+    private static final AtomicBoolean PUBLISH_IN_FLIGHT = new AtomicBoolean();
+    private static volatile boolean publishNeeded;
     private static final ArrayDeque<String> RECENT = new ArrayDeque<>();
     private static final int MAX_RECENT = 100;
     private static final long INFO_PUBLISH_DELAY_MS = 5000L;
     private static final Runnable PUBLISH_TASK = Log::publish;
+    private static final ExecutorService PUBLISH_EXECUTOR = Executors.newSingleThreadExecutor(
+            runnable -> new Thread(runnable, "fanfreeform-diagnostics"));
     private static final ThreadLocal<SimpleDateFormat> FORMATTER =
             new ThreadLocal<SimpleDateFormat>() {
                 @Override protected SimpleDateFormat initialValue() {
@@ -34,12 +46,10 @@ final class Log {
     private Log() {}
 
     static void i(String message) {
-        XposedBridge.log(PREFIX + message);
         remember("I", message, null, false);
     }
 
     static void e(String message, Throwable throwable) {
-        XposedBridge.log(PREFIX + message + ": " + throwable);
         remember("E", message, throwable, true);
     }
 
@@ -56,6 +66,17 @@ final class Log {
 
     private static void remember(String level, String message, Throwable throwable,
                                  boolean urgent) {
+        String key = level + "\n" + (message == null ? "" : message);
+        synchronized (RATE_LOCK) {
+            long now = SystemClock.uptimeMillis();
+            Long last = LAST_LOG.get(key);
+            if (last != null && now - last < RATE_LIMIT_MS) {
+                SUPPRESSED.merge(key, 1, Integer::sum);
+                return;
+            }
+            LAST_LOG.put(key, now);
+        }
+        XposedBridge.log(PREFIX + message + (throwable == null ? "" : ": " + throwable));
         StringBuilder line = new StringBuilder();
         line.append(FORMATTER.get().format(new Date())).append(' ').append(level).append(' ')
                 .append(message == null ? "" : message);
@@ -101,6 +122,26 @@ final class Log {
             text = snapshot.toString();
         }
         if (context == null) return;
+        if (context == null) return;
+        if (!PUBLISH_IN_FLIGHT.compareAndSet(false, true)) {
+            publishNeeded = true;
+            return;
+        }
+        PUBLISH_EXECUTOR.execute(() -> {
+            try {
+                publishNow(context, text);
+            } finally {
+                PUBLISH_IN_FLIGHT.set(false);
+                if (publishNeeded) {
+                    publishNeeded = false;
+                    Handler handler = reporterHandler;
+                    if (handler != null) handler.post(PUBLISH_TASK);
+                }
+            }
+        });
+    }
+
+    private static void publishNow(Context context, String text) {
         try {
             Bundle extras = new Bundle();
             extras.putString(ConfigContract.EXTRA_DIAGNOSTIC_PROCESS,

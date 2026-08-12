@@ -1,0 +1,5 @@
+gradle.beforeProject { project ->
+    if (project.path == ":app") {
+        project.layout.buildDirectory.set(new File(project.rootDir, ".codex-build/app"))
+    }
+}

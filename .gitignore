@@ -2,13 +2,9 @@
 .idea/
 local.properties
 **/build/
-*.iml
-captures/
-.DS_Store
+.codex-build/
 release-archive/
 releases/
-*.apk
-*.aab
-*.jks
-*.keystore
-signing.properties
+captures/
+*.iml
+.DS_Store

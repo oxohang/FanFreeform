@@ -1,0 +1,7 @@
+com.oxohang.fanfreeform.app-pngs-0 /Users/oxohang/vibecodeing/小窗/.codex-build/app/generated/res/pngs/debug
+com.oxohang.fanfreeform.app-resValues-1 /Users/oxohang/vibecodeing/小窗/.codex-build/app/generated/res/resValues/debug
+com.oxohang.fanfreeform.app-packageDebugResources-2 /Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.oxohang.fanfreeform.app-packageDebugResources-3 /Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.oxohang.fanfreeform.app-debug-4 /Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/merged_res/debug/mergeDebugResources
+com.oxohang.fanfreeform.app-debug-5 /Users/oxohang/vibecodeing/小窗/app/src/debug/res
+com.oxohang.fanfreeform.app-main-6 /Users/oxohang/vibecodeing/小窗/app/src/main/res

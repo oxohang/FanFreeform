@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="incidents">
+
+    <incident
+        id="ResourceType"
+        severity="error"
+        message="Expected resource of type styleable">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/ForegroundAppBackgroundResolver.java"
+            line="85"
+            column="82"
+            startOffset="3855"
+            endLine="85"
+            endColumn="87"
+            endOffset="3860"/>
+    </incident>
+
+    <incident
+        id="InternalInsetResource"
+        severity="warning"
+        message="Using internal inset dimension resource `status_bar_height` is not supported">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanRuntime.java"
+            line="1775"
+            column="30"
+            startOffset="83337"
+            endLine="1776"
+            endColumn="61"
+            endOffset="83435"/>
+    </incident>
+
+    <incident
+        id="OldTargetApi"
+        severity="warning"
+        message="Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the `android.os.Build.VERSION_CODES` javadoc for details.">
+        <fix-replace
+            description="Update targetSdkVersion to 36"
+            oldString="34"
+            replacement="36"
+            priority="0"/>
+        <location
+            file="${:app*projectDir}/build.gradle.kts"
+            line="15"
+            column="9"
+            startOffset="292"
+            endLine="15"
+            endColumn="23"
+            endOffset="306"/>
+    </incident>
+
+    <incident
+        id="DiscouragedApi"
+        severity="warning"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`).">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanRuntime.java"
+            line="1775"
+            column="53"
+            startOffset="83360"
+            endLine="1775"
+            endColumn="66"
+            endOffset="83373"/>
+    </incident>
+
+    <incident
+        id="DiscouragedApi"
+        severity="warning"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`).">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/RecentsClearButtonRuntime.java"
+            line="65"
+            column="51"
+            startOffset="2393"
+            endLine="65"
+            endColumn="64"
+            endOffset="2406"/>
+    </incident>
+
+    <incident
+        id="DrawAllocation"
+        severity="warning"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java"
+            line="509"
+            column="33"
+            startOffset="21533"
+            endLine="510"
+            endColumn="66"
+            endOffset="21650"/>
+    </incident>
+
+    <incident
+        id="DrawAllocation"
+        severity="warning"
+        message="Avoid object allocations during draw/layout operations (preallocate and reuse instead)">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/TaskCardPreviewView.java"
+            line="53"
+            column="24"
+            startOffset="1960"
+            endLine="54"
+            endColumn="63"
+            endOffset="2081"/>
+    </incident>
+
+    <incident
+        id="StaticFieldLeak"
+        severity="warning"
+        message="Do not place Android context classes in static fields; this is a memory leak">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/Log.java"
+            line="30"
+            column="13"
+            startOffset="1064"
+            endLine="30"
+            endColumn="19"
+            endOffset="1070"/>
+    </incident>
+
+    <incident
+        id="StaticFieldLeak"
+        severity="warning"
+        message="Do not place Android context classes in static fields; this is a memory leak">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/ShortcutHostRuntime.java"
+            line="63"
+            column="13"
+            startOffset="2525"
+            endLine="63"
+            endColumn="19"
+            endOffset="2531"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="`onTouch` lambda should call `View#performClick` when a click is detected">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/FanTriggerCapture.java"
+            line="201"
+            column="33"
+            startOffset="8274"
+            endLine="206"
+            endColumn="10"
+            endOffset="8492"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="Custom view `HoneycombEditorView` overrides `onTouchEvent` but not `performClick`">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/HoneycombLayoutEditorActivity.java"
+            line="292"
+            column="34"
+            startOffset="12608"
+            endLine="292"
+            endColumn="46"
+            endOffset="12620"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="Custom view `HoneycombOverlayView` overrides `onTouchEvent` but not `performClick`">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/HoneycombOverlayView.java"
+            line="769"
+            column="30"
+            startOffset="33490"
+            endLine="769"
+            endColumn="42"
+            endOffset="33502"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="`onTouch` lambda should call `View#performClick` when a click is detected">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/OutsideTouchCapture.java"
+            line="168"
+            column="33"
+            startOffset="6910"
+            endLine="182"
+            endColumn="10"
+            endOffset="7689"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="Custom view `PressurePadView` overrides `onTouchEvent` but not `performClick`">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java"
+            line="520"
+            column="34"
+            startOffset="22047"
+            endLine="520"
+            endColumn="46"
+            endOffset="22059"/>
+    </incident>
+
+    <incident
+        id="ClickableViewAccessibility"
+        severity="warning"
+        message="Custom view `TaskSwitcherOverlayView` overrides `onTouchEvent` but not `performClick`">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/xposed/TaskSwitcherOverlayView.java"
+            line="495"
+            column="30"
+            startOffset="22736"
+            endLine="495"
+            endColumn="42"
+            endOffset="22748"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/AnimationSettingsActivity.java"
+            line="212"
+            column="31"
+            startOffset="10915"
+            endLine="212"
+            endColumn="48"
+            endOffset="10932"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/AppPickerActivity.java"
+            line="242"
+            column="60"
+            startOffset="10290"
+            endLine="243"
+            endColumn="34"
+            endOffset="10354"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="String literal in `setText` can not be translated. Use Android resources instead.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/DashboardActivity.java"
+            line="119"
+            column="28"
+            startOffset="5194"
+            endLine="119"
+            endColumn="47"
+            endOffset="5213"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/DashboardActivity.java"
+            line="124"
+            column="28"
+            startOffset="5486"
+            endLine="124"
+            endColumn="44"
+            endOffset="5502"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/GestureDetailSettingsActivity.java"
+            line="54"
+            column="33"
+            startOffset="2136"
+            endLine="54"
+            endColumn="53"
+            endOffset="2156"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="String literal in `setText` can not be translated. Use Android resources instead.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java"
+            line="64"
+            column="24"
+            startOffset="2179"
+            endLine="64"
+            endColumn="38"
+            endOffset="2193"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="String literal in `setText` can not be translated. Use Android resources instead.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java"
+            line="216"
+            column="36"
+            startOffset="9069"
+            endLine="216"
+            endColumn="50"
+            endOffset="9083"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/MiscSettingsActivity.java"
+            line="236"
+            column="24"
+            startOffset="9942"
+            endLine="237"
+            endColumn="35"
+            endOffset="10033"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="Do not concatenate text displayed with `setText`. Use resource string with placeholders.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/OutsideSettingsActivity.java"
+            line="132"
+            column="31"
+            startOffset="6197"
+            endLine="132"
+            endColumn="46"
+            endOffset="6212"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="String literal in `setText` can not be translated. Use Android resources instead.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/OutsideSettingsActivity.java"
+            line="132"
+            column="42"
+            startOffset="6208"
+            endLine="132"
+            endColumn="46"
+            endOffset="6212"/>
+    </incident>
+
+    <incident
+        id="SetTextI18n"
+        severity="warning"
+        message="String literal in `setText` can not be translated. Use Android resources instead.">
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/oxohang/fanfreeform/ui/PressureCalibrationActivity.java"
+            line="339"
+            column="34"
+            startOffset="14411"
+            endLine="339"
+            endColumn="61"
+            endOffset="14438"/>
+    </incident>
+
+</incidents>

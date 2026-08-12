@@ -64,6 +64,8 @@ public final class TaskCenterSettingsActivity extends Activity {
         card.addView(text("任务布局", 18, Ui.TEXT, Typeface.BOLD));
         card.addView(layoutModeRow());
         card.addView(Ui.divider(this));
+        card.addView(reverseOrderRow());
+        card.addView(Ui.divider(this));
         card.addView(showNameRow());
         card.addView(Ui.divider(this));
         TextView cardSizeTitle = text("卡片模式尺寸", 16, Ui.TEXT, Typeface.BOLD);
@@ -141,7 +143,7 @@ public final class TaskCenterSettingsActivity extends Activity {
         root.addView(motionCard, motionParams);
 
         Ui.addResetOption(this, root,
-                "将恢复任务数量、布局、尺寸、下移容错和位置；动效参数会保留。",
+                "将恢复任务数量、布局、排列方向、尺寸、下移容错和位置；动效参数会保留。",
                 store::resetTaskCenterLayoutSettings);
         return scroll;
     }
@@ -162,13 +164,34 @@ public final class TaskCenterSettingsActivity extends Activity {
                 ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE);
         group.check(current == ConfigContract.SIDE_TASK_LAYOUT_ICONS
                 ? icons.getId() : flat.getId());
-        group.setOnCheckedChangeListener((radioGroup, checkedId) -> store.putInt(
-                ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
-                checkedId == icons.getId()
-                        ? ConfigContract.SIDE_TASK_LAYOUT_ICONS
-                        : ConfigContract.SIDE_TASK_LAYOUT_FLAT));
+        group.setOnCheckedChangeListener((radioGroup, checkedId) -> {
+            int value = checkedId == icons.getId()
+                    ? ConfigContract.SIDE_TASK_LAYOUT_ICONS
+                    : ConfigContract.SIDE_TASK_LAYOUT_FLAT;
+            store.putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE, value);
+        });
         section.addView(group);
         return section;
+    }
+
+    private View reverseOrderRow() {
+        LinearLayout settingRow = new LinearLayout(this);
+        settingRow.setGravity(Gravity.CENTER_VERTICAL);
+        settingRow.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 10));
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.addView(text("反向排列最近任务", 16, Ui.TEXT, Typeface.BOLD));
+        labels.addView(text("只反转图标顺序，手指选择方向保持自然",
+                13, Ui.MUTED, Typeface.NORMAL));
+        settingRow.addView(labels, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch toggle = new Switch(this);
+        toggle.setChecked(prefs.getBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER));
+        toggle.setOnCheckedChangeListener((button, checked) -> store.putBoolean(
+                ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER, checked));
+        settingRow.addView(toggle);
+        return settingRow;
     }
 
     private View motionModeRow() {

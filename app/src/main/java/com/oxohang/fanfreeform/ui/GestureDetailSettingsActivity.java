@@ -120,6 +120,13 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(toggleWithChild("启用一段手势", "斜滑后显示扇形应用",
                 firstEnabled, !landscape, firstLaunch));
         card.addView(firstLaunch);
+        if (!landscape) {
+            card.addView(toggle("一段重压启动", "选中一段应用后重压，反转当前启动方式",
+                    ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                    ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH));
+            card.addView(text("需先在“按压手势”中完成气压校准并启用。",
+                    13, Ui.MUTED, Typeface.NORMAL));
+        }
         card.addView(Ui.divider(this));
         card.addView(text("二段蜂窝", 18, Ui.TEXT, Typeface.BOLD));
         LinearLayout secondLaunch = launchMode(secondFreeform, true,
@@ -127,6 +134,11 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(toggleWithChild("启用二段手势", "越过扇形后进入蜂窝应用",
                 secondEnabled, !landscape, secondLaunch));
         card.addView(secondLaunch);
+        if (!landscape) {
+            card.addView(toggle("二段重压启动", "蜂窝中选中应用后重压，反转当前启动方式",
+                    ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                    ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH));
+        }
     }
 
     private void buildSideBehavior(LinearLayout card, boolean landscape) {
@@ -166,14 +178,11 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(text("分段距离", 18, Ui.TEXT, Typeface.BOLD));
         card.addView(slider("一段扇形距离", ConfigContract.KEY_TRIGGER_PERCENT,
                 6, 24, ConfigContract.DEFAULT_TRIGGER_PERCENT, value -> value + "%"));
-        card.addView(slider("二段蜂窝距离", ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MIN_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.MAX_HONEYCOMB_TRIGGER_DP,
-                ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP, value -> value + "dp"));
-        card.addView(slider("二段回退距离", ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
-                ConfigContract.MAX_HONEYCOMB_RETREAT_DP,
-                ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP, value -> value + "dp"));
+        card.addView(slider("蜂窝停顿时间", ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS,
+                prefs.getInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS), value -> value + " ms"));
         card.addView(slider("图标选择距离", ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
                 ConfigContract.MIN_SELECTION_RADIUS_PERCENT,
                 ConfigContract.MAX_SELECTION_RADIUS_PERCENT,
@@ -186,7 +195,8 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(navigationRow("扇形排列", "智能排布或自定义内、中、外三排",
                 () -> startActivity(new Intent(this, FanLayoutSettingsActivity.class))));
         card.addView(slider("图标大小", ConfigContract.KEY_ICON_SIZE_DP,
-                34, 64, ConfigContract.DEFAULT_ICON_SIZE_DP, value -> value + "dp"));
+                ConfigContract.MIN_ICON_SIZE_DP, ConfigContract.MAX_ICON_SIZE_DP,
+                ConfigContract.DEFAULT_ICON_SIZE_DP, value -> value + "dp"));
         card.addView(slider("扇形目标上限", ConfigContract.KEY_FAN_MAX_TARGETS,
                 3, 24, ConfigContract.DEFAULT_FAN_MAX_TARGETS, value -> value + " 个"));
     }
@@ -204,7 +214,7 @@ public final class GestureDetailSettingsActivity extends Activity {
         card.addView(slider("顶部安全距离", ConfigContract.KEY_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 8, 35, ConfigContract.DEFAULT_SIDE_TOP_SAFE_MARGIN_PERCENT,
                 value -> value + "%"));
-        card.addView(slider("侧滑触发距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
+        card.addView(slider("侧滑距离", ConfigContract.KEY_SIDE_TRIGGER_PERCENT,
                 ConfigContract.MIN_SIDE_TRIGGER_PERCENT,
                 ConfigContract.MAX_SIDE_TRIGGER_PERCENT,
                 ConfigContract.DEFAULT_SIDE_TRIGGER_PERCENT, value -> value + "%"));
@@ -212,13 +222,15 @@ public final class GestureDetailSettingsActivity extends Activity {
                 ConfigContract.MIN_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.MAX_SIDE_REVERSE_CANCEL_PERCENT,
                 ConfigContract.DEFAULT_SIDE_REVERSE_CANCEL_PERCENT, value -> value + "%"));
-        card.addView(toggle("蜂窝停留触发", "仅当前方向选择蜂窝布局时生效",
+        card.addView(toggle("侧滑停留触发", "开启后侧滑达到设定距离，手指停住后才打开列表",
                 ConfigContract.KEY_SIDE_HOLD_ENABLED,
                 ConfigContract.DEFAULT_SIDE_HOLD_ENABLED));
-        card.addView(slider("停留时间", ConfigContract.KEY_SIDE_HOLD_DELAY_MS,
+        card.addView(slider("侧滑停留时间", ConfigContract.KEY_SIDE_HOLD_DELAY_MS,
                 ConfigContract.MIN_SIDE_HOLD_DELAY_MS,
                 ConfigContract.MAX_SIDE_HOLD_DELAY_MS,
                 ConfigContract.DEFAULT_SIDE_HOLD_DELAY_MS, value -> value + "ms"));
+        card.addView(text("停留模式先达到侧滑距离，再停留设定时间；移动手指会重新计时。",
+                13, Ui.MUTED, Typeface.NORMAL));
     }
 
     private void buildSideLayout(LinearLayout card) {
@@ -333,7 +345,7 @@ public final class GestureDetailSettingsActivity extends Activity {
 
     private View slider(String title, String key, int min, int max,
                         int defaultValue, Label labeler) {
-        int current = prefs.getInt(key, defaultValue);
+        int current = Math.max(min, Math.min(max, prefs.getInt(key, defaultValue)));
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 2));

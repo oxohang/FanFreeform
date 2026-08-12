@@ -101,6 +101,17 @@ public final class HoneycombSettingsActivity extends Activity {
         appsCard.addView(appsEntry);
         root.addView(appsCard, cardParams());
 
+        LinearLayout layoutCard = card();
+        LinearLayout layoutEntry = row();
+        layoutEntry.setOnClickListener(view -> startActivity(
+                new Intent(this, HoneycombLayoutEditorActivity.class)));
+        layoutEntry.addView(labels("预览与编辑应用位置",
+                        "按实际蜂窝排列预览，长按拖动交换位置"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        layoutEntry.addView(text("编辑  ›", 14, Ui.ACCENT, Typeface.BOLD));
+        layoutCard.addView(layoutEntry);
+        root.addView(layoutCard, cardParams());
+
         LinearLayout behavior = card();
         behavior.addView(text("操作方式", 18, Ui.TEXT, Typeface.BOLD));
         RadioGroup modes = new RadioGroup(this);
@@ -147,8 +158,16 @@ public final class HoneycombSettingsActivity extends Activity {
                         ConfigContract.DEFAULT_HONEYCOMB_FIXED_Y_PERCENT),
                 value -> value + "%"));
         tuning.addView(slider("应用数量上限", ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
-                1, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS, 36),
+                ConfigContract.MIN_HONEYCOMB_MAX_TARGETS,
+                ConfigContract.MAX_HONEYCOMB_MAX_TARGETS,
+                prefs.getInt(ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
+                        ConfigContract.DEFAULT_HONEYCOMB_MAX_TARGETS),
                 value -> value + " 个"));
+        tuning.addView(slider("蜂窝停顿时间", ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS,
+                prefs.getInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS), value -> value + " ms"));
         tuning.addView(slider("基础图标大小", ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MIN_HONEYCOMB_ICON_SIZE_DP,
                 ConfigContract.MAX_HONEYCOMB_ICON_SIZE_DP,
@@ -169,20 +188,41 @@ public final class HoneycombSettingsActivity extends Activity {
                 "按住滑选时固定显示在蜂窝圆盘上方",
                 ConfigContract.KEY_HONEYCOMB_SHOW_SELECTED_NAME,
                 ConfigContract.DEFAULT_HONEYCOMB_SHOW_SELECTED_NAME));
-        LinearLayout blackRow = row();
-        blackRow.addView(labels("使用纯黑背景", "默认关闭，使用壁纸高斯模糊"),
+        LinearLayout wallpaperRow = row();
+        wallpaperRow.addView(labels("系统壁纸模糊",
+                        "默认背景；关闭且未启用其他背景时使用纯黑"),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Switch black = new Switch(this);
-        black.setChecked(prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE, 0) == 1);
-        black.setOnCheckedChangeListener((button, checked) -> store.putInt(
-                ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE, checked ? 1 : 0));
-        blackRow.addView(black);
-        tuning.addView(blackRow);
+        Switch wallpaper = new Switch(this);
+        wallpaper.setChecked(prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE,
+                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_STYLE)
+                == ConfigContract.HONEYCOMB_BACKGROUND_BLUR);
+        wallpaper.setOnCheckedChangeListener((button, checked) -> store.putInt(
+                ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE,
+                checked ? ConfigContract.HONEYCOMB_BACKGROUND_BLUR
+                        : ConfigContract.HONEYCOMB_BACKGROUND_BLACK));
+        wallpaperRow.addView(wallpaper);
+        tuning.addView(wallpaperRow);
         tuning.addView(slider("壁纸模糊强度", ConfigContract.KEY_HONEYCOMB_BLUR_DP,
-                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_BLUR_DP, 36),
+                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP), value -> value + "dp"));
+        tuning.addView(slider("壁纸压暗", ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
+                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT), value -> value + "%"));
+        tuning.addView(toggleRow("使用当前应用背景色",
+                "单独的纯色背景；开启后优先于系统壁纸",
+                ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED));
+        tuning.addView(toggleRow("实时模糊当前界面",
+                "新增的独立背景模糊；开启后优先于系统壁纸",
+                ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED));
+        tuning.addView(slider("界面模糊强度", ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP),
                 value -> value + "dp"));
-        tuning.addView(slider("背景压暗", ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
-                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22),
+        tuning.addView(slider("界面模糊压暗", ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                0, 60, prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT),
                 value -> value + "%"));
         root.addView(tuning, cardParams());
         LinearLayout animationCard = card();

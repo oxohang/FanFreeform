@@ -53,7 +53,7 @@ public final class AnimationSettingsActivity extends Activity {
         back.setContentDescription("返回");
         back.setOnClickListener(view -> finish());
         header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
-        header.addView(text(sideMode ? "侧滑动效" : "扇形动效", 26, Ui.TEXT, Typeface.BOLD),
+        header.addView(text(sideMode ? "侧滑动效" : "底角动效", 26, Ui.TEXT, Typeface.BOLD),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header);
 
@@ -104,13 +104,32 @@ public final class AnimationSettingsActivity extends Activity {
         }
         card.addView(Ui.divider(this));
         String speedKey = sideMode ? ConfigContract.KEY_SIDE_ANIMATION_SPEED
-                : ConfigContract.KEY_FAN_ANIMATION_SPEED;
+                : ConfigContract.KEY_BOTTOM_ANIMATION_SPEED;
         int speed = preferences.getInt(speedKey, sideMode
                 ? ConfigContract.DEFAULT_SIDE_ANIMATION_SPEED
-                : ConfigContract.DEFAULT_FAN_ANIMATION_SPEED);
+                : ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED);
         card.addView(slider("动画速度", speedKey, speed,
                 ConfigContract.MIN_FAN_ANIMATION_SPEED,
                 ConfigContract.MAX_FAN_ANIMATION_SPEED, "%"));
+        if (!sideMode) {
+            card.addView(Ui.divider(this));
+            LinearLayout hapticRow = row();
+            LinearLayout hapticLabels = new LinearLayout(this);
+            hapticLabels.setOrientation(LinearLayout.VERTICAL);
+            hapticLabels.addView(text("底角上滑触发震动", 16, Ui.TEXT, Typeface.BOLD));
+            hapticLabels.addView(text("只关闭刚呼出时的一次震动，选择反馈保留",
+                    13, Ui.MUTED, Typeface.NORMAL));
+            hapticRow.addView(hapticLabels, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            Switch triggerHaptic = new Switch(this);
+            triggerHaptic.setChecked(preferences.getBoolean(
+                    ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                    ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC));
+            triggerHaptic.setOnCheckedChangeListener((button, checked) ->
+                    store.putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC, checked));
+            hapticRow.addView(triggerHaptic);
+            card.addView(hapticRow);
+        }
         card.addView(Ui.divider(this));
         String revealKey = sideMode ? ConfigContract.KEY_SIDE_REVEAL_AMOUNT
                 : ConfigContract.KEY_FAN_REVEAL_AMOUNT;

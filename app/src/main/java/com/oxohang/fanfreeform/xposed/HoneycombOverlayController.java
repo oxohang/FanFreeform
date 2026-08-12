@@ -2,13 +2,12 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.content.Context;
 import android.graphics.PixelFormat;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 
 import java.util.List;
 
@@ -16,6 +15,7 @@ final class HoneycombOverlayController {
     interface Listener {
         void onLaunch(RuntimeTarget target);
         void onClosed();
+        default void onSelectionChanged(RuntimeTarget target) { }
     }
 
     private final Context context;
@@ -23,6 +23,10 @@ final class HoneycombOverlayController {
     private final WindowManager windowManager;
     private final Object moveLock = new Object();
     private HoneycombOverlayView view;
+    private HoneycombOverlayContainer windowView;
+    private WindowManager.LayoutParams windowParams;
+    private boolean liveBlurRequested;
+    private boolean liveBlurApplied;
     private boolean attached;
     private int windowTop;
     private HoneycombOverlayView pendingMoveView;
@@ -53,11 +57,28 @@ final class HoneycombOverlayController {
 
     boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
                  float anchorX, float anchorY, GestureConfig config, Listener listener) {
+        return show(targets, corner, anchorX, anchorY, config, false, listener);
+    }
+
+    boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                 float anchorX, float anchorY, GestureConfig config,
+                 boolean forceBrowseMode, Listener listener) {
+        return show(targets, corner, anchorX, anchorY, config, forceBrowseMode,
+                false, listener);
+    }
+
+    boolean show(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
+                 float anchorX, float anchorY, GestureConfig config,
+                 boolean forceBrowseMode, boolean requireMoveBeforeSelection,
+                 Listener listener) {
         removeNow();
         if (windowManager == null || targets.isEmpty()) return false;
-        HoneycombOverlayView next = new HoneycombOverlayView(context);
+        HoneycombOverlayContainer next = new HoneycombOverlayContainer(context);
+        HoneycombOverlayView foreground = next.foreground();
         windowTop = 0;
-        next.configure(targets, corner, toLocalX(anchorX), toLocalY(anchorY), config,
+        next.configureBackground(config);
+        foreground.configure(targets, corner, toLocalX(anchorX), toLocalY(anchorY), config,
+                forceBrowseMode,
                 new HoneycombOverlayView.Listener() {
             @Override public void onLaunch(RuntimeTarget target) {
                 removeNow();
@@ -68,14 +89,26 @@ final class HoneycombOverlayController {
                 removeNow();
                 listener.onClosed();
             }
+
+            @Override public void onSelectionChanged(RuntimeTarget target) {
+                listener.onSelectionChanged(target);
+            }
+
+            @Override public void onInteractionChanged(boolean active) {
+                setLiveBlurSuppressed(active);
+            }
         });
+        if (requireMoveBeforeSelection) {
+            foreground.requireMoveBeforeSelection(toLocalX(anchorX), toLocalY(anchorY));
+        }
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 displayHeight(),
                 2038,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         params.y = windowTop;
@@ -84,31 +117,52 @@ final class HoneycombOverlayController {
         params.layoutInDisplayCutoutMode = WindowManager.LayoutParams
                 .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         try {
-            next.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-            windowManager.addView(next, params);
-            view = next;
+            float refreshRate = windowManager.getDefaultDisplay().getRefreshRate();
+            if (refreshRate > 0f) params.preferredRefreshRate = refreshRate;
+        } catch (Throwable ignored) { }
+        boolean blurRequested = config.honeycombLiveBlurEnabled
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
+        if (blurRequested) {
+            params.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            try {
+                params.setBlurBehindRadius(Math.round(config.honeycombLiveBlurDp
+                        * context.getResources().getDisplayMetrics().density));
+            } catch (Throwable error) {
+                params.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                blurRequested = false;
+                Log.e("Live blur is unavailable; using color fallback", error);
+            }
+        }
+        try {
+            try {
+                windowManager.addView(next, params);
+            } catch (Throwable blurError) {
+                if (!blurRequested) throw blurError;
+                Log.e("Cannot attach honeycomb with live blur; retrying", blurError);
+                params.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                windowManager.addView(next, params);
+            }
+            view = foreground;
+            windowView = next;
+            windowParams = params;
+            liveBlurRequested = blurRequested;
+            liveBlurApplied = blurRequested;
             attached = true;
-            next.post(() -> {
-                try {
-                    WindowInsetsController controller = next.getWindowInsetsController();
-                    if (controller != null) {
-                        controller.setSystemBarsBehavior(WindowInsetsController
-                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                        controller.hide(WindowInsets.Type.navigationBars());
-                    }
-                } catch (Throwable error) {
-                    Log.e("Cannot hide navigation handle for honeycomb", error);
-                }
-            });
+            if (config.honeycombAppBackgroundEnabled) {
+                ForegroundAppBackgroundResolver.request(context, color -> next.post(() -> {
+                    if (attached && windowView == next) next.setAppBackgroundColor(color);
+                }));
+            }
             next.playEntry();
             return true;
         } catch (Throwable error) {
             Log.e("Cannot attach honeycomb overlay", error);
+            next.releaseResources();
             view = null;
+            windowView = null;
+            windowParams = null;
+            liveBlurRequested = false;
+            liveBlurApplied = false;
             attached = false;
             return false;
         }
@@ -124,12 +178,27 @@ final class HoneycombOverlayController {
     void externalMove(float x, float y) {
         HoneycombOverlayView current = view;
         if (!attached || current == null) return;
+        boolean deliverImmediately = false;
+        float immediateX = x;
+        float immediateY = y;
         synchronized (moveLock) {
             pendingMoveView = current;
             pendingMoveX = x;
             pendingMoveY = y;
             if (moveFrameScheduled) return;
             moveFrameScheduled = true;
+            // The first sample of a gesture is already on the view's owner thread in
+            // the normal SystemUI path. Apply that sample now to avoid adding a full
+            // frame of startup latency, then keep the frame gate closed so later MOVE
+            // events are still collapsed to the latest position once per frame.
+            Handler owner = current.getHandler();
+            if (owner != null && owner.getLooper() == Looper.myLooper()) {
+                pendingMoveView = null;
+                deliverImmediately = true;
+            }
+        }
+        if (deliverImmediately) {
+            current.onExternalMove(toLocalX(immediateX), toLocalY(immediateY));
         }
         current.postOnAnimation(deliverPendingMove);
     }
@@ -161,11 +230,30 @@ final class HoneycombOverlayController {
         runOnViewThread(current, current::playDismissal);
     }
 
+    private void setLiveBlurSuppressed(boolean suppressed) {
+        if (!attached || !liveBlurRequested || windowView == null || windowParams == null) return;
+        boolean shouldApply = !suppressed;
+        if (liveBlurApplied == shouldApply) return;
+        if (shouldApply) windowParams.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+        else windowParams.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+        try {
+            windowManager.updateViewLayout(windowView, windowParams);
+            liveBlurApplied = shouldApply;
+        } catch (Throwable error) {
+            Log.e("Cannot toggle honeycomb live blur during interaction", error);
+        }
+    }
+
     void removeNow() {
         HoneycombOverlayView current = view;
+        HoneycombOverlayContainer currentWindow = windowView;
         cancelPendingMove(current);
         view = null;
-        if (!attached || current == null || windowManager == null) {
+        windowView = null;
+        windowParams = null;
+        liveBlurRequested = false;
+        liveBlurApplied = false;
+        if (!attached || current == null || currentWindow == null || windowManager == null) {
             attached = false;
             return;
         }
@@ -174,9 +262,11 @@ final class HoneycombOverlayController {
         mainHandler.removeCallbacksAndMessages(current);
         Runnable removal = () -> {
             try {
-                windowManager.removeViewImmediate(current);
+                windowManager.removeViewImmediate(currentWindow);
             } catch (Throwable error) {
                 Log.e("Cannot remove honeycomb overlay", error);
+            } finally {
+                currentWindow.releaseResources();
             }
         };
         Handler owner = current.getHandler();

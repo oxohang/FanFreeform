@@ -15,6 +15,7 @@ import android.widget.TextView;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
 import com.oxohang.fanfreeform.config.ConfigStore;
+import com.oxohang.fanfreeform.config.WindowPositionPolicy;
 
 public final class WindowSettingsActivity extends Activity {
     private ConfigStore store;
@@ -41,16 +42,20 @@ public final class WindowSettingsActivity extends Activity {
         store = new ConfigStore(this); prefs = store.preferences();
         width = prefs.getInt(ConfigContract.KEY_WIDTH_PERCENT, ConfigContract.DEFAULT_WIDTH_PERCENT);
         height = prefs.getInt(ConfigContract.KEY_HEIGHT_PERCENT, ConfigContract.DEFAULT_HEIGHT_PERCENT);
-        positionX = prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X);
-        positionY = prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y);
+        positionX = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
+        positionY = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
         landscapeWidth = prefs.getInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
                 ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT);
         landscapeHeight = prefs.getInt(ConfigContract.KEY_LANDSCAPE_HEIGHT_PERCENT,
                 ConfigContract.DEFAULT_LANDSCAPE_HEIGHT_PERCENT);
-        landscapePositionX = prefs.getInt(ConfigContract.KEY_LANDSCAPE_POSITION_X,
-                ConfigContract.DEFAULT_LANDSCAPE_POSITION_X);
-        landscapePositionY = prefs.getInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y,
-                ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y);
+        landscapePositionX = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                ConfigContract.DEFAULT_LANDSCAPE_POSITION_X));
+        landscapePositionY = WindowPositionPolicy.clampPercent(prefs.getInt(
+                ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y));
         portraitCustomEnabled = prefs.getBoolean(
                 ConfigContract.KEY_CUSTOM_WINDOW_PORTRAIT_ENABLED,
                 prefs.getBoolean(ConfigContract.KEY_CUSTOM_WINDOW_BOUNDS_ENABLED,
@@ -107,8 +112,8 @@ public final class WindowSettingsActivity extends Activity {
         portraitIndependentControls.addView(slider("宽度",ConfigContract.KEY_WIDTH_PERCENT,40,90,width,v->v+"%"));
         portraitIndependentControls.addView(slider("高度",ConfigContract.KEY_HEIGHT_PERCENT,35,85,height,v->v+"%"));
         portraitControls.addView(portraitIndependentControls);
-        portraitControls.addView(slider("水平位置",ConfigContract.KEY_POSITION_X,0,100,positionX,WindowSettingsActivity::positionLabel));
-        portraitControls.addView(slider("垂直位置",ConfigContract.KEY_POSITION_Y,0,100,positionY,WindowSettingsActivity::positionLabel));
+        portraitControls.addView(slider("水平位置",ConfigContract.KEY_POSITION_X,0,100,positionX,WindowPositionPolicy::percentageLabel));
+        portraitControls.addView(slider("垂直位置",ConfigContract.KEY_POSITION_Y,0,100,positionY,WindowPositionPolicy::percentageLabel));
         portraitCard.addView(portraitControls);
         customControls.addView(portraitCard);
 
@@ -141,9 +146,9 @@ public final class WindowSettingsActivity extends Activity {
                 35,85,landscapeHeight,v->v+"%"));
         landscapeControls.addView(landscapeIndependentControls);
         landscapeControls.addView(slider("水平位置",ConfigContract.KEY_LANDSCAPE_POSITION_X,
-                0,100,landscapePositionX,WindowSettingsActivity::positionLabel));
+                0,100,landscapePositionX,WindowPositionPolicy::percentageLabel));
         landscapeControls.addView(slider("垂直位置",ConfigContract.KEY_LANDSCAPE_POSITION_Y,
-                0,100,landscapePositionY,WindowSettingsActivity::positionLabel));
+                0,100,landscapePositionY,WindowPositionPolicy::percentageLabel));
         landscapeCard.addView(landscapeControls);
         LinearLayout.LayoutParams landscapeParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -249,19 +254,15 @@ public final class WindowSettingsActivity extends Activity {
 
     private void updatePreviews() {
         if (portraitPreview != null) {
-            portraitPreview.setVisibility(
-                    portraitProportionalEnabled ? View.GONE : View.VISIBLE);
-            if (!portraitProportionalEnabled) {
-                portraitPreview.update(width, height, positionX, positionY);
-            }
+            portraitPreview.setVisibility(View.VISIBLE);
+            portraitPreview.update(width, height, positionX, positionY,
+                    portraitProportionalEnabled, portraitNativeScale);
         }
         if (landscapePreview != null) {
-            landscapePreview.setVisibility(
-                    landscapeProportionalEnabled ? View.GONE : View.VISIBLE);
-            if (!landscapeProportionalEnabled) {
-                landscapePreview.update(landscapeWidth, landscapeHeight,
-                        landscapePositionX, landscapePositionY);
-            }
+            landscapePreview.setVisibility(View.VISIBLE);
+            landscapePreview.update(landscapeWidth, landscapeHeight,
+                    landscapePositionX, landscapePositionY,
+                    landscapeProportionalEnabled, landscapeNativeScale);
         }
     }
 
@@ -292,7 +293,6 @@ public final class WindowSettingsActivity extends Activity {
                 if(key.equals(ConfigContract.KEY_LANDSCAPE_NATIVE_SCALE_PERCENT))landscapeNativeScale=resolved;
                 updatePreviews();}});group.addView(seek);return group;
     }
-    private static String positionLabel(int v){if(v<34)return "偏左 / 偏上";if(v>66)return "偏右 / 偏下";return "居中";}
     private View header(String title){LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);TextView b=text("‹",38,Ui.TEXT,Typeface.NORMAL);b.setGravity(Gravity.CENTER);b.setOnClickListener(v->finish());h.addView(b,new LinearLayout.LayoutParams(Ui.dp(this,44),Ui.dp(this,52)));h.addView(text(title,26,Ui.TEXT,Typeface.BOLD));return h;}
     private LinearLayout card(){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(Ui.dp(this,18),Ui.dp(this,16),Ui.dp(this,18),Ui.dp(this,16));c.setBackground(Ui.rounded(this,Ui.SURFACE,20));return c;}
     private TextView text(String v,float s,int c,int st){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);t.setTypeface(null,st);return t;}

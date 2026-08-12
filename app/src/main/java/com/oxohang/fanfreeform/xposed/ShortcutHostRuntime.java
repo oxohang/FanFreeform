@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.content.pm.LauncherApps;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.ShortcutInfo;
+import android.app.BroadcastOptions;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -15,7 +16,11 @@ import android.graphics.drawable.Drawable;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Build;
 import android.os.Process;
+import android.os.SystemClock;
 import android.os.UserHandle;
 
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -31,9 +36,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class ShortcutHostRuntime {
     static final String MIUI_HOME = "com.miui.home";
+    static final String SYSTEM_UI = "com.android.systemui";
     static final String ACTION_START_SHORTCUT = "com.oxohang.fanfreeform.START_SHORTCUT";
     static final String ACTION_START_ACTIVITY = "com.oxohang.fanfreeform.START_ACTIVITY";
     static final String ACTION_START_LAUNCHER_SHORTCUT =
@@ -46,8 +54,35 @@ final class ShortcutHostRuntime {
     static final String EXTRA_INTENT_URI = "intent_uri";
     private static volatile boolean installed;
     private static final Map<String, Long> publishedIconVersions = new HashMap<>();
+    private static final Object CATALOG_LOCK = new Object();
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+    private static final ExecutorService CATALOG_EXECUTOR = Executors.newSingleThreadExecutor(
+            runnable -> {
+                Thread thread = new Thread(runnable, "hypergesture-shortcut-catalog");
+                thread.setPriority(Thread.NORM_PRIORITY - 1);
+                return thread;
+            });
+    private static final long CATALOG_DEBOUNCE_MS = 350L;
+    private static Context catalogContext;
+    private static boolean catalogScheduled;
+    private static boolean catalogRunning;
+    private static boolean catalogPending;
+    private static final Runnable START_CATALOG_REFRESH =
+            ShortcutHostRuntime::startCatalogRefresh;
 
     private ShortcutHostRuntime() { }
+
+    /** Sends an internal SystemUI-to-MiuiHome request with sender identity sharing enabled. */
+    static void sendSystemUiRequest(Context context, Intent request) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Bundle options = BroadcastOptions.makeBasic()
+                    .setShareIdentityEnabled(true)
+                    .toBundle();
+            context.sendBroadcast(request, null, options);
+        } else {
+            context.sendBroadcast(request);
+        }
+    }
 
     static synchronized void install(Context context) {
         if (installed) return;
@@ -63,6 +98,11 @@ final class ShortcutHostRuntime {
         filter.addAction(ACTION_START_LAUNCHER_SHORTCUT);
         appContext.registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context receiverContext, Intent intent) {
+                if (!BroadcastSenderValidator.isFromPackage(
+                        receiverContext, this, SYSTEM_UI)) {
+                    Log.i("Ignored shortcut host request from unauthorized sender");
+                    return;
+                }
                 if (ACTION_START_ACTIVITY.equals(intent.getAction())) {
                     startActivity(receiverContext, intent);
                 } else if (ACTION_START_LAUNCHER_SHORTCUT.equals(intent.getAction())) {
@@ -72,14 +112,67 @@ final class ShortcutHostRuntime {
                 }
             }
         }, filter, Context.RECEIVER_EXPORTED);
-        appContext.getContentResolver().registerContentObserver(ConfigContract.URI, false,
-                new android.database.ContentObserver(new android.os.Handler(
-                        android.os.Looper.getMainLooper())) {
-                    @Override public void onChange(boolean selfChange) { publishCatalog(appContext); }
+        appContext.getContentResolver().registerContentObserver(ConfigContract.CATALOG_URI, false,
+                new android.database.ContentObserver(MAIN_HANDLER) {
+                    @Override public void onChange(boolean selfChange) {
+                        requestCatalogRefresh(appContext, CATALOG_DEBOUNCE_MS);
+                    }
                 });
         installed = true;
-        publishCatalog(appContext);
+        requestCatalogRefresh(appContext, 0L);
         Log.i("Shortcut host active in MiuiHome");
+    }
+
+    private static void requestCatalogRefresh(Context context, long delayMs) {
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) appContext = context;
+        synchronized (CATALOG_LOCK) {
+            catalogContext = appContext;
+            if (catalogRunning) {
+                catalogPending = true;
+                return;
+            }
+            if (catalogScheduled) MAIN_HANDLER.removeCallbacks(START_CATALOG_REFRESH);
+            catalogScheduled = true;
+            MAIN_HANDLER.postDelayed(START_CATALOG_REFRESH, Math.max(0L, delayMs));
+        }
+    }
+
+    private static void startCatalogRefresh() {
+        Context context;
+        synchronized (CATALOG_LOCK) {
+            catalogScheduled = false;
+            if (catalogRunning) {
+                catalogPending = true;
+                return;
+            }
+            context = catalogContext;
+            if (context == null) return;
+            catalogRunning = true;
+        }
+        Context refreshContext = context;
+        CATALOG_EXECUTOR.execute(() -> {
+            long started = SystemClock.elapsedRealtime();
+            try {
+                publishCatalog(refreshContext);
+                long elapsed = SystemClock.elapsedRealtime() - started;
+                Log.i("MiuiHome catalog refresh completed in " + elapsed + "ms");
+            } catch (Throwable error) {
+                Log.e("MiuiHome catalog refresh failed", error);
+            } finally {
+                MAIN_HANDLER.post(() -> finishCatalogRefresh(refreshContext));
+            }
+        });
+    }
+
+    private static void finishCatalogRefresh(Context context) {
+        boolean refreshAgain;
+        synchronized (CATALOG_LOCK) {
+            catalogRunning = false;
+            refreshAgain = catalogPending;
+            catalogPending = false;
+        }
+        if (refreshAgain) requestCatalogRefresh(context, CATALOG_DEBOUNCE_MS);
     }
 
     private static void startLauncherShortcut(Context context, Intent request) {
@@ -154,14 +247,15 @@ final class ShortcutHostRuntime {
             ArrayList<String> iconKeys = new ArrayList<>();
             ArrayList<Bitmap> icons = new ArrayList<>();
             for (ShortcutInfo shortcut : shortcuts) {
-                if (!shortcut.isEnabled() || out.length() >= 160) continue;
+                if (!shortcut.isEnabled()) continue;
                 CharSequence label = shortcut.getShortLabel();
                 if (label == null) label = shortcut.getLongLabel();
                 if (label == null) continue;
                 JSONObject item = new JSONObject();
                 item.put("package", shortcut.getPackage());
                 item.put("id", shortcut.getId());
-                item.put("label", label.toString());
+                item.put("label", displayShortcutLabel(context, shortcut.getPackage(),
+                        label.toString()));
                 item.put("kind", "standard");
                 out.put(item);
                 seen.add(shortcut.getPackage() + "\n" + shortcut.getId());
@@ -173,6 +267,7 @@ final class ShortcutHostRuntime {
             }
             appendLauncherShortcuts(context, out, seen, iconKeys, icons);
             flushShortcutIcons(context, iconKeys, icons);
+            prunePublishedIconVersions(out);
             Bundle extras = new Bundle();
             extras.putString(ConfigContract.KEY_SHORTCUT_CATALOG, out.toString());
             context.getContentResolver().call(ConfigContract.URI, "report_shortcuts", null, extras);
@@ -231,7 +326,7 @@ final class ShortcutHostRuntime {
                     JSONObject item = new JSONObject();
                     item.put("package", packageName);
                     item.put("id", shortcutId);
-                    item.put("label", label);
+                    item.put("label", displayShortcutLabel(context, packageName, label));
                     item.put("kind", "launcher");
                     item.put("intent", rawIntent);
                     item.put("userId", 0);
@@ -253,7 +348,7 @@ final class ShortcutHostRuntime {
         }
     }
 
-    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+    private static synchronized void queueShortcutIcon(Context context, ArrayList<String> keys,
                                           ArrayList<Bitmap> icons, String key, long version,
                                           Drawable drawable) {
         if (drawable == null) return;
@@ -268,7 +363,21 @@ final class ShortcutHostRuntime {
         queueShortcutIcon(context, keys, icons, key, version, bitmap);
     }
 
-    private static void queueShortcutIcon(Context context, ArrayList<String> keys,
+    private static void prunePublishedIconVersions(JSONArray catalog) {
+        java.util.HashSet<String> current = new java.util.HashSet<>();
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject item = catalog.optJSONObject(i);
+            if (item != null) {
+                current.add(item.optString("package", "") + "\n"
+                        + item.optString("id", ""));
+            }
+        }
+        synchronized (publishedIconVersions) {
+            publishedIconVersions.keySet().retainAll(current);
+        }
+    }
+
+    private static synchronized void queueShortcutIcon(Context context, ArrayList<String> keys,
                                           ArrayList<Bitmap> icons, String key, long version,
                                           Bitmap bitmap) {
         if (bitmap == null || key == null || key.isEmpty()) return;
@@ -307,6 +416,22 @@ final class ShortcutHostRuntime {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static String displayShortcutLabel(Context context, String packageName,
+                                               String shortcutLabel) {
+        String shortcut = shortcutLabel == null ? "" : shortcutLabel.trim();
+        String app = "";
+        try {
+            android.content.pm.ApplicationInfo info = context.getPackageManager()
+                    .getApplicationInfo(packageName, 0);
+            CharSequence label = context.getPackageManager().getApplicationLabel(info);
+            if (label != null) app = label.toString().trim();
+        } catch (Throwable ignored) { }
+        if (app.isEmpty()) app = packageName == null ? "" : packageName;
+        if (shortcut.isEmpty()) return app;
+        if (app.isEmpty() || shortcut.startsWith(app)) return shortcut;
+        return app + " · " + shortcut;
     }
 
     private static void publishActivityCatalog(Context context, LauncherApps launcherApps) {

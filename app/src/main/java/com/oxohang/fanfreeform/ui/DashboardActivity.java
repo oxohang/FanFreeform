@@ -83,6 +83,8 @@ public final class DashboardActivity extends Activity {
                 () -> openGesture(GestureSettingsActivity.MODE_SIDE)), params(12));
         root.addView(entry("蜂窝应用", "应用清单、圆盘位置、背景与独立动效",
                 () -> open(HoneycombSettingsActivity.class)), params(12));
+        root.addView(entry("按压手势", "多触发区域、重压动作与气压校准",
+                () -> open(PressureGestureSettingsActivity.class)), params(12));
         root.addView(entry("任务中心", "任务数量、卡片布局与独立动效",
                 () -> open(TaskCenterSettingsActivity.class)), params(12));
         root.addView(entry("小窗位置设置", "统一调整小窗大小和初始位置",
@@ -91,6 +93,9 @@ public final class DashboardActivity extends Activity {
                 () -> open(OutsideSettingsActivity.class)), params(12));
         root.addView(entry("杂项设置", "一键热重载、恢复默认与诊断信息",
                 () -> open(MiscSettingsActivity.class)), params(12));
+        root.addView(entry("喜欢 Hyper手势？",
+                "如果它让你的操作更顺手，欢迎请开发者喝一杯 ☕",
+                () -> SupportQrDialog.show(this)), params(18));
         Ui.addGlobalResetOption(this, root, store::resetTuning);
         return scroll;
     }
@@ -116,8 +121,16 @@ public final class DashboardActivity extends Activity {
         } else {
             CharSequence relative = time <= 0 ? "" : " · " + DateUtils.getRelativeTimeSpanString(
                     time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS);
-            status.setText(value + relative);
-            status.setTextColor(0xff287d4d);
+            long age = System.currentTimeMillis() - time;
+            if (time > 0 && age > 5L * 60L * 1000L) {
+                status.setText("上次连接于 " + DateUtils.getRelativeTimeSpanString(
+                        time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+                        + "，当前未确认");
+                status.setTextColor(0xffa16c20);
+            } else {
+                status.setText(value + relative);
+                status.setTextColor(0xff287d4d);
+            }
         }
     }
 

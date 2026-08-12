@@ -52,7 +52,19 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.HoneycombLayoutEditorActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.HoneycombAnimationSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.PressureGestureSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.PressureTriggerSettingsActivity"
             android:exported="false" />
 
         <activity
@@ -68,9 +80,6 @@
         <activity android:name=".ui.OutsideSettingsActivity" android:exported="false" />
         <activity android:name=".ui.MiscSettingsActivity" android:exported="false" />
 
-        <activity
-            android:name=".ui.MainActivity"
-            android:exported="false" />
 
         <activity
             android:name=".ui.DashboardActivity"

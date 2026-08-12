@@ -1,0 +1,26 @@
+<variant
+    name="debug"
+    package="com.oxohang.fanfreeform"
+    minSdkVersion="30"
+    targetSdkVersion="34"
+    debuggable="true"
+    mergedManifest="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"
+    manifestMergeReport="/Users/oxohang/vibecodeing/小窗/.codex-build/app/outputs/logs/manifest-merger-debug-report.txt"
+    partialResultsDir="/Users/oxohang/vibecodeing/小窗/.codex-build/app/intermediates/unit_test_lint_partial_results/debug/lintAnalyzeDebugUnitTest/out">
+  <buildFeatures
+      namespacing="REQUIRED"/>
+  <sourceProviders>
+  </sourceProviders>
+  <testSourceProviders>
+    <sourceProvider
+        manifests="src/test/AndroidManifest.xml"
+        javaDirectories="src/test/java:src/testDebug/java:src/test/kotlin:src/testDebug/kotlin"
+        assetsDirectories="src/test/assets:src/testDebug/assets"
+        unitTest="true"/>
+  </testSourceProviders>
+  <testFixturesSourceProviders>
+  </testFixturesSourceProviders>
+  <artifact
+      type="UNIT_TEST">
+  </artifact>
+</variant>

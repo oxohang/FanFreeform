@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.oxohang.fanfreeform.config.ConfigContractTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-08-02T16:23:50" hostname="oxohangdeMacBook-Air-3.local" time="0.001">
+  <properties/>
+  <testcase name="landscapeWindowAndFixedHoneycombDefaultsMatchTheDesign" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="orientationDefaultsMatchTheReferencePhone" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="fanSelectionDistanceCanStartAtOnePercent" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="keepsRingSizingRangeAndUnifiedNameDefaultStable" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="circularIconsRemainTheCompatibilityDefault" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="sideTriggerCanUseTheWholeScreenWidth" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="edgePinIsASeparateOutsideAction" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="interactionDefaultsMatchTheReferencePhone" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="keepsHoneycombDiscSizingWithinTheScreen" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="doublesFanAnimationAdjustmentCeilings" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="keepsSideCancellationRangeStable" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <testcase name="taskSwitcherIsAnIndependentSideLayout" classname="com.oxohang.fanfreeform.config.ConfigContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

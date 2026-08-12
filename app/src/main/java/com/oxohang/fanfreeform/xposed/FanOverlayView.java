@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.TextPaint;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 
@@ -19,6 +20,12 @@ import java.util.Collections;
 import java.util.List;
 
 final class FanOverlayView extends View {
+    interface TouchListener {
+        void onLaunch(int index);
+        void onDismiss();
+        void onSelectionChanged(int index);
+    }
+
     private final Paint backdrop = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint iconStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -28,11 +35,20 @@ final class FanOverlayView extends View {
     private final Paint pillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint railPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path iconClipPath = new Path();
+    private final Rect iconOldBounds = new Rect();
+    private int statusBarTop = -1;
+    private CharSequence fittedRingLabel;
+    private String fittedRingLabelSource;
+    private float fittedRingLabelMaxWidth;
+    private CharSequence fittedSideLabel;
+    private String fittedSideLabelSource;
+    private float fittedSideLabelMaxWidth;
     private float fanRadius;
     private int fanLayoutMode;
     private int fanOuterCapacity = 7;
     private int fanMiddleCapacity = 6;
     private int fanInnerCapacity = 5;
+    private GestureGeometry.Point[] fanCenters = new GestureGeometry.Point[0];
     private float iconDiameter;
     private List<RuntimeTarget> targets = Collections.emptyList();
     private GestureGeometry.Corner corner = GestureGeometry.Corner.LEFT;
@@ -55,6 +71,7 @@ final class FanOverlayView extends View {
     private int selectionScalePercent = 18;
     private boolean showSelectionRing = true;
     private boolean forceCircularIcons = true;
+    private int selectionTransformLevel;
     private long revealStartedAt;
     private int animatedSelection = -1;
     private long selectionStartedAt;
@@ -62,10 +79,10 @@ final class FanOverlayView extends View {
     private long confirmationStartedAt;
     private boolean dismissing;
     private long dismissalStartedAt;
+    private TouchListener touchListener;
 
     FanOverlayView(Context context) {
         super(context);
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         iconShadowPaint.setColor(0x01000000);
         iconShadowPaint.setShadowLayer(dp(9), 0, dp(3), 0x5c000000);
         iconStrokePaint.setStyle(Paint.Style.STROKE);
@@ -85,9 +102,24 @@ final class FanOverlayView extends View {
         railPaint.setShadowLayer(dp(14), 0, dp(4), 0x50000000);
     }
 
+    @Override
+    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+        statusBarTop = insets == null ? -1
+                : insets.getInsets(WindowInsets.Type.statusBars()).top;
+        return super.onApplyWindowInsets(insets);
+    }
+
     void setForceCircularIcons(boolean forceCircularIcons) {
         this.forceCircularIcons = forceCircularIcons;
         invalidate();
+    }
+
+    void setSelectionTransformLevel(int level) {
+        selectionTransformLevel = level;
+    }
+
+    void setTouchListener(TouchListener listener) {
+        touchListener = listener;
     }
 
     void configure(List<RuntimeTarget> targets, GestureGeometry.Corner corner,
@@ -121,6 +153,7 @@ final class FanOverlayView extends View {
         this.fanOuterCapacity = outerCapacity;
         this.fanMiddleCapacity = middleCapacity;
         this.fanInnerCapacity = innerCapacity;
+        rebuildFanCenters();
         this.revealStartedAt = SystemClock.uptimeMillis();
         this.animatedSelection = -1;
         this.confirmationSelection = -1;
@@ -144,6 +177,7 @@ final class FanOverlayView extends View {
         this.sideListLayout = true;
         this.sideFanListLayout = false;
         this.sideRingListLayout = false;
+        fanCenters = new GestureGeometry.Point[0];
         this.sideListTop = listTop;
         this.sideRowHeight = rowHeight;
         this.sideListCenterX = centerX;
@@ -177,6 +211,7 @@ final class FanOverlayView extends View {
         this.sideListLayout = true;
         this.sideFanListLayout = true;
         this.sideRingListLayout = false;
+        fanCenters = new GestureGeometry.Point[0];
         this.sideListCenterX = apexX;
         this.sideListTop = centerY;
         this.sideRowHeight = 0f;
@@ -212,6 +247,7 @@ final class FanOverlayView extends View {
         this.sideListLayout = true;
         this.sideFanListLayout = false;
         this.sideRingListLayout = true;
+        fanCenters = new GestureGeometry.Point[0];
         this.sideListCenterX = centerX;
         this.sideListTop = centerY;
         this.sideRowHeight = 0f;
@@ -265,6 +301,34 @@ final class FanOverlayView extends View {
         return animationsEnabled ? duration(150L) : 1L;
     }
 
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if (touchListener == null || !sideRingListLayout || dismissing) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_CANCEL) {
+            touchListener.onDismiss();
+            return true;
+        }
+        if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_MOVE
+                && action != MotionEvent.ACTION_UP) return true;
+        int next = GestureGeometry.sideRingSelection(event.getX(), event.getY(),
+                targets.size(), sideListCenterX, sideListTop, sideFanRadius,
+                iconDiameter, dp(10));
+        boolean changed = next != selected;
+        updateSelection(next, event.getX(), event.getY());
+        if (changed && next >= 0) touchListener.onSelectionChanged(next);
+        if (action == MotionEvent.ACTION_UP) {
+            performClick();
+            if (next >= 0) touchListener.onLaunch(next);
+            else touchListener.onDismiss();
+        }
+        return true;
+    }
+
+    @Override public boolean performClick() {
+        super.performClick();
+        return true;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -289,9 +353,11 @@ final class FanOverlayView extends View {
         if (dismissing && dismissalProgress < 1f) keepAnimating = true;
         float startFactor = 1f - revealAmount / 100f;
         for (int i = 0; i < targets.size(); i++) {
-            GestureGeometry.Point center = GestureGeometry.iconCenter(corner, i, targets.size(),
-                    getWidth(), getHeight(), radius, fanLayoutMode,
-                    fanOuterCapacity, fanMiddleCapacity, fanInnerCapacity);
+            GestureGeometry.Point center = i < fanCenters.length
+                    ? fanCenters[i]
+                    : GestureGeometry.iconCenter(corner, i, targets.size(), getWidth(),
+                    getHeight(), radius, fanLayoutMode, fanOuterCapacity,
+                    fanMiddleCapacity, fanInnerCapacity);
             float iconOriginX = corner == GestureGeometry.Corner.LEFT ? 0f : getWidth();
             float iconOriginY = getHeight();
             float revealFactor = startFactor + (1f - startFactor) * reveal;
@@ -307,12 +373,24 @@ final class FanOverlayView extends View {
             float iconRadius = diameter / 2f;
             int save = canvas.save();
             canvas.rotate(revealRotation(i, now), x, y);
+            if (active) {
+                float pulse = Math.max(0f, pop - 1f) * 5f;
+                int direction = corner == GestureGeometry.Corner.LEFT ? 1 : -1;
+                canvas.rotate(SelectionTransform.rotation(selectionTransformLevel,
+                        direction, pulse), x, y);
+                canvas.scale(SelectionTransform.scaleX(selectionTransformLevel, pulse),
+                        SelectionTransform.scaleY(selectionTransformLevel, pulse), x, y);
+            }
             if (forceCircularIcons) canvas.drawCircle(x, y, iconRadius, iconShadowPaint);
             RuntimeTarget target = targets.get(i);
             drawCircularIcon(canvas, target.icon, x, y, diameter);
             if (target.isShortcut()) {
                 ShortcutBadgeRenderer.draw(canvas, x, y, diameter, 1f,
                         getResources().getDisplayMetrics().density);
+            }
+            if (target.userId != 0) {
+                ShortcutBadgeRenderer.drawDual(canvas, x, y, diameter, 1f,
+                        getResources().getDisplayMetrics().density, target.isShortcut());
             }
             if (forceCircularIcons) {
                 canvas.drawCircle(x, y, iconRadius - dp(0.5f), iconStrokePaint);
@@ -387,6 +465,14 @@ final class FanOverlayView extends View {
             float radius = diameter / 2f;
             int save = canvas.save();
             canvas.rotate(revealRotation(i, now), x, y);
+            if (active) {
+                float pulse = Math.max(0f, pop - 1f) * 5f;
+                int direction = corner == GestureGeometry.Corner.LEFT ? 1 : -1;
+                canvas.rotate(SelectionTransform.rotation(selectionTransformLevel,
+                        direction, pulse), x, y);
+                canvas.scale(SelectionTransform.scaleX(selectionTransformLevel, pulse),
+                        SelectionTransform.scaleY(selectionTransformLevel, pulse), x, y);
+            }
             if (active && showSelectionRing) {
                 canvas.drawCircle(x, y, radius + dp(7), selectedFillPaint);
             }
@@ -397,6 +483,11 @@ final class FanOverlayView extends View {
                 ShortcutBadgeRenderer.draw(canvas, x, y, diameter,
                         alphaFromDismissal(dismissalProgress),
                         getResources().getDisplayMetrics().density);
+            }
+            if (target.userId != 0) {
+                ShortcutBadgeRenderer.drawDual(canvas, x, y, diameter,
+                        alphaFromDismissal(dismissalProgress),
+                        getResources().getDisplayMetrics().density, target.isShortcut());
             }
             if (forceCircularIcons) {
                 canvas.drawCircle(x, y, radius - dp(0.5f), iconStrokePaint);
@@ -419,17 +510,21 @@ final class FanOverlayView extends View {
 
     private void drawFixedRingLabel(Canvas canvas, String label) {
         float maxTextWidth = Math.min(dp(190), getWidth() * 0.50f);
-        CharSequence fitted = TextUtils.ellipsize(label, textPaint,
-                maxTextWidth, TextUtils.TruncateAt.END);
+        CharSequence fitted = fittedRingLabel;
+        if (fittedRingLabelSource != label || fittedRingLabelMaxWidth != maxTextWidth) {
+            fittedRingLabelSource = label;
+            fittedRingLabelMaxWidth = maxTextWidth;
+            fittedRingLabel = TextUtils.ellipsize(label, textPaint,
+                    maxTextWidth, TextUtils.TruncateAt.END);
+            fitted = fittedRingLabel;
+        }
         float textWidth = textPaint.measureText(fitted, 0, fitted.length());
         float padding = dp(13);
         float boxHeight = dp(36);
         float centerX = Math.max(textWidth / 2f + padding + dp(10),
                 Math.min(getWidth() - textWidth / 2f - padding - dp(10),
                         sideListCenterX));
-        WindowInsets insets = getRootWindowInsets();
-        float safeTop = insets == null ? dp(24)
-                : insets.getInsets(WindowInsets.Type.statusBars()).top;
+        float safeTop = statusBarTop >= 0 ? statusBarTop : dp(24);
         float centerY = Math.max(safeTop + boxHeight / 2f + dp(8),
                 sideListTop - sideFanRadius - iconDiameter / 2f - dp(22));
         pillPaint.setColor(0xf020263f);
@@ -446,8 +541,14 @@ final class FanOverlayView extends View {
     private void drawSideLabel(Canvas canvas, String label, float iconX, float iconY,
                                float diameter, boolean active) {
         float maxTextWidth = Math.min(dp(180), getWidth() * 0.46f);
-        CharSequence fitted = TextUtils.ellipsize(label, textPaint,
-                maxTextWidth, TextUtils.TruncateAt.END);
+        CharSequence fitted = fittedSideLabel;
+        if (fittedSideLabelSource != label || fittedSideLabelMaxWidth != maxTextWidth) {
+            fittedSideLabelSource = label;
+            fittedSideLabelMaxWidth = maxTextWidth;
+            fittedSideLabel = TextUtils.ellipsize(label, textPaint,
+                    maxTextWidth, TextUtils.TruncateAt.END);
+            fitted = fittedSideLabel;
+        }
         float textWidth = textPaint.measureText(fitted, 0, fitted.length());
         float horizontalPadding = dp(13);
         float gap = dp(10);
@@ -485,7 +586,7 @@ final class FanOverlayView extends View {
                 : Math.min(target / intrinsicWidth, target / intrinsicHeight);
         int drawWidth = Math.round(intrinsicWidth * scale);
         int drawHeight = Math.round(intrinsicHeight * scale);
-        Rect old = drawable.copyBounds();
+        drawable.copyBounds(iconOldBounds);
         int save = canvas.save();
         if (forceCircularIcons) {
             float radius = diameter / 2f;
@@ -499,7 +600,7 @@ final class FanOverlayView extends View {
                 Math.round(centerY + drawHeight / 2f));
         drawable.draw(canvas);
         canvas.restoreToCount(save);
-        drawable.setBounds(old);
+        drawable.setBounds(iconOldBounds);
     }
 
     private float dp(float value) {
@@ -578,7 +679,24 @@ final class FanOverlayView extends View {
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
+        rebuildFanCenters();
         updateBackdropShader();
+    }
+
+    private void rebuildFanCenters() {
+        if (sideListLayout || targets.isEmpty() || getWidth() <= 0 || getHeight() <= 0) {
+            fanCenters = new GestureGeometry.Point[0];
+            return;
+        }
+        float radius = fanRadius > 0
+                ? fanRadius : Math.min(getWidth(), getHeight()) * 0.58f;
+        GestureGeometry.Point[] next = new GestureGeometry.Point[targets.size()];
+        for (int index = 0; index < next.length; index++) {
+            next[index] = GestureGeometry.iconCenter(corner, index, targets.size(),
+                    getWidth(), getHeight(), radius, fanLayoutMode,
+                    fanOuterCapacity, fanMiddleCapacity, fanInnerCapacity);
+        }
+        fanCenters = next;
     }
 
     private void updateBackdropShader() {
@@ -597,9 +715,11 @@ final class FanOverlayView extends View {
         float originY = getHeight();
         float outermostCenter = 0f;
         for (int index = 0; index < targets.size(); index++) {
-            GestureGeometry.Point center = GestureGeometry.iconCenter(corner, index,
-                    targets.size(), getWidth(), getHeight(), radius, fanLayoutMode,
-                    fanOuterCapacity, fanMiddleCapacity, fanInnerCapacity);
+            GestureGeometry.Point center = index < fanCenters.length
+                    ? fanCenters[index]
+                    : GestureGeometry.iconCenter(corner, index, targets.size(), getWidth(),
+                    getHeight(), radius, fanLayoutMode, fanOuterCapacity,
+                    fanMiddleCapacity, fanInnerCapacity);
             outermostCenter = Math.max(outermostCenter,
                     (float) Math.hypot(center.x - originX, center.y - originY));
         }

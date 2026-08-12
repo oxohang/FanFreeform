@@ -8,6 +8,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -46,9 +48,11 @@ public final class GeneralSettingsActivity extends Activity {
         card.addView(toggle("强制圆形图标", "关闭后保留应用图标自带的圆角矩形或异形轮廓",
                 ConfigContract.KEY_FORCE_CIRCULAR_ICONS,
                 ConfigContract.DEFAULT_FORCE_CIRCULAR_ICONS));
+        card.addView(Ui.divider(this));
+        card.addView(selectionTransformRow());
         root.addView(card);
         Ui.addResetOption(this, root,
-                "将恢复总开关、震动、应用名称和图标形状的默认值。",
+                "将恢复总开关、震动、应用名称、图标形状和选择形变默认值。",
                 store::resetGeneralSettings);
         returnContent(scroll);
     }
@@ -72,5 +76,39 @@ public final class GeneralSettingsActivity extends Activity {
     }
     private LinearLayout card(){ LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(Ui.dp(this,18),Ui.dp(this,10),Ui.dp(this,18),Ui.dp(this,10));c.setBackground(Ui.rounded(this,Ui.SURFACE,20));return c; }
+    private View selectionTransformRow() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 10));
+        section.addView(text("选择图标旋转形变", 16, Ui.TEXT, Typeface.BOLD));
+        section.addView(text("统一应用于底角、侧滑、蜂窝和任务中心",
+                13, Ui.MUTED, Typeface.NORMAL));
+        RadioGroup group = new RadioGroup(this);
+        String[] names = {"关闭", "轻微（推荐）", "标准", "强烈"};
+        int[] values = {ConfigContract.SELECTION_TRANSFORM_OFF,
+                ConfigContract.SELECTION_TRANSFORM_SUBTLE,
+                ConfigContract.SELECTION_TRANSFORM_STANDARD,
+                ConfigContract.SELECTION_TRANSFORM_STRONG};
+        int current = prefs.getInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL);
+        for (int index = 0; index < values.length; index++) {
+            RadioButton button = new RadioButton(this);
+            button.setId(View.generateViewId());
+            button.setTag(values[index]);
+            button.setText(names[index]);
+            button.setTextColor(Ui.TEXT);
+            button.setChecked(values[index] == current);
+            group.addView(button);
+        }
+        group.setOnCheckedChangeListener((radioGroup, id) -> {
+            View selected = radioGroup.findViewById(id);
+            if (selected != null && selected.getTag() instanceof Integer) {
+                store.putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        (Integer) selected.getTag());
+            }
+        });
+        section.addView(group);
+        return section;
+    }
     private TextView text(String v,float s,int c,int st){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(c);t.setTypeface(null,st);return t;}
 }

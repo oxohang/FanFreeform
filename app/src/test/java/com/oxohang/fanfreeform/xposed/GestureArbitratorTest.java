@@ -26,9 +26,6 @@ public class GestureArbitratorTest {
         assertEquals(GestureArbitrator.Decision.FAN,
                 arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 5, 80, 10));
 
-        arbitrator.reset();
-        assertEquals(GestureArbitrator.Decision.FAN,
-                arbitrator.update(GestureGeometry.Corner.RIGHT, 100, 100, 100, 80, 10));
     }
 
     @Test
@@ -48,6 +45,11 @@ public class GestureArbitratorTest {
         arbitrator.reset();
         assertEquals(GestureArbitrator.Decision.CANCELLED,
                 arbitrator.update(GestureGeometry.Corner.LEFT, 0, 100, 8, 112, 10));
+
+        arbitrator.reset();
+        // Pure vertical swipes from the corner should stay with the system home gesture.
+        assertEquals(GestureArbitrator.Decision.CANCELLED,
+                arbitrator.update(GestureGeometry.Corner.RIGHT, 100, 100, 100, 80, 10));
     }
 
     @Test

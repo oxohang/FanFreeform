@@ -12,11 +12,16 @@ import android.os.Process;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class ConfigProvider extends ContentProvider {
     @Override
@@ -32,10 +37,16 @@ public final class ConfigProvider extends ContentProvider {
         if ("get".equals(method)) {
             ConfigStore.seedDefaultsIfNeeded(context, prefs);
             ConfigStore.migrateUnifiedActionsIfNeeded(prefs);
+            ConfigStore.migrateDoubleTapPinIfNeeded(prefs);
             ConfigStore.migrateSideLayoutModeIfNeeded(prefs);
             ConfigStore.migrateSelectedAppNameIfNeeded(prefs);
             ConfigStore.migrateIndependentSideTargetsIfNeeded(prefs);
             ConfigStore.migrateOrientationBehaviorIfNeeded(prefs);
+            ConfigStore.migrateHoneycombBackgroundIfNeeded(prefs);
+            ConfigStore.migrateHoneycombWallpaperDefaultIfNeeded(prefs);
+            ConfigStore.migratePressureTriggersIfNeeded(prefs);
+            ConfigStore.ensureNativeWindowScaleDefaults(prefs);
+            ConfigStore.migratePressureTargetsIfNeeded(prefs);
             Bundle out = new Bundle();
             out.putBoolean(ConfigContract.KEY_ENABLED, prefs.getBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED));
             out.putBoolean(ConfigContract.KEY_HAPTIC, prefs.getBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC));
@@ -48,6 +59,21 @@ public final class ConfigProvider extends ContentProvider {
                             ConfigContract.MAX_FAN_ANIMATION_SPEED, prefs.getInt(
                                     ConfigContract.KEY_FAN_ANIMATION_SPEED,
                                     ConfigContract.DEFAULT_FAN_ANIMATION_SPEED))));
+            out.putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED, clamp(prefs.getInt(
+                    ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                    prefs.getInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
+                            ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)),
+                    ConfigContract.MIN_FAN_ANIMATION_SPEED,
+                    ConfigContract.MAX_FAN_ANIMATION_SPEED));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC, prefs.getBoolean(
+                    ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                    prefs.getBoolean(ConfigContract.KEY_HAPTIC,
+                            ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)));
+            out.putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL, clamp(prefs.getInt(
+                    ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                    ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL),
+                    ConfigContract.SELECTION_TRANSFORM_OFF,
+                    ConfigContract.SELECTION_TRANSFORM_STRONG));
             out.putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT, Math.max(
                     ConfigContract.MIN_FAN_REVEAL_AMOUNT, Math.min(
                             ConfigContract.MAX_FAN_REVEAL_AMOUNT, prefs.getInt(
@@ -118,9 +144,20 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM,
                             ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                    prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH));
+            out.putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                    prefs.getBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH));
             out.putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                     prefs.getBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                             ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM));
+            out.putInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS, clamp(prefs.getInt(
+                    ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                    ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS),
+                    ConfigContract.MIN_BOTTOM_HONEYCOMB_SETTLE_MS,
+                    ConfigContract.MAX_BOTTOM_HONEYCOMB_SETTLE_MS));
             out.putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, prefs.getBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED));
             out.putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_ENABLED, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_PORTRAIT_ENABLED,
@@ -128,16 +165,12 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_LANDSCAPE_ENABLED,
                     ConfigContract.DEFAULT_SIDE_LANDSCAPE_ENABLED));
-            out.putInt(ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE, clamp(prefs.getInt(
+            out.putInt(ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_PORTRAIT_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE),
-                    ConfigContract.SIDE_LAYOUT_LIST,
-                    ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS));
-            out.putInt(ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE, clamp(prefs.getInt(
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
+            out.putInt(ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_LANDSCAPE_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE),
-                    ConfigContract.SIDE_LAYOUT_LIST,
-                    ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS));
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
             out.putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_FULLSCREEN,
                     prefs.getBoolean(ConfigContract.KEY_SIDE_PORTRAIT_FULLSCREEN,
                             ConfigContract.DEFAULT_SIDE_PORTRAIT_FULLSCREEN));
@@ -191,11 +224,9 @@ public final class ConfigProvider extends ContentProvider {
             out.putBoolean(ConfigContract.KEY_SIDE_FAN_LIST, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_FAN_LIST,
                     ConfigContract.DEFAULT_SIDE_FAN_LIST));
-            out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, Math.max(
-                    ConfigContract.SIDE_LAYOUT_LIST, Math.min(
-                            ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS, prefs.getInt(
-                                    ConfigContract.KEY_SIDE_LAYOUT_MODE,
-                                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE))));
+            out.putInt(ConfigContract.KEY_SIDE_LAYOUT_MODE, LayoutModeSanitizer.sideLayout(prefs.getInt(
+                    ConfigContract.KEY_SIDE_LAYOUT_MODE,
+                    ConfigContract.DEFAULT_SIDE_LAYOUT_MODE)));
             out.putInt(ConfigContract.KEY_SIDE_RING_SIZE_PERCENT, Math.max(
                     ConfigContract.MIN_SIDE_RING_SIZE_PERCENT, Math.min(
                             ConfigContract.MAX_SIDE_RING_SIZE_PERCENT, prefs.getInt(
@@ -258,11 +289,12 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP),
                     ConfigContract.MIN_SIDE_TASK_FINGER_OFFSET_DP,
                     ConfigContract.MAX_SIDE_TASK_FINGER_OFFSET_DP));
-            out.putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE, clamp(prefs.getInt(
+            out.putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE, LayoutModeSanitizer.taskLayout(prefs.getInt(
                     ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
-                    ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE),
-                    ConfigContract.SIDE_TASK_LAYOUT_FLAT,
-                    ConfigContract.SIDE_TASK_LAYOUT_ICONS));
+                    ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)));
+            out.putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                    prefs.getBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                            ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER));
             out.putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME, prefs.getBoolean(
                     ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                     ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME));
@@ -276,6 +308,10 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT),
                             ConfigContract.MIN_SIDE_TASK_SWIPE_SPEED_PERCENT,
                             ConfigContract.MAX_SIDE_TASK_SWIPE_SPEED_PERCENT));
+            out.putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                    clamp(prefs.getInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                                    ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED),
+                            0, 4));
             out.putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                     prefs.getBoolean(
                             ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
@@ -315,8 +351,12 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_NATIVE_WINDOW_SCALE_PERCENT),
                             ConfigContract.MIN_NATIVE_WINDOW_SCALE_PERCENT,
                             ConfigContract.MAX_NATIVE_WINDOW_SCALE_PERCENT));
-            out.putInt(ConfigContract.KEY_POSITION_X, prefs.getInt(ConfigContract.KEY_POSITION_X, ConfigContract.DEFAULT_POSITION_X));
-            out.putInt(ConfigContract.KEY_POSITION_Y, prefs.getInt(ConfigContract.KEY_POSITION_Y, ConfigContract.DEFAULT_POSITION_Y));
+            out.putInt(ConfigContract.KEY_POSITION_X, WindowPositionPolicy.clampPercent(
+                    prefs.getInt(ConfigContract.KEY_POSITION_X,
+                            ConfigContract.DEFAULT_POSITION_X)));
+            out.putInt(ConfigContract.KEY_POSITION_Y, WindowPositionPolicy.clampPercent(
+                    prefs.getInt(ConfigContract.KEY_POSITION_Y,
+                            ConfigContract.DEFAULT_POSITION_Y)));
             out.putInt(ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_LANDSCAPE_WIDTH_PERCENT,
                     ConfigContract.DEFAULT_LANDSCAPE_WIDTH_PERCENT),
@@ -330,12 +370,14 @@ public final class ConfigProvider extends ContentProvider {
                                     ConfigContract.DEFAULT_NATIVE_WINDOW_SCALE_PERCENT),
                             ConfigContract.MIN_NATIVE_WINDOW_SCALE_PERCENT,
                             ConfigContract.MAX_NATIVE_WINDOW_SCALE_PERCENT));
-            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_X, prefs.getInt(
-                    ConfigContract.KEY_LANDSCAPE_POSITION_X,
-                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_X));
-            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y, prefs.getInt(
-                    ConfigContract.KEY_LANDSCAPE_POSITION_Y,
-                    ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                    WindowPositionPolicy.clampPercent(prefs.getInt(
+                            ConfigContract.KEY_LANDSCAPE_POSITION_X,
+                            ConfigContract.DEFAULT_LANDSCAPE_POSITION_X)));
+            out.putInt(ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                    WindowPositionPolicy.clampPercent(prefs.getInt(
+                            ConfigContract.KEY_LANDSCAPE_POSITION_Y,
+                            ConfigContract.DEFAULT_LANDSCAPE_POSITION_Y)));
             out.putInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_SINGLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_SINGLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, prefs.getInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION, ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION));
             out.putInt(ConfigContract.KEY_OUTSIDE_TAP_WINDOW_MS, clamp(prefs.getInt(
@@ -375,6 +417,9 @@ public final class ConfigProvider extends ContentProvider {
             out.putInt(ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_ANIMATION_SPEED,
                     ConfigContract.DEFAULT_HONEYCOMB_ANIMATION_SPEED), 0, 4));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                            ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION));
             out.putInt(ConfigContract.KEY_HONEYCOMB_INERTIA, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_INERTIA,
                     ConfigContract.DEFAULT_HONEYCOMB_INERTIA), 0, 2));
@@ -446,24 +491,219 @@ public final class ConfigProvider extends ContentProvider {
                     ConfigContract.KEY_HONEYCOMB_BLUR_DP, 36), 0, 60));
             out.putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_DIM_PERCENT, 22), 0, 60));
-            out.putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP, clamp(prefs.getInt(
-                    ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                    ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP),
-                    ConfigContract.MIN_HONEYCOMB_RETREAT_DP,
-                    ConfigContract.MAX_HONEYCOMB_RETREAT_DP));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                            ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED));
+            out.putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                            ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP, clamp(prefs.getInt(
+                    ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                    ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP), 0, 60));
+            out.putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                    clamp(prefs.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                            ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT), 0, 60));
             out.putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT, clamp(prefs.getInt(
                     ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
                     ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT),
                     ConfigContract.MIN_HONEYCOMB_DISC_SIZE_PERCENT,
                     ConfigContract.MAX_HONEYCOMB_DISC_SIZE_PERCENT));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT), 0, 100));
+            out.putInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT),
+                    ConfigContract.MIN_PRESSURE_RADIUS_PERCENT,
+                    ConfigContract.MAX_PRESSURE_RADIUS_PERCENT));
+            float pressureThreshold = prefs.getFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    ConfigContract.DEFAULT_PRESSURE_THRESHOLD);
+            if (!Float.isFinite(pressureThreshold)) pressureThreshold = 0f;
+            out.putFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    Math.max(0f, Math.min(ConfigContract.MAX_PRESSURE_THRESHOLD,
+                            pressureThreshold)));
+            out.putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT), 0, 5));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATED));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                            ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION));
+            out.putInt(ConfigContract.KEY_PRESSURE_ORB_THEME, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ORB_THEME,
+                    ConfigContract.DEFAULT_PRESSURE_ORB_THEME),
+                    ConfigContract.PRESSURE_ORB_ORBITS,
+                    ConfigContract.PRESSURE_ORB_MORPH));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
+                    ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT),
+                    ConfigContract.MIN_PRESSURE_ORB_SIZE_PERCENT,
+                    ConfigContract.MAX_PRESSURE_ORB_SIZE_PERCENT));
+            out.putInt(ConfigContract.KEY_PRESSURE_ACTION, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_ACTION,
+                    ConfigContract.DEFAULT_PRESSURE_ACTION),
+                    ConfigContract.PRESSURE_ACTION_HONEYCOMB,
+                    ConfigContract.PRESSURE_ACTION_SINGLE_TARGET));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                            ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED));
+            out.putString(ConfigContract.KEY_PRESSURE_COMPONENTS, prefs.getString(
+                    ConfigContract.KEY_PRESSURE_COMPONENTS, "[]"));
+            out.putString(ConfigContract.KEY_PRESSURE_TRIGGERS, prefs.getString(
+                    ConfigContract.KEY_PRESSURE_TRIGGERS, "[]"));
+            out.putInt(ConfigContract.KEY_PRESSURE_HAPTIC_MODE, clamp(prefs.getInt(
+                    ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
+                    ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE),
+                    ConfigContract.PRESSURE_HAPTIC_SYSTEM,
+                    ConfigContract.PRESSURE_HAPTIC_CUSTOM));
+            int sensorRateMode = prefs.getInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                    ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE);
+            if (sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_BALANCED
+                    && sensorRateMode != ConfigContract.PRESSURE_SENSOR_RATE_ECO) {
+                sensorRateMode = ConfigContract.PRESSURE_SENSOR_RATE_BALANCED;
+            }
+            out.putInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE, sensorRateMode);
+            out.putBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS),
+                    ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                    ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_DURATION_MS));
+            out.putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                            ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE),
+                    ConfigContract.MIN_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                    ConfigContract.MAX_PRESSURE_FIRST_HAPTIC_AMPLITUDE));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED));
+            out.putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS),
+                    ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                    ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_DURATION_MS));
+            out.putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE, clamp(
+                    prefs.getInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                            ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE),
+                    ConfigContract.MIN_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                    ConfigContract.MAX_PRESSURE_SECOND_HAPTIC_AMPLITUDE));
+            out.putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                    prefs.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                            ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE));
             return out;
+        }
+        if ("report_pressure_calibration_sample".equals(method) && extras != null) {
+            int attempts = clamp(extras.getInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS), 0, 5);
+            float delta = extras.getFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA);
+            if (!Float.isFinite(delta) || delta < 0f) delta = 0f;
+            prefs.edit()
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS, attempts)
+                    .putFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA, delta)
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                            extras.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                                    false))
+                    .apply();
+            context.getContentResolver().notifyChange(ConfigContract.RUNTIME_URI, null);
+            return Bundle.EMPTY;
+        }
+        if ("report_pressure_calibration_result".equals(method) && extras != null) {
+            float threshold = extras.getFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                    ConfigContract.DEFAULT_PRESSURE_THRESHOLD);
+            if (!Float.isFinite(threshold)) threshold = ConfigContract.DEFAULT_PRESSURE_THRESHOLD;
+            int validCount = clamp(extras.getInt(
+                    ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                    ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT), 0, 5);
+            prefs.edit()
+                    .putFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                            Math.max(0f, Math.min(ConfigContract.MAX_PRESSURE_THRESHOLD,
+                                    threshold)))
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT, validCount)
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                            extras.getBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED, false))
+                    .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE, false)
+                    .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS, 5)
+                    .apply();
+            context.getContentResolver().notifyChange(ConfigContract.RUNTIME_URI, null);
+            return Bundle.EMPTY;
         }
         if ("report".equals(method) && extras != null) {
             prefs.edit()
                     .putString(ConfigContract.KEY_INTERFACE_STATUS, extras.getString(ConfigContract.KEY_INTERFACE_STATUS, ""))
                     .putLong(ConfigContract.KEY_INTERFACE_TIME, System.currentTimeMillis())
                     .apply();
-            context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            context.getContentResolver().notifyChange(ConfigContract.STATUS_URI, null);
+            return Bundle.EMPTY;
+        }
+        if ("report_shortcuts".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_SHORTCUT_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.CATALOG_URI, null);
+            }
+            pruneShortcutIcons(context, catalog);
+            return Bundle.EMPTY;
+        }
+        if (ShortcutIconLoader.METHOD_REPORT.equals(method) && extras != null) {
+            ArrayList<String> keys = extras.getStringArrayList(ShortcutIconLoader.EXTRA_KEYS);
+            @SuppressWarnings("deprecation")
+            ArrayList<Bitmap> icons = extras.getParcelableArrayList(
+                    ShortcutIconLoader.EXTRA_ICONS);
+            if (keys != null && icons != null) {
+                int count = Math.min(keys.size(), icons.size());
+                for (int index = 0; index < count; index++) {
+                    saveShortcutIcon(context, keys.get(index), icons.get(index));
+                }
+            }
+            return Bundle.EMPTY;
+        }
+        if (ShortcutIconLoader.METHOD_GET.equals(method) && arg != null) {
+            Bitmap icon = readShortcutIcon(context, arg);
+            Bundle out = new Bundle();
+            if (icon != null) out.putParcelable(ShortcutIconLoader.EXTRA_ICON, icon);
+            return out;
+        }
+        if ("report_activities".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_ACTIVITY_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.CATALOG_URI, null);
+            }
+            return Bundle.EMPTY;
+        }
+        if ("report_diagnostics".equals(method) && extras != null) {
+            String process = extras.getString(ConfigContract.EXTRA_DIAGNOSTIC_PROCESS, "");
+            String key;
+            if ("com.android.systemui".equals(process)) {
+                key = ConfigContract.KEY_DIAGNOSTICS_SYSTEM_UI;
+            } else if ("com.miui.home".equals(process)) {
+                key = ConfigContract.KEY_DIAGNOSTICS_MIUI_HOME;
+            } else {
+                return Bundle.EMPTY;
+            }
+            String diagnostics = extras.getString(
+                    ConfigContract.EXTRA_DIAGNOSTIC_TEXT, "");
+            if (diagnostics.length() > 32000) {
+                diagnostics = diagnostics.substring(diagnostics.length() - 32000);
+            }
+            prefs.edit().putString(key, diagnostics).apply();
             return Bundle.EMPTY;
         }
         if ("report_shortcuts".equals(method) && extras != null) {
@@ -542,6 +782,36 @@ public final class ConfigProvider extends ContentProvider {
         try (FileOutputStream output = new FileOutputStream(file)) {
             icon.compress(Bitmap.CompressFormat.PNG, 100, output);
         } catch (Throwable ignored) { }
+    }
+
+    private static void pruneShortcutIcons(Context context, String catalog) {
+        final JSONArray entries;
+        try {
+            entries = new JSONArray(catalog);
+        } catch (Throwable ignored) {
+            return;
+        }
+        Set<String> expectedFiles = new HashSet<>();
+        for (int index = 0; index < entries.length(); index++) {
+            JSONObject entry = entries.optJSONObject(index);
+            if (entry == null) continue;
+            String packageName = entry.optString("package", "");
+            String shortcutId = entry.optString("id", "");
+            if (packageName.isEmpty() || shortcutId.isEmpty()) continue;
+            int userId = entry.optInt("userId", 0);
+            expectedFiles.add(iconFileName(ShortcutIconLoader.key(
+                    packageName, shortcutId, userId)));
+        }
+        File directory = new File(context.getFilesDir(), "shortcut-icons");
+        File[] files = directory.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isFile() && file.getName().endsWith(".png")
+                    && !expectedFiles.contains(file.getName())) {
+                // This directory contains only generated shortcut icon files.
+                file.delete();
+            }
+        }
     }
 
     private static Bitmap readShortcutIcon(Context context, String key) {

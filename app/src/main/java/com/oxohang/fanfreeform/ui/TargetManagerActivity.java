@@ -9,18 +9,21 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.oxohang.fanfreeform.config.AppTarget;
 import com.oxohang.fanfreeform.config.ConfigContract;
@@ -30,6 +33,10 @@ import com.oxohang.fanfreeform.config.ShortcutIconLoader;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @SuppressLint("SetTextI18n")
 public final class TargetManagerActivity extends Activity {
@@ -37,9 +44,16 @@ public final class TargetManagerActivity extends Activity {
     public static final String KIND_FAN = "fan";
     public static final String KIND_SIDE = "side";
     public static final String KIND_HONEYCOMB = "honeycomb";
+    public static final String KIND_PRESSURE = "pressure";
     private static final int REQUEST_PICK_TARGETS = 121;
 
     private final ArrayList<AppTarget> targets = new ArrayList<>();
+    private final ExecutorService presentationExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Drawable placeholderIcon = new ColorDrawable(0xffeef0f5);
+    private Future<?> presentationTask;
+    private volatile int renderGeneration;
+    private volatile boolean destroyed;
     private ConfigStore store;
     private SharedPreferences prefs;
     private String kind;
@@ -51,7 +65,8 @@ public final class TargetManagerActivity extends Activity {
         store = new ConfigStore(this);
         prefs = store.preferences();
         kind = getIntent().getStringExtra(EXTRA_KIND);
-        if (!KIND_SIDE.equals(kind) && !KIND_HONEYCOMB.equals(kind)) kind = KIND_FAN;
+        if (!KIND_SIDE.equals(kind) && !KIND_HONEYCOMB.equals(kind)
+                && !KIND_PRESSURE.equals(kind)) kind = KIND_FAN;
         getWindow().setStatusBarColor(0xfff4f5fa);
         getWindow().setNavigationBarColor(0xfff4f5fa);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -124,31 +139,66 @@ public final class TargetManagerActivity extends Activity {
         targets.clear();
         if (KIND_SIDE.equals(kind)) targets.addAll(store.getSideTargets());
         else if (KIND_HONEYCOMB.equals(kind)) targets.addAll(store.getHoneycombTargets());
+        else if (KIND_PRESSURE.equals(kind)) targets.addAll(store.getPressureTargets());
         else targets.addAll(store.getTargets());
         renderTargets();
     }
 
     private void renderTargets() {
         if (targetContainer == null) return;
+        final int generation = ++renderGeneration;
+        final ArrayList<AppTarget> snapshot = new ArrayList<>(targets);
+        if (presentationTask != null) presentationTask.cancel(true);
         targetContainer.removeAllViews();
         countText.setText("已选 " + targets.size() + " / " + maximum()
                 + " · 长按图标可调整顺序");
-        if (targets.isEmpty()) {
+        if (KIND_FAN.equals(kind)) {
+            countText.setText("已选 " + targets.size() + " / " + maximum()
+                    + (targets.size() <= 3 ? " · 底部扇形至少保留 3 个" : " · 长按图标可调整顺序"));
+        }
+        if (snapshot.isEmpty()) {
             TextView empty = text("尚未选择应用，点击右下角 ＋ 添加。",
                     14, Ui.MUTED, Typeface.NORMAL);
+            if (KIND_FAN.equals(kind)) {
+                empty.setText("尚未选择应用，底部扇形至少保留 3 个，点击右下角 ＋ 添加。");
+            }
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(Ui.dp(this, 12), Ui.dp(this, 38), Ui.dp(this, 12),
                     Ui.dp(this, 38));
             targetContainer.addView(empty);
             return;
         }
-        for (AppTarget target : new ArrayList<>(targets)) {
+        ArrayList<TargetPresentation> placeholders = new ArrayList<>(snapshot.size());
+        for (AppTarget target : snapshot) placeholders.add(TargetPresentation.placeholder(target));
+        renderTargetRows(snapshot, placeholders);
+        presentationTask = presentationExecutor.submit(() -> {
+            ArrayList<TargetPresentation> presentations = new ArrayList<>(snapshot.size());
+            for (AppTarget target : snapshot) {
+                if (destroyed || generation != renderGeneration
+                        || Thread.currentThread().isInterrupted()) return;
+                presentations.add(loadPresentation(target));
+            }
+            if (destroyed || generation != renderGeneration) return;
+            mainHandler.post(() -> {
+                if (destroyed || generation != renderGeneration) return;
+                renderTargetRows(snapshot, presentations);
+            });
+        });
+    }
+
+    private void renderTargetRows(List<AppTarget> snapshot,
+                                  List<TargetPresentation> presentations) {
+        if (targetContainer == null) return;
+        targetContainer.removeAllViews();
+        for (int index = 0; index < snapshot.size(); index++) {
+            AppTarget target = snapshot.get(index);
+            TargetPresentation presentation = presentations.get(index);
             if (targetContainer.getChildCount() > 0) targetContainer.addView(Ui.divider(this));
             LinearLayout item = row();
             item.setOnDragListener((view, event) -> onDrop(target, event));
-            ImageView icon = new ImageView(this);
-            TargetPresentation presentation = presentation(target);
-            icon.setImageDrawable(presentation.icon);
+            IconBadgeView icon = new IconBadgeView(this);
+            icon.setIcon(presentation.icon != null ? presentation.icon : placeholderIcon,
+                    target.isShortcut(), target.userId != 0);
             icon.setOnLongClickListener(view -> view.startDragAndDrop(
                     ClipData.newPlainText("target", target.toJson().toString()),
                     new View.DragShadowBuilder(item), target, 0));
@@ -162,6 +212,10 @@ public final class TargetManagerActivity extends Activity {
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             Button remove = compactButton("移除");
             remove.setOnClickListener(view -> {
+                if (KIND_FAN.equals(kind) && targets.size() <= 3) {
+                    Toast.makeText(this, "底部扇形至少保留 3 个应用", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 targets.remove(target);
                 saveTargets();
             });
@@ -170,15 +224,15 @@ public final class TargetManagerActivity extends Activity {
         }
     }
 
-    private TargetPresentation presentation(AppTarget target) {
-        PackageManager pm = getPackageManager();
-        Drawable icon = getApplicationInfo().loadIcon(pm);
+    private TargetPresentation loadPresentation(AppTarget target) {
         String label = target.isShortcut() && !target.shortcutLabel.isEmpty()
                 ? target.shortcutLabel : target.packageName();
         String secondary = target.packageName() + (target.isShortcut() ? " · 快捷方式" : "");
+        Drawable icon = null;
         try {
+            PackageManager pm = getApplicationContext().getPackageManager();
             if (target.isShortcut()) {
-                icon = ShortcutIconLoader.load(this, target.packageName(),
+                icon = ShortcutIconLoader.load(getApplicationContext(), target.packageName(),
                         target.shortcutId, target.userId);
             } else if (target.componentName() != null) {
                 ActivityInfo info = pm.getActivityInfo(target.componentName(), 0);
@@ -187,7 +241,7 @@ public final class TargetManagerActivity extends Activity {
                 icon = info.loadIcon(pm);
                 if (target.userId != 0) secondary = target.packageName() + " · 双开";
             }
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             label = label + "（已不可用）";
         }
         return new TargetPresentation(label, secondary, icon);
@@ -236,9 +290,19 @@ public final class TargetManagerActivity extends Activity {
         saveTargets();
     }
 
+    @Override protected void onDestroy() {
+        destroyed = true;
+        renderGeneration++;
+        mainHandler.removeCallbacksAndMessages(null);
+        if (presentationTask != null) presentationTask.cancel(true);
+        presentationExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
     private void saveTargets() {
         if (KIND_SIDE.equals(kind)) store.setSideTargets(targets);
         else if (KIND_HONEYCOMB.equals(kind)) store.setHoneycombTargets(targets);
+        else if (KIND_PRESSURE.equals(kind)) store.setPressureTargets(targets);
         else store.setTargets(targets);
         renderTargets();
     }
@@ -246,6 +310,7 @@ public final class TargetManagerActivity extends Activity {
     private void resetTargets() {
         if (KIND_SIDE.equals(kind)) store.resetSideTargets();
         else if (KIND_HONEYCOMB.equals(kind)) store.resetHoneycombTargets();
+        else if (KIND_PRESSURE.equals(kind)) store.resetPressureTargets();
         else store.resetBottomTargets();
         reloadTargets();
     }
@@ -256,6 +321,8 @@ public final class TargetManagerActivity extends Activity {
         if (KIND_HONEYCOMB.equals(kind)) return prefs.getInt(
                 ConfigContract.KEY_HONEYCOMB_MAX_TARGETS,
                 ConfigContract.DEFAULT_HONEYCOMB_MAX_TARGETS);
+        if (KIND_PRESSURE.equals(kind)) return prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS,
+                ConfigContract.DEFAULT_FAN_MAX_TARGETS);
         return prefs.getInt(ConfigContract.KEY_FAN_MAX_TARGETS,
                 ConfigContract.DEFAULT_FAN_MAX_TARGETS);
     }
@@ -263,6 +330,7 @@ public final class TargetManagerActivity extends Activity {
     private String title() {
         if (KIND_SIDE.equals(kind)) return "侧滑应用与快捷方式";
         if (KIND_HONEYCOMB.equals(kind)) return "蜂窝应用与快捷方式";
+        if (KIND_PRESSURE.equals(kind)) return "按压圆形应用与快捷方式";
         return "小窗应用与快捷方式";
     }
 
@@ -305,6 +373,13 @@ public final class TargetManagerActivity extends Activity {
             this.label = label;
             this.secondary = secondary;
             this.icon = icon;
+        }
+
+        static TargetPresentation placeholder(AppTarget target) {
+            String label = target.isShortcut() && !target.shortcutLabel.isEmpty()
+                    ? target.shortcutLabel : target.packageName();
+            String secondary = target.packageName() + (target.isShortcut() ? " · 快捷方式" : "");
+            return new TargetPresentation(label, secondary, null);
         }
     }
 }

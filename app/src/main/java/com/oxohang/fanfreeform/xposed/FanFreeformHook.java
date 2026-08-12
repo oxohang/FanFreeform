@@ -2,12 +2,26 @@ package com.oxohang.fanfreeform.xposed;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.app.Application;
 import android.app.Instrumentation;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.ApplicationInfo;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 
+import dalvik.system.DexFile;
+
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -27,14 +41,30 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModePinHandler";
     private static final String FREEFORM_ANIMATION =
             "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation";
+    private static final String[] INPUT_CONTROLLER_CANDIDATES = {
+            EVENT_CONTROLLER,
+            "com.android.wm.shell.multitasking.miuimultiwinswitch.MulWinSwitchEventController",
+            "com.android.wm.shell.multitasking.miuimultiwinswitch.MiuiMultiWinSwitchEventController"
+    };
 
     @SuppressLint("StaticFieldLeak")
     private static volatile FanRuntime runtime;
+    @SuppressLint("StaticFieldLeak")
+    private static volatile Context systemUiContext;
     private static volatile Object freeformController;
     private static volatile Object eventProxy;
+    private static volatile boolean externalLaunchReceiverInstalled;
+    private static volatile boolean applicationAttachHookInstalled;
+    private static volatile boolean inputControllerHookInstalled;
+    private static volatile boolean freeformControllerHookInstalled;
+    private static final Set<String> REPORTED_PROXY_METHODS =
+            Collections.synchronizedSet(new LinkedHashSet<>());
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) {
+        // Only the main process should own the runtime and exported receivers; child
+        // processes would otherwise create duplicate sensors, captures and receivers.
+        if (!loadPackageParam.packageName.equals(loadPackageParam.processName)) return;
         if (MIUI_HOME.equals(loadPackageParam.packageName)) {
             hookShortcutHost(loadPackageParam.classLoader);
             hookRecentsClearButton(loadPackageParam.classLoader);
@@ -42,6 +72,7 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
         if (!SYSTEM_UI.equals(loadPackageParam.packageName)) return;
         Log.i("Loading in SystemUI process=" + loadPackageParam.processName);
+        hookApplicationAttach(loadPackageParam.classLoader);
         hookFreeformController(loadPackageParam.classLoader);
         hookFreeformPinHandler(loadPackageParam.classLoader);
         hookMiniAnimationTarget(loadPackageParam.classLoader);
@@ -53,6 +84,174 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         hookShadeExpansion(loadPackageParam.classLoader);
         hookControlCenterExpansion(loadPackageParam.classLoader);
         hookAuthoritativePanelState(loadPackageParam.classLoader);
+    }
+
+    private static synchronized void hookApplicationAttach(ClassLoader classLoader) {
+        if (applicationAttachHookInstalled) return;
+        try {
+            XposedBridge.hookAllMethods(Application.class, "attach", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (param.args.length == 0 || !(param.args[0] instanceof Context)) return;
+                    Context baseContext = (Context) param.args[0];
+                    Context context = param.thisObject instanceof Application
+                            ? (Application) param.thisObject : baseContext;
+                    systemUiContext = context.getApplicationContext() == null
+                            ? context : context.getApplicationContext();
+                    Log.attachReporter(systemUiContext);
+                    Log.i("SystemUI application attached package="
+                            + systemUiContext.getPackageName());
+                    ensureRuntime(systemUiContext, classLoader);
+                    probeSystemUiInterfaces(classLoader);
+                    // The first class lookup can happen before Application.attach(). Retry
+                    // here, and then scan the ROM dex for renamed HyperOS 2 classes below.
+                    hookFreeformController(classLoader);
+                    hookInputController(classLoader);
+                    scanRomClassesAsync(classLoader);
+                }
+            });
+            applicationAttachHookInstalled = true;
+            Log.i("SystemUI application attach diagnostic hook installed");
+        } catch (Throwable error) {
+            Log.e("SystemUI application attach diagnostic hook failed", error);
+        }
+    }
+
+    private static void probeSystemUiInterfaces(ClassLoader classLoader) {
+        probeClass(classLoader, "inputController", INPUT_CONTROLLER_CANDIDATES);
+        probeClass(classLoader, "inputHandler", EVENT_HANDLER);
+        probeClass(classLoader, "freeformController", FREEFORM_CONTROLLER);
+        probeClass(classLoader, "freeformPinHandler", FREEFORM_PIN_HANDLER);
+        probeClass(classLoader, "freeformAnimation", FREEFORM_ANIMATION);
+        Log.i("SystemUI probe complete uptime=" + SystemClock.uptimeMillis());
+    }
+
+    private static void probeClass(ClassLoader classLoader, String role, String... names) {
+        for (String name : names) {
+            Class<?> type = XposedHelpers.findClassIfExists(name, classLoader);
+            if (type == null) {
+                Log.i("SystemUI probe " + role + " missing=" + name);
+                continue;
+            }
+            Log.i("SystemUI probe " + role + " present=" + name
+                    + " methods=" + methodSummary(type));
+            return;
+        }
+    }
+
+    private static String methodSummary(Class<?> type) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        try {
+            for (Method method : type.getDeclaredMethods()) {
+                names.add(method.getName() + "/" + method.getParameterTypes().length);
+            }
+        } catch (Throwable error) {
+            return "<unavailable:" + error.getClass().getSimpleName() + ">";
+        }
+        if (names.isEmpty()) return "[]";
+        List<String> sorted = new ArrayList<>(names);
+        Collections.sort(sorted);
+        if (sorted.size() > 40) sorted = sorted.subList(0, 40);
+        return sorted.toString();
+    }
+
+    private static void scanRomClassesAsync(ClassLoader classLoader) {
+        Context context = systemUiContext;
+        boolean needInput = !inputControllerHookInstalled;
+        boolean needFreeform = !freeformControllerHookInstalled;
+        if (context == null || (!needInput && !needFreeform)) return;
+        Thread probe = new Thread(() -> {
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            } catch (Throwable ignored) { }
+            RomClassCandidates candidates = findRelevantRomClasses(
+                    context, needInput, needFreeform);
+            if (needInput) Log.i("SystemUI ROM input candidates=" + candidates.input);
+            if (needFreeform) {
+                Log.i("SystemUI ROM freeform candidates=" + candidates.freeform);
+            }
+
+            if (!inputControllerHookInstalled) {
+                for (String candidate : candidates.input) {
+                    if (candidate.contains("$") || !candidate.endsWith("EventController")) {
+                        continue;
+                    }
+                    Log.i("Retrying input hook with ROM candidate=" + candidate);
+                    if (hookInputController(classLoader, candidate)) break;
+                }
+                FanRuntime active = runtime;
+                if (!inputControllerHookInstalled && active != null) {
+                    active.reportNativeInputMissing();
+                }
+            }
+            if (!freeformControllerHookInstalled) {
+                for (String candidate : candidates.freeform) {
+                    if (candidate.contains("$")
+                            || !candidate.endsWith("FreeformModeController")) continue;
+                    Log.i("Retrying freeform hook with ROM candidate=" + candidate);
+                    hookFreeformController(classLoader, candidate);
+                    if (freeformControllerHookInstalled) break;
+                }
+            }
+        }, "hypergesture-rom-probe");
+        probe.setDaemon(true);
+        probe.start();
+    }
+
+    private static RomClassCandidates findRelevantRomClasses(Context context,
+                                                              boolean needInput,
+                                                              boolean needFreeform) {
+        LinkedHashSet<String> input = new LinkedHashSet<>();
+        LinkedHashSet<String> freeform = new LinkedHashSet<>();
+        ApplicationInfo info = context.getApplicationInfo();
+        List<String> paths = new ArrayList<>();
+        if (info.sourceDir != null) paths.add(info.sourceDir);
+        if (info.splitSourceDirs != null) {
+            Collections.addAll(paths, info.splitSourceDirs);
+        }
+        for (String path : paths) {
+            if ((!needInput || input.size() >= 80)
+                    && (!needFreeform || freeform.size() >= 80)) break;
+            DexFile dex = null;
+            try {
+                dex = new DexFile(path);
+                Enumeration<String> entries = dex.entries();
+                while (entries.hasMoreElements()
+                        && ((needInput && input.size() < 80)
+                        || (needFreeform && freeform.size() < 80))) {
+                    String name = entries.nextElement();
+                    String lower = name.toLowerCase(java.util.Locale.US);
+                    if (needInput && input.size() < 80
+                            && lower.contains("eventcontroller")
+                            && (lower.contains("mulwin") || lower.contains("multiwin")
+                            || lower.contains("multitask"))) {
+                        input.add(name);
+                    }
+                    if (needFreeform && freeform.size() < 80
+                            && lower.contains("freeform")
+                            && (lower.contains("controller") || lower.contains("animation")
+                            || lower.contains("manager"))) {
+                        freeform.add(name);
+                    }
+                }
+            } catch (Throwable error) {
+                Log.e("SystemUI ROM class scan failed path=" + path, error);
+            } finally {
+                if (dex != null) {
+                    try { dex.close(); } catch (IOException ignored) { }
+                }
+            }
+        }
+        return new RomClassCandidates(new ArrayList<>(input), new ArrayList<>(freeform));
+    }
+
+    private static final class RomClassCandidates {
+        final List<String> input;
+        final List<String> freeform;
+
+        RomClassCandidates(List<String> input, List<String> freeform) {
+            this.input = input;
+            this.freeform = freeform;
+        }
     }
 
     private static void hookRecentsClearButton(ClassLoader classLoader) {
@@ -280,63 +479,271 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
     }
 
     private static void hookInputController(ClassLoader classLoader) {
+        for (String candidate : INPUT_CONTROLLER_CANDIDATES) {
+            if (hookInputController(classLoader, candidate)) return;
+        }
+        Log.i("HyperOS input controller is unavailable; corner fallback active; ROM scan pending");
+        FanRuntime active = runtime;
+        if (active != null) active.reportNativeInputMissing();
+    }
+
+    private static synchronized boolean hookInputController(ClassLoader classLoader,
+                                                             String controllerName) {
+        if (inputControllerHookInstalled) return true;
         try {
-            Class<?> controllerClass = XposedHelpers.findClassIfExists(EVENT_CONTROLLER, classLoader);
-            Class<?> handlerClass = XposedHelpers.findClassIfExists(EVENT_HANDLER, classLoader);
-            if (controllerClass == null || handlerClass == null) {
-                Log.i("HyperOS input controller is unavailable; module disabled safely");
-                return;
+            Class<?> controllerClass = XposedHelpers.findClassIfExists(controllerName, classLoader);
+            if (controllerClass == null) return false;
+            Class<?> handlerClass = findHandlerClass(controllerClass, classLoader, controllerName);
+            if (handlerClass == null) {
+                Log.i("SystemUI input controller found but handler is missing controller="
+                        + controllerName + " nested=" + nestedClassSummary(controllerClass));
+                return false;
             }
-            XposedBridge.hookAllMethods(controllerClass, "createEventReceiver", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.args.length == 0 || !(param.args[0] instanceof Context)) return;
-                    installRuntime((Context) param.args[0], classLoader, param.thisObject, handlerClass);
-                }
-            });
-            Log.i("Input controller hook installed");
+            String createMethod = findEventReceiverMethod(controllerClass);
+            String registerMethod = findEventHandlerRegistrationMethod(controllerClass, handlerClass);
+            if (createMethod == null || registerMethod == null) {
+                Log.i("SystemUI input methods missing controller=" + controllerName
+                        + " create=" + createMethod + " register=" + registerMethod
+                        + " methods=" + methodSummary(controllerClass));
+                return false;
+            }
+            int hookCount = XposedBridge.hookAllMethods(controllerClass, createMethod,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Context context = null;
+                            for (Object argument : param.args) {
+                                if (argument instanceof Context) {
+                                    context = (Context) argument;
+                                    break;
+                                }
+                            }
+                            if (context != null) {
+                                installNativeInput(context, classLoader, param.thisObject,
+                                        handlerClass, registerMethod);
+                            } else {
+                                Log.i("SystemUI input receiver callback has no Context method="
+                                        + createMethod + " args=" + param.args.length);
+                            }
+                        }
+                    }).size();
+            if (hookCount == 0) {
+                Log.i("SystemUI input receiver method was not hookable controller="
+                        + controllerName + " method=" + createMethod);
+                return false;
+            }
+            inputControllerHookInstalled = true;
+            Log.i("Input controller hook installed controller=" + controllerName
+                    + " create=" + createMethod + " register=" + registerMethod
+                    + " hooks=" + hookCount);
+            return true;
         } catch (Throwable error) {
-            Log.e("Input controller hook failed safely", error);
+            Log.e("Input controller hook failed safely controller=" + controllerName, error);
+            return false;
         }
     }
 
-    private static synchronized void installRuntime(Context context, ClassLoader classLoader,
-                                                    Object inputController, Class<?> handlerClass) {
+    private static Class<?> findHandlerClass(Class<?> controllerClass, ClassLoader classLoader,
+                                             String controllerName) {
+        Class<?> exact = XposedHelpers.findClassIfExists(controllerName + "$EventHandler",
+                classLoader);
+        if (exact != null) return exact;
         try {
-            if (runtime == null) {
-                runtime = new FanRuntime(context, classLoader);
-                if (freeformController != null) runtime.setFreeformController(freeformController);
+            for (Class<?> nested : controllerClass.getDeclaredClasses()) {
+                if (nested.getName().toLowerCase(java.util.Locale.US).contains("eventhandler")) {
+                    return nested;
+                }
             }
-            if (eventProxy == null) {
-                eventProxy = Proxy.newProxyInstance(handlerClass.getClassLoader(), new Class<?>[]{handlerClass},
-                        (proxy, method, args) -> dispatchProxy(proxy, method, args));
-                XposedHelpers.callMethod(inputController, "registerEventHandler", eventProxy);
-                Log.i("Fan gesture event handler registered");
-            }
-            runtime.reportInputReady();
         } catch (Throwable error) {
-            Log.e("Runtime installation failed safely", error);
+            Log.e("Cannot inspect input controller nested classes controller="
+                    + controllerName, error);
+        }
+        return null;
+    }
+
+    private static String nestedClassSummary(Class<?> type) {
+        try {
+            List<String> names = new ArrayList<>();
+            for (Class<?> nested : type.getDeclaredClasses()) names.add(nested.getName());
+            Collections.sort(names);
+            return names.toString();
+        } catch (Throwable error) {
+            return "<unavailable:" + error.getClass().getSimpleName() + ">";
+        }
+    }
+
+    private static String findEventReceiverMethod(Class<?> controllerClass) {
+        try {
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                if ("createEventReceiver".equals(method.getName())) return method.getName();
+            }
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                String name = method.getName().toLowerCase(java.util.Locale.US);
+                if (name.contains("eventreceiver") && name.contains("create")) {
+                    return method.getName();
+                }
+            }
+        } catch (Throwable error) {
+            Log.e("Cannot inspect input receiver methods class=" + controllerClass.getName(), error);
+        }
+        return null;
+    }
+
+    private static String findEventHandlerRegistrationMethod(Class<?> controllerClass,
+                                                              Class<?> handlerClass) {
+        try {
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                if ("registerEventHandler".equals(method.getName())
+                        && acceptsHandler(method, handlerClass)) return method.getName();
+            }
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                String name = method.getName().toLowerCase(java.util.Locale.US);
+                if (name.contains("register") && acceptsHandler(method, handlerClass)) {
+                    return method.getName();
+                }
+            }
+        } catch (Throwable error) {
+            Log.e("Cannot inspect input handler registration class="
+                    + controllerClass.getName(), error);
+        }
+        return null;
+    }
+
+    private static boolean acceptsHandler(Method method, Class<?> handlerClass) {
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        return parameterTypes.length == 1
+                && parameterTypes[0] != Object.class
+                && parameterTypes[0].isAssignableFrom(handlerClass);
+    }
+
+    private static synchronized FanRuntime ensureRuntime(Context context,
+                                                         ClassLoader classLoader) {
+        if (runtime != null) return runtime;
+        if (context == null) {
+            Log.e("Cannot initialize SystemUI runtime: context is null",
+                    new IllegalStateException("SystemUI context unavailable"));
+            return null;
+        }
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) appContext = context;
+        systemUiContext = appContext;
+        FanRuntime created;
+        try {
+            created = new FanRuntime(appContext, classLoader);
+        } catch (Throwable error) {
+            Log.e("SystemUI runtime construction failed safely", error);
+            return null;
+        }
+        runtime = created;
+        if (freeformController != null) created.setFreeformController(freeformController);
+        installExternalLaunchReceiver(appContext);
+        Log.i("SystemUI runtime initialized with corner input fallback");
+        return created;
+    }
+
+    private static synchronized void installNativeInput(Context context, ClassLoader classLoader,
+                                                        Object inputController,
+                                                        Class<?> handlerClass,
+                                                        String registerMethod) {
+        FanRuntime active = ensureRuntime(context, classLoader);
+        if (active == null) return;
+        if (eventProxy != null) return;
+        if (!active.beginNativeInputRegistration()) return;
+        try {
+            Object proxy = Proxy.newProxyInstance(handlerClass.getClassLoader(),
+                    new Class<?>[]{handlerClass},
+                    (instance, method, args) -> dispatchProxy(instance, method, args));
+            XposedHelpers.callMethod(inputController, registerMethod, proxy);
+            eventProxy = proxy;
+            active.completeNativeInputRegistration();
+            Log.i("Fan gesture event handler registered method=" + registerMethod);
+        } catch (Throwable error) {
+            eventProxy = null;
+            active.failNativeInputRegistration();
+            Log.e("Native input registration failed safely; corner fallback restored", error);
+        }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private static synchronized void installExternalLaunchReceiver(Context context) {
+        if (externalLaunchReceiverInstalled) return;
+        try {
+            IntentFilter filter = new IntentFilter(ExternalLaunchContract.ACTION_LAUNCH);
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context receiverContext, Intent intent) {
+                    if (!ExternalLaunchContract.ACTION_LAUNCH.equals(intent.getAction())) return;
+                    if (!ExternalLaunchContract.FLY_PACKAGE.equals(
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_SOURCE_PACKAGE))
+                            || !BroadcastSenderValidator.isFromPackage(
+                            receiverContext, this, ExternalLaunchContract.FLY_PACKAGE)) {
+                        Log.i("Ignored external launch request from unknown source");
+                        return;
+                    }
+                    FanRuntime active = runtime;
+                    if (active == null) return;
+                    active.launchExternalRequest(
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_PACKAGE),
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_COMPONENT),
+                            intent.getStringExtra(ExternalLaunchContract.EXTRA_INTENT_URI));
+                }
+            };
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                context.registerReceiver(receiver, filter);
+            }
+            externalLaunchReceiverInstalled = true;
+            Log.i("External launch bridge registered for fly");
+        } catch (Throwable error) {
+            Log.e("External launch bridge registration failed", error);
         }
     }
 
     private static Object dispatchProxy(Object proxy, Method method, Object[] args) {
         String name = method.getName();
-        if ("onEvent".equals(name) && args != null && args.length >= 2 && args[0] instanceof MotionEvent) {
-            FanRuntime active = runtime;
-            if (active != null) active.onMotion((MotionEvent) args[0], args[1]);
-            return null;
-        }
         if ("toString".equals(name)) return "FanFreeformEventHandler";
         if ("hashCode".equals(name)) return System.identityHashCode(proxy);
         if ("equals".equals(name)) return args != null && args.length == 1 && proxy == args[0];
+
+        MotionEvent motionEvent = null;
+        Object inputMonitor = null;
+        if (args != null) {
+            for (Object argument : args) {
+                if (argument instanceof MotionEvent) {
+                    motionEvent = (MotionEvent) argument;
+                } else if (argument != null && inputMonitor == null) {
+                    inputMonitor = argument;
+                }
+            }
+        }
+        if (motionEvent != null) {
+            FanRuntime active = runtime;
+            // Keep the 1.0 input timing for the A/B build: the vendor callback already
+            // owns the gesture event, so avoid adding a main-looper queue turn here.
+            if (active != null) active.onMotion(motionEvent, inputMonitor);
+            if (!"onEvent".equals(name) && REPORTED_PROXY_METHODS.add(method.toString())) {
+                Log.i("Nonstandard input event callback method=" + method);
+            }
+            return null;
+        }
+        if (REPORTED_PROXY_METHODS.add(method.toString())) {
+            Log.i("Unhandled input handler callback method=" + method);
+        }
         return null;
     }
 
     private static void hookFreeformController(ClassLoader classLoader) {
+        hookFreeformController(classLoader, FREEFORM_CONTROLLER);
+    }
+
+    private static synchronized void hookFreeformController(ClassLoader classLoader,
+                                                             String controllerName) {
+        if (freeformControllerHookInstalled) return;
         try {
-            Class<?> controllerClass = XposedHelpers.findClassIfExists(FREEFORM_CONTROLLER, classLoader);
+            Class<?> controllerClass = XposedHelpers.findClassIfExists(controllerName, classLoader);
             if (controllerClass == null) {
-                Log.i("HyperOS freeform controller is unavailable; launch tracking disabled safely");
+                Log.i("HyperOS freeform controller is unavailable controller=" + controllerName
+                        + "; launch tracking disabled safely");
                 return;
             }
             XposedBridge.hookAllConstructors(controllerClass, new XC_MethodHook() {
@@ -401,10 +808,11 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
                                     || !(param.args[0] instanceof MotionEvent)) return;
                             active.onNativeFreeformMotion((MotionEvent) param.args[0]);
                         }
-                    });
-            Log.i("Freeform controller hooks installed");
+            });
+            freeformControllerHookInstalled = true;
+            Log.i("Freeform controller hooks installed controller=" + controllerName);
         } catch (Throwable error) {
-            Log.e("Freeform controller hooks failed safely", error);
+            Log.e("Freeform controller hooks failed safely controller=" + controllerName, error);
         }
     }
 

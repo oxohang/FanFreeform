@@ -1,0 +1,8 @@
+<dependencies>
+  <compile
+      roots="de.robv.android.xposed:api:82@jar">
+    <dependency
+        name="de.robv.android.xposed:api:82@jar"
+        simpleName="de.robv.android.xposed:api"/>
+  </compile>
+</dependencies>

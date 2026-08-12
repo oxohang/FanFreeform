@@ -32,19 +32,8 @@ android {
         applicationId = "com.oxohang.fanfreeform"
         minSdk = 30
         targetSdk = 34
-        versionCode = 131
-        versionName = "1.0"
-    }
-
-    signingConfigs {
-        create("release") {
-            if (releaseSigningReady) {
-                storeFile = file(releaseKeystorePath!!)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
-            }
-        }
+        versionCode = 150
+        versionName = "1.5"
     }
 
     buildTypes {
@@ -54,9 +43,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            if (releaseSigningReady) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -101,25 +88,20 @@ val archiveReleaseApk by tasks.registering {
         )
         val archiveDir = rootProject.layout.projectDirectory.dir("release-archive").asFile
         archiveDir.mkdirs()
-        val outputDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
-        val signedApk = outputDir.resolve("app-release.apk")
-        val unsignedApk = outputDir.resolve("app-release-unsigned.apk")
-        val sourceApk = if (signedApk.isFile) signedApk else unsignedApk
-        if (!sourceApk.isFile) {
-            throw GradleException("Release APK was not produced")
-        }
-        val signatureLabel = if (sourceApk == signedApk) "" else "-unsigned"
         copy {
-            from(sourceApk)
+            from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
             into(archiveDir)
             rename {
-                "HyperGesture-$archiveVersionName$signatureLabel-build$archiveVersionCode-$stamp.apk"
+                "HyperGesture-$archiveVersionName-build$archiveVersionCode-$stamp.apk"
             }
         }
     }
 }
 
+val archiveApkEnabled = providers.gradleProperty("archiveApk").orNull
+    ?.equals("true", ignoreCase = true) == true
+
 tasks.configureEach {
-    if (name == "assembleDebug") finalizedBy(archiveDebugApk)
-    if (name == "assembleRelease") finalizedBy(archiveReleaseApk)
+    if (archiveApkEnabled && name == "assembleDebug") finalizedBy(archiveDebugApk)
+    if (archiveApkEnabled && name == "assembleRelease") finalizedBy(archiveReleaseApk)
 }

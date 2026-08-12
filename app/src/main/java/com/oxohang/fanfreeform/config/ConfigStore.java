@@ -6,6 +6,8 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ResolveInfo;
+import android.os.Handler;
+import android.os.Looper;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,6 +23,10 @@ public final class ConfigStore {
             "side_targets_independent_migrated_v1";
     private static final String KEY_ORIENTATION_BEHAVIOR_MIGRATED =
             "orientation_behavior_migrated_v1";
+    private static final String KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED =
+            "honeycomb_background_v2_migrated";
+    private static final String KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED =
+            "honeycomb_background_v3_migrated";
     private static final String[] DEFAULT_BOTTOM_PACKAGES = {
             "com.ss.android.article.news", "tv.danmaku.bili", "com.twitter.android",
             "nu.gpu.nagram", "com.tencent.mm", "com.ss.android.yumme.video",
@@ -53,10 +59,15 @@ public final class ConfigStore {
     };
     private final Context context;
     private final SharedPreferences preferences;
+    private final Handler uiHandler;
+    private final HashMap<String, Object> pendingWrites = new HashMap<>();
+    private final Runnable flushPendingWrites;
 
     public ConfigStore(Context context) {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences(ConfigContract.PREFS, Context.MODE_PRIVATE);
+        uiHandler = new Handler(Looper.getMainLooper());
+        flushPendingWrites = this::flushPendingWritesNow;
         seedDefaultsIfNeeded(this.context, preferences);
         migrateUnifiedActionsIfNeeded(preferences);
         migrateDoubleTapPinIfNeeded(preferences);
@@ -64,7 +75,30 @@ public final class ConfigStore {
         migrateSelectedAppNameIfNeeded(preferences);
         migrateIndependentSideTargetsIfNeeded(preferences);
         migrateOrientationBehaviorIfNeeded(preferences);
+        migrateHoneycombBackgroundIfNeeded(preferences);
+        migrateHoneycombWallpaperDefaultIfNeeded(preferences);
         ensureNativeWindowScaleDefaults(preferences);
+        migratePressureTargetsIfNeeded(preferences);
+        migratePressureTriggersIfNeeded(preferences);
+    }
+
+    private void flushPendingWritesNow() {
+        HashMap<String, Object> snapshot;
+        synchronized (pendingWrites) {
+            if (pendingWrites.isEmpty()) return;
+            snapshot = new HashMap<>(pendingWrites);
+            pendingWrites.clear();
+        }
+        SharedPreferences.Editor editor = preferences.edit();
+        for (HashMap.Entry<String, Object> entry : snapshot.entrySet()) {
+            Object value = entry.getValue();
+            String key = entry.getKey();
+            if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+            else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+            else if (value instanceof Float) editor.putFloat(key, (Float) value);
+        }
+        editor.apply();
+        notifyChanged();
     }
 
     public SharedPreferences preferences() {
@@ -131,6 +165,119 @@ public final class ConfigStore {
         notifyChanged();
     }
 
+    public List<AppTarget> getPressureTargets() {
+        ArrayList<AppTarget> result = new ArrayList<>();
+        String raw = preferences.getString(ConfigContract.KEY_PRESSURE_COMPONENTS, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int i = 0; i < Math.min(ConfigContract.MAX_FAN_MAX_TARGETS,
+                    array.length()); i++) {
+                AppTarget target = AppTarget.fromJson(array.optJSONObject(i));
+                if (target != null && (target.isShortcut() || target.componentName() != null)
+                        && !result.contains(target)) result.add(target);
+            }
+        } catch (Exception ignored) { }
+        return result;
+    }
+
+    public void setPressureTargets(List<AppTarget> targets) {
+        JSONArray array = new JSONArray();
+        for (AppTarget target : targets) {
+            if (array.length() >= ConfigContract.MAX_FAN_MAX_TARGETS) break;
+            if (target != null && (target.isShortcut() || target.componentName() != null)) {
+                array.put(target.toJson());
+            }
+        }
+        preferences.edit().putString(ConfigContract.KEY_PRESSURE_COMPONENTS,
+                array.toString()).apply();
+        notifyChanged();
+    }
+
+    public void resetPressureTargets() {
+        setPressureTargets(getTargets());
+    }
+
+    public List<PressureTrigger> getPressureTriggers() {
+        ArrayList<PressureTrigger> result = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(preferences.getString(
+                    ConfigContract.KEY_PRESSURE_TRIGGERS, "[]"));
+            for (int i = 0; i < Math.min(ConfigContract.MAX_PRESSURE_TRIGGERS,
+                    array.length()); i++) {
+                PressureTrigger trigger = PressureTrigger.fromJson(array.optJSONObject(i));
+                if (trigger != null && !containsPressureTrigger(result, trigger.id)) {
+                    result.add(trigger);
+                }
+            }
+        } catch (Exception ignored) { }
+        if (result.isEmpty()) result.add(PressureTrigger.defaultTrigger());
+        return result;
+    }
+
+    public void setPressureTriggers(List<PressureTrigger> triggers) {
+        JSONArray array = new JSONArray();
+        PressureTrigger first = null;
+        if (triggers != null) {
+            for (PressureTrigger trigger : triggers) {
+                if (array.length() >= ConfigContract.MAX_PRESSURE_TRIGGERS
+                        || trigger == null) break;
+                if (!containsPressureTriggerJson(array, trigger.id)) {
+                    array.put(trigger.toJson());
+                    if (first == null) first = trigger;
+                }
+            }
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(ConfigContract.KEY_PRESSURE_TRIGGERS, array.toString());
+        if (first != null) {
+            editor.putInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                            first.centerXPercent)
+                    .putInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                            first.centerYPercent)
+                    .putInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                            first.radiusPercent)
+                    .putInt(ConfigContract.KEY_PRESSURE_ACTION, first.action);
+        }
+        editor.apply();
+        notifyChanged();
+    }
+
+    public PressureTrigger addPressureTrigger() {
+        List<PressureTrigger> triggers = getPressureTriggers();
+        int nextId = 1;
+        for (PressureTrigger trigger : triggers) nextId = Math.max(nextId, trigger.id + 1);
+        int slot = triggers.size();
+        int[] xPositions = {24, 76, 24, 76, 50, 50, 18, 82};
+        int[] yPositions = {24, 24, 76, 76, 50, 18, 82, 50};
+        int position = Math.min(xPositions.length - 1, slot);
+        int centerX = xPositions[position];
+        int centerY = yPositions[position];
+        PressureTrigger trigger = new PressureTrigger(nextId, true, centerX, centerY,
+                ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT,
+                ConfigContract.DEFAULT_PRESSURE_ACTION, null);
+        triggers.add(trigger);
+        setPressureTriggers(triggers);
+        return trigger;
+    }
+
+    public void resetPressureTriggers() {
+        setPressureTriggers(java.util.Collections.singletonList(PressureTrigger.defaultTrigger()));
+    }
+
+    private static boolean containsPressureTrigger(List<PressureTrigger> triggers, int id) {
+        for (PressureTrigger trigger : triggers) if (trigger.id == id) return true;
+        return false;
+    }
+
+    private static boolean containsPressureTriggerJson(JSONArray array, int id) {
+        for (int i = 0; i < array.length(); i++) {
+            if (array.optJSONObject(i) != null && array.optJSONObject(i).optInt("id", -1) == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public List<AppTarget> getSideTargets() {
         ArrayList<AppTarget> result = new ArrayList<>();
         try {
@@ -171,8 +318,6 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_ENABLED)
                 .putInt(ConfigContract.KEY_HONEYCOMB_MODE,
                         ConfigContract.DEFAULT_HONEYCOMB_MODE)
-                .putInt(ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                         ConfigContract.DEFAULT_HONEYCOMB_ICON_SIZE_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_SPACING_DP,
@@ -207,8 +352,14 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
-                .putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DISC_SIZE_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DISC_SIZE_PERCENT)
                 .apply();
@@ -247,6 +398,14 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .apply();
         notifyChanged();
     }
@@ -263,6 +422,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_EDGE_SCALE)
                 .putInt(ConfigContract.KEY_HONEYCOMB_SELECTION_SCALE,
                         ConfigContract.DEFAULT_HONEYCOMB_SELECTION_SCALE)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                        ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION)
                 .apply();
         notifyChanged();
     }
@@ -275,6 +436,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SHOW_SELECTED_APP_NAME)
                 .putBoolean(ConfigContract.KEY_FORCE_CIRCULAR_ICONS,
                         ConfigContract.DEFAULT_FORCE_CIRCULAR_ICONS)
+                .putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL)
                 .apply();
         notifyChanged();
     }
@@ -286,6 +449,10 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED)
                 .putInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
                         ConfigContract.DEFAULT_FAN_ANIMATION_SPEED)
+                .putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                        ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)
                 .putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT,
                         ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT)
                 .putInt(ConfigContract.KEY_FAN_ROTATION_DEGREES,
@@ -334,6 +501,10 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM)
                 .putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                         ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM)
+                .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                        ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH)
+                .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                        ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH)
                 .putBoolean(ConfigContract.KEY_BOTTOM_FULLSCREEN,
                         ConfigContract.DEFAULT_BOTTOM_FULLSCREEN)
                 .putBoolean(ConfigContract.KEY_BOTTOM_HONEYCOMB_FREEFORM,
@@ -383,7 +554,11 @@ public final class ConfigStore {
                     .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FULLSCREEN,
                             ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FULLSCREEN)
                     .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM,
-                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM);
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM)
+                    .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH)
+                    .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                            ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH);
         }
         editor.apply();
         notifyChanged();
@@ -399,10 +574,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_TRIGGER_PERCENT)
                 .putInt(ConfigContract.KEY_SELECTION_RADIUS_PERCENT,
                         ConfigContract.DEFAULT_SELECTION_RADIUS_PERCENT)
-                .putInt(ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP)
-                .putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP)
+                .putInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS)
                 .apply();
         notifyChanged();
     }
@@ -558,12 +731,16 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putInt(ConfigContract.KEY_SIDE_TASK_MOTION_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                         ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE)
                 .apply();
@@ -590,6 +767,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
@@ -604,6 +783,8 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
                 .apply();
         notifyChanged();
     }
@@ -696,13 +877,23 @@ public final class ConfigStore {
     }
 
     public void putBoolean(String key, boolean value) {
-        preferences.edit().putBoolean(key, value).apply();
-        notifyChanged();
+        queueWrite(key, value);
     }
 
     public void putInt(String key, int value) {
-        preferences.edit().putInt(key, value).apply();
-        notifyChanged();
+        queueWrite(key, value);
+    }
+
+    public void putFloat(String key, float value) {
+        queueWrite(key, value);
+    }
+
+    private void queueWrite(String key, Object value) {
+        synchronized (pendingWrites) {
+            pendingWrites.put(key, value);
+        }
+        uiHandler.removeCallbacks(flushPendingWrites);
+        uiHandler.postDelayed(flushPendingWrites, 120L);
     }
 
     public void putFanRowAllocation(int inner, int middle, int outer) {
@@ -805,11 +996,73 @@ public final class ConfigStore {
         preferences.edit()
                 .putBoolean(ConfigContract.KEY_ENABLED, ConfigContract.DEFAULT_ENABLED)
                 .putBoolean(ConfigContract.KEY_HAPTIC, ConfigContract.DEFAULT_HAPTIC)
+                .putBoolean(ConfigContract.KEY_PRESSURE_GESTURE_ENABLED,
+                        ConfigContract.DEFAULT_PRESSURE_GESTURE_ENABLED)
+                .putInt(ConfigContract.KEY_PRESSURE_LONG_PRESS_MS,
+                        ConfigContract.DEFAULT_PRESSURE_LONG_PRESS_MS)
+                .putInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT)
+                .putInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT)
+                .putInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT)
+                .putFloat(ConfigContract.KEY_PRESSURE_THRESHOLD,
+                        ConfigContract.DEFAULT_PRESSURE_THRESHOLD)
+                .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_VALID_COUNT,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATION_VALID_COUNT)
+                .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATED,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATED)
+                .putBoolean(ConfigContract.KEY_PRESSURE_SHOW_POSITION,
+                        ConfigContract.DEFAULT_PRESSURE_SHOW_POSITION)
+                .putInt(ConfigContract.KEY_PRESSURE_ORB_THEME,
+                        ConfigContract.DEFAULT_PRESSURE_ORB_THEME)
+                .putBoolean(ConfigContract.KEY_PRESSURE_THEME_ENABLED,
+                        ConfigContract.DEFAULT_PRESSURE_THEME_ENABLED)
+                .putInt(ConfigContract.KEY_PRESSURE_ORB_SIZE_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_ORB_SIZE_PERCENT)
+                .putInt(ConfigContract.KEY_PRESSURE_ACTION,
+                        ConfigContract.DEFAULT_PRESSURE_ACTION)
+                .putBoolean(ConfigContract.KEY_PRESSURE_OPEN_AS_FREEFORM,
+                        ConfigContract.DEFAULT_PRESSURE_OPEN_AS_FREEFORM)
+                .putBoolean(ConfigContract.KEY_PRESSURE_HEAVY_LAUNCH_ENABLED,
+                        ConfigContract.DEFAULT_PRESSURE_HEAVY_LAUNCH_ENABLED)
+                .putInt(ConfigContract.KEY_PRESSURE_HAPTIC_MODE,
+                        ConfigContract.DEFAULT_PRESSURE_HAPTIC_MODE)
+                .putInt(ConfigContract.KEY_PRESSURE_SENSOR_RATE_MODE,
+                        ConfigContract.DEFAULT_PRESSURE_SENSOR_RATE_MODE)
+                .putBoolean(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_ENABLED,
+                        ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_ENABLED)
+                .putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_DURATION_MS,
+                        ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_DURATION_MS)
+                .putInt(ConfigContract.KEY_PRESSURE_FIRST_HAPTIC_AMPLITUDE,
+                        ConfigContract.DEFAULT_PRESSURE_FIRST_HAPTIC_AMPLITUDE)
+                .putBoolean(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_ENABLED,
+                        ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_ENABLED)
+                .putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_DURATION_MS,
+                        ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_DURATION_MS)
+                .putInt(ConfigContract.KEY_PRESSURE_SECOND_HAPTIC_AMPLITUDE,
+                        ConfigContract.DEFAULT_PRESSURE_SECOND_HAPTIC_AMPLITUDE)
+                .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_ACTIVE,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ACTIVE)
+                .putInt(ConfigContract.KEY_PRESSURE_CALIBRATION_ATTEMPTS,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATION_ATTEMPTS)
+                .putFloat(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_DELTA,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_DELTA)
+                .putBoolean(ConfigContract.KEY_PRESSURE_CALIBRATION_LAST_VALID,
+                        ConfigContract.DEFAULT_PRESSURE_CALIBRATION_LAST_VALID)
+                .putString(ConfigContract.KEY_PRESSURE_TRIGGERS,
+                        new JSONArray().put(PressureTrigger.defaultTrigger().toJson()).toString())
                 .putBoolean(ConfigContract.KEY_FAN_SHADOW, ConfigContract.DEFAULT_FAN_SHADOW)
                 .putBoolean(ConfigContract.KEY_FAN_ANIMATIONS_ENABLED,
                         ConfigContract.DEFAULT_FAN_ANIMATIONS_ENABLED)
                 .putInt(ConfigContract.KEY_FAN_ANIMATION_SPEED,
                         ConfigContract.DEFAULT_FAN_ANIMATION_SPEED)
+                .putInt(ConfigContract.KEY_BOTTOM_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_BOTTOM_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_BOTTOM_TRIGGER_HAPTIC,
+                        ConfigContract.DEFAULT_BOTTOM_TRIGGER_HAPTIC)
+                .putInt(ConfigContract.KEY_SELECTION_TRANSFORM_LEVEL,
+                        ConfigContract.DEFAULT_SELECTION_TRANSFORM_LEVEL)
                 .putInt(ConfigContract.KEY_FAN_REVEAL_AMOUNT,
                         ConfigContract.DEFAULT_FAN_REVEAL_AMOUNT)
                 .putInt(ConfigContract.KEY_FAN_ROTATION_DEGREES,
@@ -846,6 +1099,12 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_BOTTOM_PORTRAIT_HONEYCOMB_FREEFORM)
                 .putBoolean(ConfigContract.KEY_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM,
                         ConfigContract.DEFAULT_BOTTOM_LANDSCAPE_HONEYCOMB_FREEFORM)
+                .putInt(ConfigContract.KEY_BOTTOM_HONEYCOMB_SETTLE_MS,
+                        ConfigContract.DEFAULT_BOTTOM_HONEYCOMB_SETTLE_MS)
+                .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH,
+                        ConfigContract.DEFAULT_BOTTOM_PORTRAIT_FIRST_PRESSURE_LAUNCH)
+                .putBoolean(ConfigContract.KEY_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH,
+                        ConfigContract.DEFAULT_BOTTOM_PORTRAIT_SECOND_PRESSURE_LAUNCH)
                 .putBoolean(ConfigContract.KEY_SIDE_GESTURE_ENABLED, ConfigContract.DEFAULT_SIDE_GESTURE_ENABLED)
                 .putBoolean(ConfigContract.KEY_SIDE_PORTRAIT_ENABLED,
                         ConfigContract.DEFAULT_SIDE_PORTRAIT_ENABLED)
@@ -911,12 +1170,18 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_SIDE_TASK_FINGER_OFFSET_DP)
                 .putInt(ConfigContract.KEY_SIDE_TASK_LAYOUT_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_LAYOUT_MODE)
+                .putBoolean(ConfigContract.KEY_SIDE_TASK_REVERSE_ORDER,
+                        ConfigContract.DEFAULT_SIDE_TASK_REVERSE_ORDER)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_SHOW_NAME,
                         ConfigContract.DEFAULT_SIDE_TASK_SHOW_NAME)
                 .putInt(ConfigContract.KEY_SIDE_TASK_MOTION_MODE,
                         ConfigContract.DEFAULT_SIDE_TASK_MOTION_MODE)
                 .putInt(ConfigContract.KEY_SIDE_TASK_SWIPE_SPEED_PERCENT,
                         ConfigContract.DEFAULT_SIDE_TASK_SWIPE_SPEED_PERCENT)
+                .putInt(ConfigContract.KEY_SIDE_TASK_ANIMATION_SPEED,
+                        ConfigContract.DEFAULT_SIDE_TASK_ANIMATION_SPEED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_CENTERED_SYSTEM_ANIMATION,
+                        ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION)
                 .putBoolean(ConfigContract.KEY_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE,
                         ConfigContract.DEFAULT_SIDE_TASK_EXTENDED_DOWNWARD_TOLERANCE)
                 .putBoolean(ConfigContract.KEY_HIDE_SYSTEM_RECENTS_CLEAR,
@@ -966,8 +1231,6 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_ENABLED)
                 .putInt(ConfigContract.KEY_HONEYCOMB_MODE,
                         ConfigContract.DEFAULT_HONEYCOMB_MODE)
-                .putInt(ConfigContract.KEY_HONEYCOMB_TRIGGER_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_TRIGGER_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_ICON_SIZE_DP,
                         ConfigContract.DEFAULT_HONEYCOMB_ICON_SIZE_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_SPACING_DP,
@@ -1022,14 +1285,20 @@ public final class ConfigStore {
                         ConfigContract.DEFAULT_HONEYCOMB_BLUR_DP)
                 .putInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
                         ConfigContract.DEFAULT_HONEYCOMB_DIM_PERCENT)
-                .putInt(ConfigContract.KEY_HONEYCOMB_RETREAT_DP,
-                        ConfigContract.DEFAULT_HONEYCOMB_RETREAT_DP)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_ENABLED)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP)
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT)
                 .apply();
         notifyChanged();
     }
 
     public void notifyChanged() {
-        context.getContentResolver().notifyChange(ConfigContract.URI, null);
+        context.getContentResolver().notifyChange(ConfigContract.RUNTIME_URI, null);
     }
 
     @SuppressWarnings("deprecation")
@@ -1060,6 +1329,27 @@ public final class ConfigStore {
                 .putString(ConfigContract.KEY_SIDE_COMPONENTS,
                         installedTargets(byPackage, DEFAULT_SIDE_PACKAGES).toString())
                 .commit();
+    }
+
+    static void migratePressureTargetsIfNeeded(SharedPreferences preferences) {
+        if (preferences.contains(ConfigContract.KEY_PRESSURE_COMPONENTS)) return;
+        preferences.edit().putString(ConfigContract.KEY_PRESSURE_COMPONENTS,
+                preferences.getString(ConfigContract.KEY_COMPONENTS, "[]")).apply();
+    }
+
+    static void migratePressureTriggersIfNeeded(SharedPreferences preferences) {
+        if (preferences.contains(ConfigContract.KEY_PRESSURE_TRIGGERS)) return;
+        PressureTrigger trigger = new PressureTrigger(1, true,
+                preferences.getInt(ConfigContract.KEY_PRESSURE_CENTER_X_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_CENTER_X_PERCENT),
+                preferences.getInt(ConfigContract.KEY_PRESSURE_CENTER_Y_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_CENTER_Y_PERCENT),
+                preferences.getInt(ConfigContract.KEY_PRESSURE_RADIUS_PERCENT,
+                        ConfigContract.DEFAULT_PRESSURE_RADIUS_PERCENT),
+                preferences.getInt(ConfigContract.KEY_PRESSURE_ACTION,
+                        ConfigContract.DEFAULT_PRESSURE_ACTION), null);
+        preferences.edit().putString(ConfigContract.KEY_PRESSURE_TRIGGERS,
+                new JSONArray().put(trigger.toJson()).toString()).apply();
     }
 
     private static JSONArray installedTargets(Map<String, ComponentName> byPackage,
@@ -1096,6 +1386,16 @@ public final class ConfigStore {
     @SuppressLint("ApplySharedPref")
     static void migrateDoubleTapPinIfNeeded(SharedPreferences preferences) {
         if (preferences.getBoolean(KEY_DOUBLE_PIN_MIGRATED, false)) return;
+        // Only legacy installs (which still carry the old per-side action keys) get
+        // the historical double-tap->pin behavior. A fresh install must keep the
+        // contract default (ACTION_EDGE_PIN), otherwise the migration below would
+        // silently rewrite the default before the user ever opens settings.
+        boolean legacySchema = preferences.contains("lower_single_action")
+                || preferences.contains("lower_double_action");
+        if (!legacySchema) {
+            preferences.edit().putBoolean(KEY_DOUBLE_PIN_MIGRATED, true).commit();
+            return;
+        }
         preferences.edit()
                 .putInt(ConfigContract.KEY_OUTSIDE_DOUBLE_ACTION,
                         ConfigContract.ACTION_PIN)
@@ -1211,6 +1511,34 @@ public final class ConfigStore {
                         preferences.getBoolean(ConfigContract.KEY_FAN_SELECTION_RING,
                                 ConfigContract.DEFAULT_SIDE_SELECTION_RING))
                 .putBoolean(KEY_ORIENTATION_BEHAVIOR_MIGRATED, true)
+                .commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateHoneycombBackgroundIfNeeded(SharedPreferences preferences) {
+        if (preferences.getBoolean(KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED, false)) return;
+        int oldStyle = preferences.getInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_STYLE,
+                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_STYLE);
+        preferences.edit()
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED,
+                        ConfigContract.DEFAULT_HONEYCOMB_APP_BACKGROUND_ENABLED)
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_ENABLED, false)
+                .putInt(ConfigContract.KEY_HONEYCOMB_LIVE_BLUR_DP, preferences.getInt(
+                        ConfigContract.KEY_HONEYCOMB_BLUR_DP,
+                        ConfigContract.DEFAULT_HONEYCOMB_LIVE_BLUR_DP))
+                .putInt(ConfigContract.KEY_HONEYCOMB_BACKGROUND_DIM_PERCENT,
+                        preferences.getInt(ConfigContract.KEY_HONEYCOMB_DIM_PERCENT,
+                                ConfigContract.DEFAULT_HONEYCOMB_BACKGROUND_DIM_PERCENT))
+                .putBoolean(KEY_HONEYCOMB_BACKGROUND_V2_MIGRATED, true)
+                .commit();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static void migrateHoneycombWallpaperDefaultIfNeeded(SharedPreferences preferences) {
+        if (preferences.getBoolean(KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED, false)) return;
+        preferences.edit()
+                .putBoolean(ConfigContract.KEY_HONEYCOMB_APP_BACKGROUND_ENABLED, false)
+                .putBoolean(KEY_HONEYCOMB_BACKGROUND_V3_MIGRATED, true)
                 .commit();
     }
 

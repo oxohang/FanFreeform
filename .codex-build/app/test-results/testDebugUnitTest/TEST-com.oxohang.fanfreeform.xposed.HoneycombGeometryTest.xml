@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-08-02T16:23:50" hostname="oxohangdeMacBook-Air-3.local" time="0.002">
+  <properties/>
+  <testcase name="surfaceBulgeMovesTheWholeMeshButReturnsAtItsBoundary" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="compactLayoutStartsAtCenterAndCreatesRoundSixNeighbors" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="centerScaleAndEdgeScaleUseSmoothBounds" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="fisheyeMagnifiesFocusAndShrinksTheWholeOuterDisc" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="pressureFieldFallsOffSmoothlyAndStopsAtItsEdge" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="edgePanStartsOnlyInTheOuterBandAndAcceleratesSmoothly" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="circularRowsPreserveStrictHoneycombNeighborSpacing" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.001"/>
+  <testcase name="dragResistanceOnlyAffectsOverflow" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="scaledHitUsesTheVisibleIconUnderThePointer" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="holdAccelerationMovesTheWholeGridAgainstTheFinger" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="partialOuterRingStaysCircularAndBalanced" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="edgeTransformShrinksContinuouslyAndHidesOutside" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="hitChoosesNearestIconWithinRadius" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <testcase name="commonAppCountsKeepACircularCentroid" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.001"/>
+  <testcase name="visibleHitUsesRenderedCenterAndSkipsHiddenIcon" classname="com.oxohang.fanfreeform.xposed.HoneycombGeometryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

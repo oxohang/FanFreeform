@@ -18,6 +18,7 @@ import de.robv.android.xposed.XposedHelpers;
 /** Keeps HyperOS' native recents clear-all button in sync with the module setting. */
 final class RecentsClearButtonRuntime {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final Runnable RELOAD_TASK = RecentsClearButtonRuntime::reload;
     private static final Set<View> CLEAR_BUTTONS = Collections.newSetFromMap(
             new WeakHashMap<>());
     private static volatile Context appContext;
@@ -30,10 +31,11 @@ final class RecentsClearButtonRuntime {
         Context application = context.getApplicationContext();
         if (application == null || installed) return;
         appContext = application;
-        application.getContentResolver().registerContentObserver(ConfigContract.URI, false,
+        application.getContentResolver().registerContentObserver(ConfigContract.RUNTIME_URI, false,
                 new ContentObserver(MAIN) {
                     @Override public void onChange(boolean selfChange) {
-                        reload();
+                        MAIN.removeCallbacks(RELOAD_TASK);
+                        MAIN.postDelayed(RELOAD_TASK, 150L);
                     }
                 });
         installed = true;

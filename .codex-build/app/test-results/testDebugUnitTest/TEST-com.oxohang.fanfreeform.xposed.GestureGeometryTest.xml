@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.oxohang.fanfreeform.xposed.GestureGeometryTest" tests="31" skipped="0" failures="0" errors="0" timestamp="2026-08-02T16:23:50" hostname="oxohangdeMacBook-Air-3.local" time="0.003">
+  <properties/>
+  <testcase name="followFingerListAppearsAheadOfSwipeAndListExitIsExplicit" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="fingerCenteredListAlignsChosenMiddleItem" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideListMirrorsClampsAndSelectsRows" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="wheelSelectionClampsAndRoundsToCenter" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="twentyPercentHeightIncludesBottomHandleAndStopsAtConfiguredTop" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="fanAllocatesMoreIconsToTheRoomierOuterRows" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="fixedSevenModeUsesTheSameCentersForDrawingAndHitTesting" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="measuresDistanceFromOriginalDownPoint" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="reservesBothEdgesAtEveryHeight" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="mirrorsSelectionAcrossCorners" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="growsRadiusBeforeShrinkingBelowMinimumIconSize" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideRingMovesInwardAndKeepsEveryIconVisible" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideReverseFadeMirrorsAndClamps" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="honeycombSafetyBoundaryStartsOutsideTheOutermostFanIcon" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideListExitDistinguishesEdgeInwardAndVerticalDirections" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="recognizesOnlyIntentionalInwardSideSwipe" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="crowdedFanUsesUpToThreeSelectableRows" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="customModeSupportsZeroMiddleAndOuterRows" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="fixedSevenModeFillsEachRowBeforeStartingTheNext" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="classifiesOutsideUsingActualWindowBounds" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="bottomCornersStayFlushWhileSideGestureUsesUpperBand" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="opensOnlyWhenPointerActuallyHitsIcon" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideRingSizeScalesRadiusWithoutChangingIconsAndClampsToScreen" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="treatsOnlyActualImeRectangleAsPartOfFreeform" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="detectsOnlyBottomCorners" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideTapYieldsAfterLargeNonBackMovement" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideTapKeepsNaturalJitterButYieldsToIntentionalBackSwipe" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="customModeFillsInnerThenStartsMiddleAtTheLowestSlot" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideFanCenterKeepsEveryIconInsideSafeBand" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="customModeMirrorsEveryVisualCenterAndHitTarget" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <testcase name="sideFanPlacesMiddleAppAtFingerAndMirrorsSelection" classname="com.oxohang.fanfreeform.xposed.GestureGeometryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

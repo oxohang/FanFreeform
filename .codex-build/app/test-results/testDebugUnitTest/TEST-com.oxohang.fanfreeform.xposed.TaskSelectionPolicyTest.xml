@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-08-02T16:23:50" hostname="oxohangdeMacBook-Air-3.local" time="0.001">
+  <properties/>
+  <testcase name="extendedToleranceDoublesOnlyTheDownwardDismissDistance" classname="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" time="0.001"/>
+  <testcase name="clearsOnlyWhenSelectionHasNotStarted" classname="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" time="0.0"/>
+  <testcase name="alwaysSelectsTheNearestVisualTaskOnceActive" classname="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" time="0.0"/>
+  <testcase name="incrementalMovementKeepsTheExistingFastTraversalCurve" classname="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" time="0.0"/>
+  <testcase name="edgeOverscrollDoesNotCreateSelectionDebt" classname="com.oxohang.fanfreeform.xposed.TaskSelectionPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

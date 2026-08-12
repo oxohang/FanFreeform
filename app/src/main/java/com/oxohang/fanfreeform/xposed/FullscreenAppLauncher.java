@@ -47,7 +47,7 @@ final class FullscreenAppLauncher {
                     request.putExtra(ShortcutHostRuntime.EXTRA_INTENT_URI,
                             target.shortcutIntentUri);
                 }
-                context.sendBroadcast(request);
+                ShortcutHostRuntime.sendSystemUiRequest(context, request);
             } else if (target.component == null) {
                 return false;
             } else if (target.userId != 0) {
@@ -57,7 +57,7 @@ final class FullscreenAppLauncher {
                                 target.component.flattenToString())
                         .putExtra(ShortcutHostRuntime.EXTRA_USER_ID, target.userId)
                         .putExtra(ShortcutHostRuntime.EXTRA_OPTIONS, bundle);
-                context.sendBroadcast(request);
+                ShortcutHostRuntime.sendSystemUiRequest(context, request);
             } else {
                 Intent intent = Intent.makeMainActivity(target.component)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
@@ -91,22 +91,24 @@ final class FullscreenAppLauncher {
         int startY = display.centerY() - startSize / 2;
         ActivityOptions options = ActivityOptions.makeScaleUpAnimation(
                 source, startX, startY, startSize, startSize);
-        // HyperOS normally replaces an app-supplied scale animation when an existing
-        // task is brought to the front. This framework flag is also used by MiuiHome
-        // when it needs its launch animation to win over the task transition.
+        forceOverrideTaskTransition(options, "centered fullscreen");
+        return options;
+    }
+
+    // HyperOS normally replaces an app-supplied animation when an existing task is
+    // brought to the front. This framework flag asks WindowManager to keep ours.
+    private static void forceOverrideTaskTransition(ActivityOptions options, String label) {
         try {
             XposedHelpers.callMethod(options, "setOverrideTaskTransition", true);
-            Log.i("Using centered fullscreen task animation at "
-                    + display.centerX() + "," + display.centerY());
+            Log.i("Using " + label + " task animation");
         } catch (Throwable error) {
             // Older HyperOS builds may only expose the backing field.
             try {
                 XposedHelpers.setBooleanField(options, "mOverrideTaskTransition", true);
-                Log.i("Using centered fullscreen task animation (field fallback)");
+                Log.i("Using " + label + " task animation (field fallback)");
             } catch (Throwable ignored) {
-                Log.i("Cannot force centered task transition; using scale fallback");
+                Log.i("Cannot force " + label + " task transition");
             }
         }
-        return options;
     }
 }

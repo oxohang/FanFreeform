@@ -120,6 +120,7 @@ public final class ConfigContractTest {
         assertEquals(ConfigContract.ACTION_EDGE_PIN,
                 ConfigContract.DEFAULT_OUTSIDE_DOUBLE_ACTION);
         assertEquals(true, ConfigContract.DEFAULT_HONEYCOMB_ENABLED);
+        assertEquals(true, ConfigContract.DEFAULT_HONEYCOMB_CENTERED_SYSTEM_ANIMATION);
         assertEquals(ConfigContract.HONEYCOMB_MODE_HOLD,
                 ConfigContract.DEFAULT_HONEYCOMB_MODE);
     }
