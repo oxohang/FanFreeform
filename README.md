@@ -2,7 +2,10 @@
 
 把 HyperOS 原生小窗、应用快捷方式和最近任务装进屏幕边缘手势。通过底角斜滑或侧滑即可选择目标，松手后以小窗或全屏方式启动；也可以进入蜂窝应用总览、Hyper 任务中心或系统任务中心。
 
-当前版本：`1.0`（build 131）
+## 气压计按压手势
+
+在屏幕指定的圆形区域内按压，气压变化超过个人校准阈值后触发配置动作，可用于打开蜂窝、圆形应用选择，或执行返回、主屏、锁屏、截图等系统操作。首次使用前需要完成 5 次实际按压校准。
+
 
 > Hyper手势是依赖 HyperOS 私有接口的 LSPosed 实验性模块，不是小米、魅族或 Apple 的官方项目。不同机型和系统版本的内部接口可能不同，请先阅读兼容性说明并保留可用的模块禁用或救砖方案。
 
@@ -18,7 +21,9 @@
 - 呼出、图标旋转、选中放大、取消淡出、速度和扇形阴影均可独立调整。
 - 可统一显示选中应用名称、启用震动反馈，或关闭强制圆形图标以保留应用原始轮廓。
 <img width="320" height="696" alt="演示" src="https://github.com/user-attachments/assets/c2ecf35b-6e28-4912-a19c-1e4bf94813f2" />
-
+<img width="320" height="696" alt="21592_小萌GIF_20260806_220714" src="https://github.com/user-attachments/assets/85b3222c-7181-44a0-a4a4-acc939142e50" />
+<img width="320" height="696" alt="21209_小萌GIF_20260801_201546" src="https://github.com/user-attachments/assets/722756b1-a6dd-4f0c-b867-5df2238dcbe8" />
+<img width="320" height="696" alt="20998_小萌GIF_20260729_175112" src="https://github.com/user-attachments/assets/f2ab405a-d189-446e-9174-389c02c3fb9f" />
 
 
 ## 使用要求
