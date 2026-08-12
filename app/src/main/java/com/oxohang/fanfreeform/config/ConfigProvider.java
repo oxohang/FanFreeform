@@ -706,6 +706,59 @@ public final class ConfigProvider extends ContentProvider {
             prefs.edit().putString(key, diagnostics).apply();
             return Bundle.EMPTY;
         }
+        if ("report_shortcuts".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_SHORTCUT_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_SHORTCUT_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            }
+            return Bundle.EMPTY;
+        }
+        if (ShortcutIconLoader.METHOD_REPORT.equals(method) && extras != null) {
+            ArrayList<String> keys = extras.getStringArrayList(ShortcutIconLoader.EXTRA_KEYS);
+            @SuppressWarnings("deprecation")
+            ArrayList<Bitmap> icons = extras.getParcelableArrayList(
+                    ShortcutIconLoader.EXTRA_ICONS);
+            if (keys != null && icons != null) {
+                int count = Math.min(keys.size(), icons.size());
+                for (int index = 0; index < count; index++) {
+                    saveShortcutIcon(context, keys.get(index), icons.get(index));
+                }
+            }
+            return Bundle.EMPTY;
+        }
+        if (ShortcutIconLoader.METHOD_GET.equals(method) && arg != null) {
+            Bitmap icon = readShortcutIcon(context, arg);
+            Bundle out = new Bundle();
+            if (icon != null) out.putParcelable(ShortcutIconLoader.EXTRA_ICON, icon);
+            return out;
+        }
+        if ("report_activities".equals(method) && extras != null) {
+            String catalog = extras.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]");
+            if (!catalog.equals(prefs.getString(ConfigContract.KEY_ACTIVITY_CATALOG, "[]"))) {
+                prefs.edit().putString(ConfigContract.KEY_ACTIVITY_CATALOG, catalog).apply();
+                context.getContentResolver().notifyChange(ConfigContract.URI, null);
+            }
+            return Bundle.EMPTY;
+        }
+        if ("report_diagnostics".equals(method) && extras != null) {
+            String process = extras.getString(ConfigContract.EXTRA_DIAGNOSTIC_PROCESS, "");
+            String key;
+            if ("com.android.systemui".equals(process)) {
+                key = ConfigContract.KEY_DIAGNOSTICS_SYSTEM_UI;
+            } else if ("com.miui.home".equals(process)) {
+                key = ConfigContract.KEY_DIAGNOSTICS_MIUI_HOME;
+            } else {
+                return Bundle.EMPTY;
+            }
+            String diagnostics = extras.getString(
+                    ConfigContract.EXTRA_DIAGNOSTIC_TEXT, "");
+            if (diagnostics.length() > 32000) {
+                diagnostics = diagnostics.substring(diagnostics.length() - 32000);
+            }
+            prefs.edit().putString(key, diagnostics).apply();
+            return Bundle.EMPTY;
+        }
         return super.call(method, arg, extras);
     }
 

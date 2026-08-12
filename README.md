@@ -1,10 +1,10 @@
-# 随用随走（FanFreeform）
+# Hyper手势（HyperGesture）
 
 面向 HyperOS 3 的 LSPosed 模块：通过左右底角斜滑或整侧长滑呼出扇形应用菜单，也可以使用气压传感器按压手势触发应用选择或系统动作；松手以系统原生小窗打开应用。仅由该手势打开的小窗会响应可配置的窗外单击和双击操作。
 
-目标测试环境：HyperOS `OS3.0.317.0.WPBCNXM`、Android 16、`com.android.systemui` `16.03.251211.r`。
+当前版本：`1.0`（build 131）
 
-## 已实现
+> Hyper手势是依赖 HyperOS 私有接口的 LSPosed 实验性模块，不是小米、魅族或 Apple 的官方项目。不同机型和系统版本的内部接口可能不同，请先阅读兼容性说明并保留可用的模块禁用或救砖方案。
 
 - 左右底角扇形手势，滑动选择、松手启动。
 - 可选的左右整侧距离手势：短滑保留 HyperOS 原生返回，长滑取消返回并展开与侧滑方向匹配的扇形；与底角斜滑同时可用。
@@ -22,10 +22,12 @@
 
 ## 构建
 
+需要 JDK 17 和 Android SDK：
+
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 如需将 APK 归档到 `release-archive/`，显式执行：

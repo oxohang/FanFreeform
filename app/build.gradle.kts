@@ -5,6 +5,25 @@ plugins {
     id("com.android.application")
 }
 
+val releaseKeystorePath = providers.gradleProperty("HYPERGESTURE_KEYSTORE")
+    .orElse(providers.environmentVariable("HYPERGESTURE_KEYSTORE"))
+    .orNull
+val releaseStorePassword = providers.gradleProperty("HYPERGESTURE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("HYPERGESTURE_STORE_PASSWORD"))
+    .orNull
+val releaseKeyAlias = providers.gradleProperty("HYPERGESTURE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("HYPERGESTURE_KEY_ALIAS"))
+    .orNull
+val releaseKeyPassword = providers.gradleProperty("HYPERGESTURE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("HYPERGESTURE_KEY_PASSWORD"))
+    .orNull
+val releaseSigningReady = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.oxohang.fanfreeform"
     compileSdk = 34

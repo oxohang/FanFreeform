@@ -3046,6 +3046,32 @@ final class FanRuntime {
         return display.width() > display.height();
     }
 
+    private boolean canStartBottom() {
+        return runtimeReady() && !imeVisible && targets.size() >= 3
+                && config.bottomEnabledFor(isLandscape());
+    }
+
+    private boolean canStartSide() {
+        if (!runtimeReady() || !config.sideEnabledFor(isLandscape())) return false;
+        int sideLayoutMode = currentSideLayoutMode();
+        if (sideLayoutMode == ConfigContract.SIDE_LAYOUT_TASKS
+                || sideLayoutMode == ConfigContract.SIDE_LAYOUT_SYSTEM_RECENTS) {
+            return true;
+        }
+        return sideLayoutMode == ConfigContract.SIDE_LAYOUT_HONEYCOMB
+                ? config.honeycombEnabledFor(isLandscape()) && !honeycombTargets.isEmpty()
+                : !sideTargets.isEmpty();
+    }
+
+    private int currentSideLayoutMode() {
+        return config.sideLayoutModeFor(isLandscape());
+    }
+
+    private boolean isLandscape() {
+        Rect display = displayBounds();
+        return display.width() > display.height();
+    }
+
     private void refreshTriggerCapture() {
         if (inputSources.usesNativeInput() || pressureOverlayCaptureSuppressed
                 || pressureHoneycombActive || pressureCircularActive) {

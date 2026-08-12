@@ -841,6 +841,31 @@ public final class FanFreeformHook implements IXposedHookLoadPackage {
         }
     }
 
+    private static void hookFreeformPinHandler(ClassLoader classLoader) {
+        try {
+            Class<?> handlerClass = XposedHelpers.findClassIfExists(
+                    FREEFORM_PIN_HANDLER, classLoader);
+            if (handlerClass == null) {
+                Log.i("HyperOS freeform pin handler is unavailable; direct pin tracking disabled");
+                return;
+            }
+            XposedBridge.hookAllMethods(handlerClass, "startPinAnimation",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            FanRuntime active = runtime;
+                            if (active != null) {
+                                active.onNativeFreeformLeavingInteractiveState(
+                                        "pin handler startPinAnimation");
+                            }
+                        }
+                    });
+            Log.i("Freeform pin handler hook installed");
+        } catch (Throwable error) {
+            Log.e("Freeform pin handler hook failed safely", error);
+        }
+    }
+
     private static void hookMiniAnimationTarget(ClassLoader classLoader) {
         try {
             Class<?> animationClass = XposedHelpers.findClassIfExists(
