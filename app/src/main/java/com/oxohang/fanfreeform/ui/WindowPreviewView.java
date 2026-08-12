@@ -50,11 +50,6 @@ public final class WindowPreviewView extends View {
         invalidate();
     }
 
-    public void setLandscape(boolean landscape) {
-        this.landscape = landscape;
-        invalidate();
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);

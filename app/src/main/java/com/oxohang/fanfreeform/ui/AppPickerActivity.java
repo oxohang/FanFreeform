@@ -381,49 +381,6 @@ public final class AppPickerActivity extends Activity {
         finish();
     }
 
-    private void toggle(AppTarget target) {
-        if (selectedTargets.remove(target)) {
-            selectionChanged();
-            return;
-        }
-        if (selectedTargets.size() >= maximum) {
-            android.widget.Toast.makeText(this, "已达到上限 " + maximum,
-                    android.widget.Toast.LENGTH_SHORT).show();
-            return;
-        }
-        selectedTargets.add(target);
-        selectionChanged();
-    }
-
-    private void selectFiltered() {
-        for (Entry entry : filtered) {
-            if (selectedTargets.size() >= maximum) break;
-            selectedTargets.add(entry.target);
-        }
-        selectionChanged();
-    }
-
-    private void invertFiltered() {
-        for (Entry entry : filtered) {
-            if (selectedTargets.contains(entry.target)) selectedTargets.remove(entry.target);
-            else if (selectedTargets.size() < maximum) selectedTargets.add(entry.target);
-        }
-        selectionChanged();
-    }
-
-    private void selectionChanged() {
-        if (selectionCount != null) selectionCount.setText("已选 " + selectedTargets.size()
-                + " / " + maximum);
-        if (adapter != null) filter(searchText);
-    }
-
-    private void finishMulti() {
-        JSONArray array = new JSONArray();
-        for (AppTarget target : selectedTargets) array.put(target.toJson());
-        setResult(RESULT_OK, new Intent().putExtra(EXTRA_TARGETS, array.toString()));
-        finish();
-    }
-
     @SuppressWarnings("deprecation")
     private void loadApps() {
         if (destroyed) return;
